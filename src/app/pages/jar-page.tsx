@@ -64,6 +64,7 @@ const moodColorMap: Record<MoodKey, string> = {
   veryHappy: "#FFDC6E",
 };
 
+
 const moodLabelMap: Record<MoodKey, string> = {
   veryHappy: "Very Happy",
   happy: "Happy",
@@ -212,21 +213,45 @@ const noteData2026Initial: NoteMap2026 = {
   "2026-12": {},
 };
 
-const baseCandies = [
-  { x: "14%", y: "8%", color: "#FFB574", size: BALL_SIZE },
-  { x: "26%", y: "3%", color: "#8EC4FB", size: BALL_SIZE },
-  { x: "40%", y: "5%", color: "#FFB574", size: BALL_SIZE },
-  { x: "54%", y: "3%", color: "#B3B3B3", size: BALL_SIZE },
-  { x: "68%", y: "5%", color: "#F36248", size: BALL_SIZE },
-  { x: "18%", y: "18%", color: "#FFDC6E", size: BALL_SIZE },
-  { x: "30%", y: "14%", color: "#F36248", size: BALL_SIZE },
-  { x: "42%", y: "18%", color: "#FFDC6E", size: BALL_SIZE },
-  { x: "54%", y: "15%", color: "#8EC4FB", size: BALL_SIZE },
-  { x: "66%", y: "18%", color: "#FFB574", size: BALL_SIZE },
-  { x: "78%", y: "13%", color: "#8EC4FB", size: BALL_SIZE },
-  { x: "46%", y: "27%", color: "#FFB574", size: BALL_SIZE },
-  { x: "58%", y: "26%", color: "#FFDC6E", size: BALL_SIZE },
-  { x: "72%", y: "26%", color: "#B3B3B3", size: BALL_SIZE },
+const MOOD_COLORS = {
+  veryHappy: "#FFD966",
+  happy: "#FFB06A",
+  bored: "#B8B8B8",
+  angry: "#F45B4A",
+  sad: "#8EC4FB",
+};
+
+const baseCandies: CandyEntry[] = [
+  { id: "base-1", monthKey: "2026-04", day: 1, color: MOOD_COLORS.veryHappy, x: "12%", y: "8%", note: "Today had a small golden moment. I am keeping it here." },
+  { id: "base-2", monthKey: "2026-04", day: 2, color: MOOD_COLORS.happy, x: "24%", y: "5%", note: "A normal happy day. Nothing huge, just nice." },
+  { id: "base-3", monthKey: "2026-04", day: 3, color: MOOD_COLORS.bored, x: "37%", y: "7%", note: "Today felt like waiting for a page to load." },
+  { id: "base-4", monthKey: "2026-04", day: 4, color: MOOD_COLORS.angry, x: "51%", y: "4%", note: "Slightly annoyed, but still holding it together." },
+  { id: "base-5", monthKey: "2026-04", day: 5, color: MOOD_COLORS.sad, x: "65%", y: "7%", note: "Low battery mode. I needed a softer day." },
+  { id: "base-6", monthKey: "2026-04", day: 6, color: MOOD_COLORS.veryHappy, x: "77%", y: "12%", note: "Something tiny made me very happy. Probably too tiny to explain." },
+
+  { id: "base-7", monthKey: "2026-04", day: 7, color: MOOD_COLORS.happy, x: "17%", y: "22%", note: "Someone said something kind. I pretended to be calm." },
+  { id: "base-8", monthKey: "2026-04", day: 8, color: MOOD_COLORS.bored, x: "31%", y: "20%", note: "Nothing much happened. At least nothing went wrong." },
+  { id: "base-9", monthKey: "2026-04", day: 9, color: MOOD_COLORS.sad, x: "45%", y: "23%", note: "A bit anxious today, but it passed slowly." },
+  { id: "base-10", monthKey: "2026-04", day: 10, color: MOOD_COLORS.angry, x: "59%", y: "20%", note: "My patience was buffering all day." },
+  { id: "base-11", monthKey: "2026-04", day: 11, color: MOOD_COLORS.happy, x: "72%", y: "25%", note: "A snack fixed more than it should have." },
+
+  { id: "base-12", monthKey: "2026-04", day: 12, color: MOOD_COLORS.bored, x: "11%", y: "36%", note: "Today was very grey, but not bad." },
+  { id: "base-13", monthKey: "2026-04", day: 13, color: MOOD_COLORS.veryHappy, x: "25%", y: "34%", note: "I laughed at something silly and it saved the day." },
+  { id: "base-14", monthKey: "2026-04", day: 14, color: MOOD_COLORS.sad, x: "39%", y: "37%", note: "Needed space today. Not dramatic, just quiet." },
+  { id: "base-15", monthKey: "2026-04", day: 15, color: MOOD_COLORS.happy, x: "53%", y: "35%", note: "Today was soft and manageable." },
+  { id: "base-16", monthKey: "2026-04", day: 16, color: MOOD_COLORS.angry, x: "67%", y: "38%", note: "Tiny disaster happened. I survived it with snacks." },
+  { id: "base-17", monthKey: "2026-04", day: 17, color: MOOD_COLORS.bored, x: "79%", y: "43%", note: "My brain opened too many tabs today." },
+
+  { id: "base-18", monthKey: "2026-04", day: 18, color: MOOD_COLORS.sad, x: "18%", y: "50%", note: "Felt a little far away from everything." },
+  { id: "base-19", monthKey: "2026-04", day: 19, color: MOOD_COLORS.happy, x: "33%", y: "51%", note: "Not perfect, but better than expected." },
+  { id: "base-20", monthKey: "2026-04", day: 20, color: MOOD_COLORS.veryHappy, x: "48%", y: "49%", note: "A rare excellent mood appeared." },
+  { id: "base-21", monthKey: "2026-04", day: 21, color: MOOD_COLORS.bored, x: "63%", y: "52%", note: "Today was background music." },
+  { id: "base-22", monthKey: "2026-04", day: 22, color: MOOD_COLORS.sad, x: "75%", y: "55%", note: "Quiet mood. Needed gentler conversations." },
+
+  { id: "base-23", monthKey: "2026-04", day: 23, color: MOOD_COLORS.happy, x: "27%", y: "64%", note: "A small good thing happened. I will not overthink it." },
+  { id: "base-24", monthKey: "2026-04", day: 24, color: MOOD_COLORS.veryHappy, x: "42%", y: "66%", note: "Today felt brighter than usual." },
+  { id: "base-25", monthKey: "2026-04", day: 25, color: MOOD_COLORS.angry, x: "57%", y: "64%", note: "Emotionally spicy. Not my calmest performance." },
+  { id: "base-26", monthKey: "2026-04", day: 26, color: MOOD_COLORS.bored, x: "70%", y: "68%", note: "No message was left for this candy." },
 ];
 
 const baseCandyPositions = baseCandies.map((candy) => ({
@@ -332,25 +357,76 @@ function getPetState(moodMap: Record<number, MoodKey>) {
   };
 }
 
+// function getRandomAvailableSlot(usedEntries: CandyEntry[]) {
+//   const usedPositions = usedEntries.map((entry) => ({
+//     x: parseFloat(entry.x),
+//     y: parseFloat(entry.y),
+//   }));
+
+//   const minDistance = 10;
+
+//   const validSlots = extraCandySlots.filter((slot) => {
+//     const sx = parseFloat(slot.x);
+//     const sy = parseFloat(slot.y);
+
+//     const tooCloseToBase = baseCandyPositions.some((base) => {
+//       const dx = sx - base.x;
+//       const dy = sy - base.y;
+//       return Math.sqrt(dx * dx + dy * dy) < minDistance;
+//     });
+
+//     if (tooCloseToBase) return false;
+
+//     const tooCloseToAdded = usedPositions.some((used) => {
+//       const dx = sx - used.x;
+//       const dy = sy - used.y;
+//       return Math.sqrt(dx * dx + dy * dy) < minDistance;
+//     });
+
+//     if (tooCloseToAdded) return false;
+
+//     return true;
+//   });
+
+//   if (validSlots.length === 0) {
+//     return null;
+//   }
+
+//   const grouped = {
+//     bottom: validSlots.filter((slot) => parseFloat(slot.y) <= 8),
+//     middle: validSlots.filter(
+//       (slot) => parseFloat(slot.y) > 8 && parseFloat(slot.y) <= 20
+//     ),
+//     upper: validSlots.filter(
+//       (slot) => parseFloat(slot.y) > 20 && parseFloat(slot.y) <= 32
+//     ),
+//     top: validSlots.filter((slot) => parseFloat(slot.y) > 32),
+//   };
+
+//   const weightedPool = [
+//     ...grouped.bottom,
+//     ...grouped.bottom,
+//     ...grouped.middle,
+//     ...grouped.middle,
+//     ...grouped.upper,
+//     ...grouped.top,
+//   ];
+
+//   const pool = weightedPool.length > 0 ? weightedPool : validSlots;
+//   return pool[Math.floor(Math.random() * pool.length)];
+// }
+
 function getRandomAvailableSlot(usedEntries: CandyEntry[]) {
   const usedPositions = usedEntries.map((entry) => ({
     x: parseFloat(entry.x),
     y: parseFloat(entry.y),
   }));
 
-  const minDistance = 10;
+  const minDistance = 8;
 
   const validSlots = extraCandySlots.filter((slot) => {
     const sx = parseFloat(slot.x);
     const sy = parseFloat(slot.y);
-
-    const tooCloseToBase = baseCandyPositions.some((base) => {
-      const dx = sx - base.x;
-      const dy = sy - base.y;
-      return Math.sqrt(dx * dx + dy * dy) < minDistance;
-    });
-
-    if (tooCloseToBase) return false;
 
     const tooCloseToAdded = usedPositions.some((used) => {
       const dx = sx - used.x;
@@ -358,37 +434,14 @@ function getRandomAvailableSlot(usedEntries: CandyEntry[]) {
       return Math.sqrt(dx * dx + dy * dy) < minDistance;
     });
 
-    if (tooCloseToAdded) return false;
-
-    return true;
+    return !tooCloseToAdded;
   });
 
   if (validSlots.length === 0) {
-    return null;
+    return extraCandySlots[Math.floor(Math.random() * extraCandySlots.length)];
   }
 
-  const grouped = {
-    bottom: validSlots.filter((slot) => parseFloat(slot.y) <= 8),
-    middle: validSlots.filter(
-      (slot) => parseFloat(slot.y) > 8 && parseFloat(slot.y) <= 20
-    ),
-    upper: validSlots.filter(
-      (slot) => parseFloat(slot.y) > 20 && parseFloat(slot.y) <= 32
-    ),
-    top: validSlots.filter((slot) => parseFloat(slot.y) > 32),
-  };
-
-  const weightedPool = [
-    ...grouped.bottom,
-    ...grouped.bottom,
-    ...grouped.middle,
-    ...grouped.middle,
-    ...grouped.upper,
-    ...grouped.top,
-  ];
-
-  const pool = weightedPool.length > 0 ? weightedPool : validSlots;
-  return pool[Math.floor(Math.random() * pool.length)];
+  return validSlots[Math.floor(Math.random() * validSlots.length)];
 }
 
 function MoodReferenceItem({
@@ -823,19 +876,21 @@ function MainJarView({
               }}
             />
 
-            {baseCandies.map((candy, index) => (
-              <span
-                key={`base-${index}`}
-                className="absolute rounded-full"
-                style={{
-                  left: candy.x,
-                  bottom: candy.y,
-                  width: candy.size,
-                  height: candy.size,
-                  backgroundColor: candy.color,
-                  boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.08)",
-                }}
-              >
+              {baseCandies.map((candy) => (
+                <button
+                  key={candy.id}
+                  type="button"
+                  onClick={() => onCandyClick(candy)}
+                  className="absolute rounded-full"
+                  style={{
+                    left: candy.x,
+                    bottom: candy.y,
+                    width: BALL_SIZE,
+                    height: BALL_SIZE,
+                    backgroundColor: candy.color,
+                    boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.08)",
+                  }}
+                >
                 <span
                   className="absolute inset-0 rounded-full"
                   style={{
@@ -843,7 +898,7 @@ function MainJarView({
                       "radial-gradient(circle at center, transparent 45%, rgba(255,255,255,0.35) 46%, rgba(255,255,255,0.35) 58%, transparent 59%)",
                   }}
                 />
-              </span>
+              </button>
             ))}
 
             {savedCandyEntries.map((entry) => (
@@ -954,7 +1009,12 @@ export function JarPage() {
     existingDayDialog.day !== null
       ? `${monthNames[existingDayDialog.month - 1]} ${existingDayDialog.day}, 2026`
       : "";
-
+  const existingDayNote =
+    existingDayDialog.day !== null
+      ? noteData2026[getMonthKey(2026, existingDayDialog.month)]?.[
+          existingDayDialog.day
+        ] ?? ""
+      : "";
   const petState = useMemo(() => getPetState(currentMoodMap), [currentMoodMap]);
 
   const weekMoods = useMemo(() => {
@@ -1193,7 +1253,7 @@ export function JarPage() {
             category={category}
           />
 
-          {existingDayDialog.open && existingDayDialog.day !== null && (
+          {/* {existingDayDialog.open && existingDayDialog.day !== null && (
             <div className="absolute inset-0 z-[999] flex items-start justify-center px-5 pt-[72px] pb-5 bg-black/10 overflow-y-auto">
               <div className="relative w-full max-w-[340px] max-h-[calc(100%-92px)] rounded-[28px] bg-white/88 backdrop-blur-xl border border-white/70 shadow-[0_20px_50px_rgba(0,0,0,0.16)] overflow-hidden shrink-0">
                 <div className="px-5 pt-5 pb-4 overflow-y-auto">
@@ -1247,8 +1307,42 @@ export function JarPage() {
                 </div>
               </div>
             </div>
-          )}
+          )} */}
+            {existingDayDialog.open && existingDayDialog.day !== null && (
+              <div className="absolute inset-0 z-[999] flex items-start justify-center px-5 pt-[72px] pb-5 bg-black/10 overflow-y-auto">
+                <div className="relative w-full max-w-[340px] rounded-[28px] bg-white/88 backdrop-blur-xl border border-white/70 shadow-[0_20px_50px_rgba(0,0,0,0.16)] overflow-hidden shrink-0">
+                  <div className="px-5 pt-5 pb-4 overflow-y-auto">
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <p className="text-[16px] leading-[1.35] text-[#3B3551] font-medium">
+                        {existingDayLabel}
+                      </p>
 
+                      <button
+                        type="button"
+                        aria-label="Close"
+                        onClick={closeExistingDayDialog}
+                        className="w-8 h-8 rounded-full bg-[#F4F1F8] text-[#5A5470] flex items-center justify-center shrink-0"
+                      >
+                        <X size={16} strokeWidth={2.2} />
+                      </button>
+                    </div>
+
+                    <div className="rounded-[18px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4 mb-4">
+                      <p className="text-[15px] leading-[1.5] text-[#4A4360]">
+                        This day has already been recorded, so the mood cannot be edited.
+                      </p>
+                    </div>
+
+                    <div className="rounded-[18px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4">
+                      <p className="text-[13px] text-[#7A7287] mb-2">Message</p>
+                      <div className="min-h-[88px] rounded-[16px] bg-white border border-[#EAE3F0] px-4 py-3 text-[15px] leading-[1.5] text-[#2C2740]">
+                        {existingDayNote.trim() || "No message was left for this day."}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           {editor.open && editor.day !== null && (
             <div className="absolute inset-0 z-[999] flex items-start justify-center px-5 pt-[72px] pb-5 bg-black/10 overflow-y-auto">
               <div className="relative w-full max-w-[340px] max-h-[calc(100%-92px)] rounded-[28px] bg-white/88 backdrop-blur-xl border border-white/70 shadow-[0_20px_50px_rgba(0,0,0,0.16)] overflow-hidden shrink-0">
