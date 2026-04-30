@@ -1,127 +1,76 @@
-import { User, Users, Plus, ChevronRight } from "lucide-react";
-import { motion } from "motion/react";
+import { Bell, Dog, ShieldCheck, UserRound } from "lucide-react";
+import { FamilyMember } from "../types";
+import { PixelPup } from "../components/pixel-pup";
 
-type FamilyMember = {
-  id: number;
-  name: string;
-  role: string;
-  avatar: string;
-};
+interface ProfilePageProps {
+  familyMembers: FamilyMember[];
+}
 
-const familyMembers: FamilyMember[] = [
-  {
-    id: 1,
-    name: "Mom",
-    role: "Mother",
-    avatar: "👩",
-  },
-  {
-    id: 2,
-    name: "Dad",
-    role: "Father",
-    avatar: "👨",
-  },
-  {
-    id: 3,
-    name: "Grandma",
-    role: "Grandmother",
-    avatar: "👵",
-  },
-  {
-    id: 4,
-    name: "Grandpa",
-    role: "Grandfather",
-    avatar: "👴",
-  },
-];
+export function ProfilePage({ familyMembers }: ProfilePageProps) {
+  const me = familyMembers.find((member) => member.id === "me");
 
-export function ProfilePage() {
   return (
-    <div className="flex h-full flex-col bg-[#F8F4EF]">
-      <div className="hide-scrollbar flex-1 overflow-y-auto px-6 pt-8 pb-24">
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-        >
-          <h1 className="text-3xl font-semibold text-[#4A4A6A]">Profile</h1>
-          <p className="mt-2 text-sm leading-relaxed text-[#8B8BA3]">
-            Manage your account and family connections
-          </p>
-        </motion.div>
+    <div className="flex h-full flex-col bg-[#f7efe7]">
+      <div className="hide-scrollbar flex-1 overflow-y-auto px-5 pt-5 pb-24">
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9f8067]">
+          Settings
+        </p>
+        <h1 className="mt-2 text-[30px] font-semibold text-[#3d2d22]">
+          个人设置
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-[#8b705d]">
+          管理当前账号、家庭关系和小狗提醒方式。
+        </p>
 
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.05 }}
-          className="mt-6 rounded-3xl border border-white/50 bg-white/80 p-5 shadow-sm backdrop-blur-sm"
-        >
-          <div className="mb-4 flex items-center gap-2">
-            <User className="h-5 w-5 text-[#8B8BA3]" />
-            <h2 className="text-base font-semibold text-[#4A4A6A]">
-              Personal Info
-            </h2>
-          </div>
-
+        <section className="mt-6 rounded-[30px] border border-white/80 bg-white/86 p-5 shadow-[0_14px_30px_rgba(84,62,44,0.08)]">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#FFE5EC] to-[#FFF0E6] text-2xl">
-              🙋‍♀️
+            <div className="rounded-[26px] bg-[#f7efe7] p-3">
+              <PixelPup size={4.5} headOnly />
             </div>
-
-            <div className="flex-1">
-              <p className="text-base font-semibold text-[#4A4A6A]">Andy</p>
-              <p className="mt-1 text-sm text-[#8B8BA3]">View and edit your profile</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-lg font-semibold text-[#463326]">{me?.name ?? "我"}</p>
+              <p className="mt-1 text-sm text-[#8b705d]">
+                当前绑定狗狗：{me?.dogName ?? "团团"}
+              </p>
             </div>
-
-            <ChevronRight className="h-5 w-5 text-[#B5B2BC]" />
+            <UserRound className="h-5 w-5 text-[#8b705d]" />
           </div>
-        </motion.div>
+        </section>
 
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.1 }}
-          className="mt-6 rounded-3xl border border-white/50 bg-white/80 p-5 shadow-sm backdrop-blur-sm"
-        >
-          <div className="mb-4 flex items-center gap-2">
-            <Users className="h-5 w-5 text-[#8B8BA3]" />
-            <h2 className="text-base font-semibold text-[#4A4A6A]">
-              Family
-            </h2>
-          </div>
-
-          <div className="space-y-3">
-            {familyMembers.map((member) => (
-              <div
-                key={member.id}
-                className="flex items-center gap-4 rounded-3xl bg-[#F8F4EF] px-4 py-4"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#FFE5EC] to-[#FFF0E6] text-2xl">
-                  {member.avatar}
-                </div>
-
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-[#4A4A6A]">
-                    {member.name}
-                  </p>
-                  <p className="mt-1 text-sm text-[#8B8BA3]">{member.role}</p>
-                </div>
-
-                <ChevronRight className="h-5 w-5 text-[#B5B2BC]" />
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-2 rounded-3xl border border-dashed border-[#D8CEC2] bg-[#FFFDF9] px-4 py-4 text-sm font-medium text-[#6B5B73] transition hover:bg-[#F7F3EE]"
+        <section className="mt-5 space-y-3">
+          {[
+            {
+              icon: Dog,
+              title: "家庭成员",
+              desc: `当前已连接 ${familyMembers.length} 位家庭成员`,
+            },
+            {
+              icon: Bell,
+              title: "通知提醒",
+              desc: "上传新图片后提醒首页狗狗同步更新",
+            },
+            {
+              icon: ShieldCheck,
+              title: "隐私设置",
+              desc: "图片按个人相册独立展示，仅显示上传时间",
+            },
+          ].map((item) => (
+            <article
+              key={item.title}
+              className="rounded-[28px] border border-white/80 bg-white/80 px-5 py-4 shadow-[0_10px_24px_rgba(84,62,44,0.06)]"
             >
-              <Plus className="h-4 w-4" />
-              Add family member
-            </button>
-          </div>
-        </motion.div>
-
-        {/* future sections can be added here */}
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f7efe7] text-[#6d5645]">
+                  <item.icon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-base font-semibold text-[#463326]">{item.title}</p>
+                  <p className="mt-1 text-sm text-[#8b705d]">{item.desc}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
       </div>
     </div>
   );

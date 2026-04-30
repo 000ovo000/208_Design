@@ -1,23 +1,41 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BottomNav } from "./components/bottom-nav";
 import { JarPage } from "./pages/jar-page";
 import { ChatPage } from "./pages/chat-page";
 import { ConnectPage } from "./pages/connect-page";
 import { ProfilePage } from "./pages/profile-page";
-
-type TabKey = "home" | "connect" | "jar" | "profile";
+import { familyMembers, initialAlbumEntries } from "./data/family-data";
+import { AlbumEntry, FamilyMemberId, TabKey } from "./types";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
-  const [pendingTopicTitle, setPendingTopicTitle] = useState("");
+  const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(initialAlbumEntries);
+  const [homeBubbleMessage, setHomeBubbleMessage] = useState(
+    initialAlbumEntries.find((entry) => entry.memberId === "me" && entry.dogMessage)?.dogMessage ||
+      "今天想和小狗说点什么？"
+  );
 
-  const handleSendTopic = (topic: string) => {
-    setPendingTopicTitle(topic);
-    setActiveTab("home");
-  };
+  const latestEntries = useMemo(() => {
+    return familyMembers.reduce<Record<FamilyMemberId, AlbumEntry | null>>(
+      (accumulator, member) => {
+        accumulator[member.id] =
+          albumEntries.find((entry) => entry.memberId === member.id) ?? null;
+        return accumulator;
+      },
+      {
+        me: null,
+        mom: null,
+        dad: null,
+      }
+    );
+  }, [albumEntries]);
 
-  const handleUploadOpened = () => {
-    setPendingTopicTitle("");
+  const handleAlbumEntryCreate = (entry: AlbumEntry) => {
+    setAlbumEntries((prev) => [entry, ...prev]);
+    if (entry.memberId === "me" && entry.dogMessage.trim()) {
+      setHomeBubbleMessage(entry.dogMessage.trim());
+      setActiveTab("home");
+    }
   };
 
   const renderPage = () => {
@@ -25,25 +43,33 @@ export default function App() {
       case "home":
         return (
           <ChatPage
-            pendingTopicTitle={pendingTopicTitle}
-            onUploadOpened={handleUploadOpened}
+            familyMembers={familyMembers}
+            latestEntries={latestEntries}
+            bubbleMessage={homeBubbleMessage}
+          />
+        );
+
+      case "album":
+        return (
+          <ConnectPage
+            familyMembers={familyMembers}
+            albumEntries={albumEntries}
+            onCreateEntry={handleAlbumEntryCreate}
           />
         );
 
       case "jar":
         return <JarPage />;
 
-      case "connect":
-        return <ConnectPage onSendTopic={handleSendTopic} />;
-
       case "profile":
-        return <ProfilePage />;
+        return <ProfilePage familyMembers={familyMembers} />;
 
       default:
         return (
           <ChatPage
-            pendingTopicTitle={pendingTopicTitle}
-            onUploadOpened={handleUploadOpened}
+            familyMembers={familyMembers}
+            latestEntries={latestEntries}
+            bubbleMessage={homeBubbleMessage}
           />
         );
     }

@@ -1,7 +1,6 @@
-import { Home, Heart, Lightbulb, User } from "lucide-react";
+import { Home, Images, Heart, UserRound } from "lucide-react";
 import { motion } from "motion/react";
-
-type TabKey = "home" | "connect" | "jar" | "profile";
+import { TabKey } from "../types";
 
 interface BottomNavProps {
   activeTab: TabKey;
@@ -11,9 +10,9 @@ interface BottomNavProps {
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const navItems = [
     { key: "home" as TabKey, icon: Home, label: "Home" },
-    { key: "connect" as TabKey, icon: Lightbulb, label: "Connect" },
-    { key: "jar" as TabKey, icon: Heart, label: "Mood Jar" },
-    { key: "profile" as TabKey, icon: User, label: "Profile" },
+    { key: "album" as TabKey, icon: Images, label: "Album" },
+    { key: "jar" as TabKey, icon: Heart, label: "Jar" },
+    { key: "profile" as TabKey, icon: UserRound, label: "Settings" },
   ];
 
   return (
