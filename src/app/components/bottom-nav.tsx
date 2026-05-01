@@ -16,7 +16,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   ];
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-white/50 px-6 pb-6 pt-3 rounded-t-3xl shadow-lg">
+    <div className="absolute translate-y-4 bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-white/50 px-6 pb-6 pt-3 rounded-t-3xl shadow-lg">
       <div className="flex items-center justify-around">
         {navItems.map((item, index) => {
           const isActive = activeTab === item.key;

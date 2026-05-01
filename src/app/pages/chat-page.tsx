@@ -82,10 +82,14 @@ export function ChatPage({
   latestEntries,
   bubbleMessage,
 }: ChatPageProps) {
-  const [selectedFamilyDog, setSelectedFamilyDog] = useState<FamilyMemberId>("me");
+  const [selectedFamilyDog, setSelectedFamilyDog] =
+    useState<FamilyMemberId>("me");
 
-  const me = familyMembers.find((member) => member.id === "me") ?? familyMembers[0];
+  const me =
+    familyMembers.find((member) => member.id === "me") ?? familyMembers[0];
+
   const parentMembers = familyMembers.filter((member) => member.id !== "me");
+
   const selectedMember =
     familyMembers.find((member) => member.id === selectedFamilyDog) ?? me;
 
@@ -97,16 +101,21 @@ export function ChatPage({
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-[#f4ede4]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.84),_rgba(255,255,255,0)_42%),linear-gradient(180deg,_#fff7ee_0%,_#f7efe7_45%,_#eedfcd_100%)]" />
+      <div
+        className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: "url('/images/home-bg.png')",
+        }}
+      />
 
-      <div className="relative flex flex-1 flex-col px-5 pt-4 pb-24">
+      <div className="relative flex flex-1 flex-col px-3 pt-4 pb-24">
         <div className="mb-3 flex items-start justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9f8067]">
               Home
             </p>
-            <h1 className="mt-2 text-[30px] font-semibold text-[#3d2d22]">
-              小狗在家等你
+            <h1 className="mt-2 text-[15px] font-semibold text-[#3d2d22]">
+              我觉得食物和狗盆可以不用做 有点麻烦了 你们觉得呢
             </h1>
           </div>
 
@@ -125,16 +134,13 @@ export function ChatPage({
                   key={member.id}
                   type="button"
                   onClick={() => setSelectedFamilyDog(member.id)}
-                  className={`w-[82px] rounded-[22px] border px-2 py-2 text-center shadow-[0_10px_24px_rgba(73,56,42,0.08)] transition ${
-                    isActive
-                      ? "border-[#c49f81] bg-[#fff7ef]"
-                      : "border-white/80 bg-white/72"
-                  }`}
+                  className="w-[72px] px-0 py-1 text-center transition"
                 >
                   <p className="mb-1 text-xs font-semibold text-[#5a4433]">
                     {member.name}
                   </p>
-                  <div className="mx-auto flex w-fit items-center justify-center rounded-2xl bg-[#f8f1ea] px-2 py-1">
+
+                  <div className="mx-auto flex w-fit items-center justify-center">
                     <PixelPup
                       size={2.7}
                       headOnly
@@ -146,13 +152,14 @@ export function ChatPage({
             })}
           </div>
 
-          <div className="w-[88px] rounded-[24px] border border-white/80 bg-white/72 px-2 py-3 shadow-[0_10px_24px_rgba(73,56,42,0.08)]">
+          <div className="w-[64px] px-2 py-3">
             <div className="flex flex-col gap-3">
               {upgradeItems.map((item) => (
                 <div key={item.key} className="text-center">
                   <div className="mx-auto mb-1 flex h-9 w-9 items-center justify-center rounded-xl bg-[#fbf6f1]">
                     <PixelUpgradeIcon type={item.key} />
                   </div>
+
                   <p className="text-[10px] font-medium text-[#7d6554]">
                     {item.label}
                   </p>
@@ -165,20 +172,23 @@ export function ChatPage({
         <div className="relative flex flex-1 items-center justify-center">
           <div className="absolute top-0 left-1/2 z-10 w-[232px] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white px-5 py-4 text-center text-[15px] leading-6 text-[#5d4838] shadow-[0_16px_30px_rgba(94,69,47,0.12)]">
             {selectedBubble}
+
             <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white" />
           </div>
 
           <div className="absolute bottom-7 h-9 w-[240px] rounded-full bg-[radial-gradient(ellipse_at_center,_rgba(106,83,61,0.28),_rgba(106,83,61,0)_72%)]" />
 
           <div className="relative mt-12 flex flex-col items-center">
-            <div className="rounded-[32px] bg-[#fff8f0]/75 px-5 py-4 shadow-[0_14px_28px_rgba(73,56,42,0.08)]">
-              <div className="origin-bottom scale-[1.08]">
-                <PixelDog size={8} />
-              </div>
-            </div>
+            <img
+              src="/images/dog-white.png"
+              alt={`${me.name}的小狗 ${me.dogName}`}
+              className="h-[190px] w-auto object-contain drop-shadow-[0_14px_18px_rgba(73,56,42,0.18)]"
+            />
+
             <p className="mt-3 text-sm font-semibold text-[#4c3a2d]">
               {me.name}的小狗 {me.dogName}
             </p>
+
             {selectedFamilyDog !== "me" && (
               <p className="mt-1 text-xs text-[#8b705d]">
                 当前在看 {selectedMember.name} 的陪伴状态
@@ -193,10 +203,12 @@ export function ChatPage({
               <p className="text-sm font-semibold text-[#49372a]">
                 首页主狗固定显示自己
               </p>
+
               <p className="mt-1 text-xs leading-5 text-[#8b705d]">
                 左侧保留爸爸和妈妈的小狗入口，右侧道具只作为静态陪伴元素展示。
               </p>
             </div>
+
             <div className="rounded-full bg-[#f7eadf] px-3 py-2 text-xs font-semibold text-[#8e6f54]">
               首页
             </div>
