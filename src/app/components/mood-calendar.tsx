@@ -1,11 +1,12 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type MoodType =
+  | "calm"
+  | "tired"
   | "happy"
-  | "sad"
-  | "angry"
-  | "bored"
-  | "veryHappy"
+  | "anxious"
+  | "homesick"
+  | "needQuiet"
   | null;
 
 export interface CalendarDayItem {
@@ -25,11 +26,12 @@ interface MoodCalendarProps {
 }
 
 const moodColorMap: Record<Exclude<MoodType, null>, string> = {
-  happy: "#FFB574",
-  sad: "#8EC4FB",
-  angry: "#F36248",
-  bored: "#B3B3B3",
-  veryHappy: "#FFDC6E",
+  calm: "#9FD8C2",
+  tired: "#B7B4D8",
+  happy: "#FFDC6E",
+  anxious: "#F7A7A6",
+  homesick: "#8EC4FB",
+  needQuiet: "#C9C3B8",
 };
 
 const monthNames = [
@@ -89,27 +91,23 @@ function CalendarMoodFace({ mood }: { mood: Exclude<MoodType, null> }) {
       <span className="absolute left-[7px] top-[8px] w-[3.5px] h-[3.5px] rounded-full bg-[#111111]" />
       <span className="absolute right-[7px] top-[8px] w-[3.5px] h-[3.5px] rounded-full bg-[#111111]" />
 
-      {mood === "happy" && (
+      {(mood === "happy" || mood === "calm") && (
         <span className="absolute left-1/2 top-[16px] w-[11px] h-[6px] -translate-x-1/2 border-b-[2px] border-[#111111] rounded-b-full" />
       )}
 
-      {mood === "veryHappy" && (
-        <span className="absolute left-1/2 top-[15px] w-[12px] h-[7px] -translate-x-1/2 border-b-[2px] border-[#111111] rounded-b-full" />
-      )}
-
-      {mood === "sad" && (
-        <span className="absolute left-1/2 top-[18px] w-[11px] h-[6px] -translate-x-1/2 border-t-[2px] border-[#111111] rounded-t-full" />
-      )}
-
-      {mood === "angry" && (
+      {mood === "tired" && (
         <>
-          <span className="absolute left-[5px] top-[5px] w-[6px] h-[2px] bg-[#111111] rotate-[20deg]" />
-          <span className="absolute right-[5px] top-[5px] w-[6px] h-[2px] bg-[#111111] -rotate-[20deg]" />
-          <span className="absolute left-1/2 top-[18px] w-[11px] h-[6px] -translate-x-1/2 border-t-[2px] border-[#111111] rounded-t-full" />
+          <span className="absolute left-[6px] top-[9px] w-[6px] h-[2px] bg-[#111111] rounded-full" />
+          <span className="absolute right-[6px] top-[9px] w-[6px] h-[2px] bg-[#111111] rounded-full" />
+          <span className="absolute left-1/2 top-[18px] w-[10px] h-[2px] -translate-x-1/2 bg-[#111111] rounded-full" />
         </>
       )}
 
-      {mood === "bored" && (
+      {(mood === "anxious" || mood === "homesick") && (
+        <span className="absolute left-1/2 top-[18px] w-[11px] h-[6px] -translate-x-1/2 border-t-[2px] border-[#111111] rounded-t-full" />
+      )}
+
+      {mood === "needQuiet" && (
         <span className="absolute left-1/2 top-[18px] w-[10px] h-[2px] -translate-x-1/2 bg-[#111111] rounded-full" />
       )}
     </div>
