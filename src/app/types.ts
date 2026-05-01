@@ -8,7 +8,10 @@ export interface FamilyMember {
   role: string;
   dogName: string;
   accentColor: string;
+  avatarUrl: string;
 }
+
+export type AlbumReaction = "smile" | "love" | "clap" | "wow" | "sad" | null;
 
 export interface AlbumEntry {
   id: string;
@@ -16,4 +19,5 @@ export interface AlbumEntry {
   imageUrl: string;
   uploadedAt: string;
   dogMessage: string;
+  reaction: AlbumReaction;
 }

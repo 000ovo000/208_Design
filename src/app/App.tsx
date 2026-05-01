@@ -12,7 +12,7 @@ export default function App() {
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(initialAlbumEntries);
   const [homeBubbleMessage, setHomeBubbleMessage] = useState(
     initialAlbumEntries.find((entry) => entry.memberId === "me" && entry.dogMessage)?.dogMessage ||
-      "今天想和小狗说点什么？"
+      "今天想让小狗帮你传什么话？"
   );
 
   const latestEntries = useMemo(() => {
@@ -38,6 +38,15 @@ export default function App() {
     }
   };
 
+  const handleAlbumEntryReactionChange = (
+    entryId: string,
+    reaction: AlbumEntry["reaction"]
+  ) => {
+    setAlbumEntries((prev) =>
+      prev.map((entry) => (entry.id === entryId ? { ...entry, reaction } : entry))
+    );
+  };
+
   const renderPage = () => {
     switch (activeTab) {
       case "home":
@@ -55,6 +64,7 @@ export default function App() {
             familyMembers={familyMembers}
             albumEntries={albumEntries}
             onCreateEntry={handleAlbumEntryCreate}
+            onUpdateReaction={handleAlbumEntryReactionChange}
           />
         );
 

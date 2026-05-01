@@ -67,7 +67,7 @@ function PixelUpgradeIcon({ type }: { type: UpgradeIconKey }) {
 const upgradeItems: { key: UpgradeIconKey; label: string }[] = [
   { key: "clothes", label: "衣服" },
   { key: "food", label: "食物" },
-  { key: "bowl", label: "食盆" },
+  { key: "bowl", label: "饭盆" },
   { key: "toy", label: "玩具" },
 ];
 
@@ -170,7 +170,7 @@ export function ChatPage({
 
           <div className="absolute bottom-7 h-9 w-[240px] rounded-full bg-[radial-gradient(ellipse_at_center,_rgba(106,83,61,0.28),_rgba(106,83,61,0)_72%)]" />
 
-          <div className="relative mt-24 flex flex-col items-center">
+          <div className="relative mt-12 flex flex-col items-center">
             <div className="rounded-[32px] bg-[#fff8f0]/75 px-5 py-4 shadow-[0_14px_28px_rgba(73,56,42,0.08)]">
               <div className="origin-bottom scale-[1.08]">
                 <PixelDog size={8} />
@@ -194,7 +194,7 @@ export function ChatPage({
                 首页主狗固定显示自己
               </p>
               <p className="mt-1 text-xs leading-5 text-[#8b705d]">
-                左侧只保留妈妈和爸爸的小狗入口。点击后切换气泡内容，不替换中间这只主狗。
+                左侧保留爸爸和妈妈的小狗入口，右侧道具只作为静态陪伴元素展示。
               </p>
             </div>
             <div className="rounded-full bg-[#f7eadf] px-3 py-2 text-xs font-semibold text-[#8e6f54]">
