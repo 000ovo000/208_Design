@@ -1,6 +1,6 @@
 import { Bell, Dog, ShieldCheck, UserRound } from "lucide-react";
 import { FamilyMember } from "../types";
-import { PixelPup } from "../components/pixel-pup";
+import { usePet } from "../context/pet-context";
 
 interface ProfilePageProps {
   familyMembers: FamilyMember[];
@@ -8,6 +8,7 @@ interface ProfilePageProps {
 
 export function ProfilePage({ familyMembers }: ProfilePageProps) {
   const me = familyMembers.find((member) => member.id === "me");
+  const { currentPet } = usePet();
 
   return (
     <div className="flex h-full flex-col bg-[#f7efe7]">
@@ -25,12 +26,16 @@ export function ProfilePage({ familyMembers }: ProfilePageProps) {
         <section className="mt-6 rounded-[30px] border border-white/80 bg-white/86 p-5 shadow-[0_14px_30px_rgba(84,62,44,0.08)]">
           <div className="flex items-center gap-4">
             <div className="rounded-[26px] bg-[#f7efe7] p-3">
-              <PixelPup size={4.5} headOnly />
+              <img
+                src={currentPet.image}
+                alt={currentPet.name}
+                className="h-[86px] w-[132px] object-contain"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-lg font-semibold text-[#463326]">{me?.name ?? "我"}</p>
               <p className="mt-1 text-sm text-[#8b705d]">
-                当前绑定狗狗：{me?.dogName ?? "团团"}
+                当前绑定宠物：{currentPet.name}
               </p>
             </div>
             <UserRound className="h-5 w-5 text-[#8b705d]" />

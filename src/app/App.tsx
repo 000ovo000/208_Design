@@ -4,6 +4,8 @@ import { JarPage } from "./pages/jar-page";
 import { ChatPage } from "./pages/chat-page";
 import { ConnectPage } from "./pages/connect-page";
 import { ProfilePage } from "./pages/profile-page";
+import { WeeklyEchoPage } from "./pages/weekly-echo-page";
+import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
 import { AlbumEntry, FamilyMemberId, TabKey } from "./types";
 
@@ -71,6 +73,9 @@ export default function App() {
       case "jar":
         return <JarPage />;
 
+      case "echo":
+        return <WeeklyEchoPage />;
+
       case "profile":
         return <ProfilePage familyMembers={familyMembers} />;
 
@@ -86,13 +91,14 @@ export default function App() {
   };
 
   return (
-    <div className="app-stage">
-      <div className="app-bg-pattern app-bg-pattern-1" />
-      <div className="app-bg-pattern app-bg-pattern-2" />
-      <div className="app-bg-dots" />
+    <PetProvider>
+      <div className="app-stage">
+        <div className="app-bg-pattern app-bg-pattern-1" />
+        <div className="app-bg-pattern app-bg-pattern-2" />
+        <div className="app-bg-dots" />
 
-      <div className="iphone-frame-shell">
-        <div className="iphone-screen">
+        <div className="iphone-frame-shell">
+          <div className="iphone-screen">
           <header className="iphone-status-bar">
             <span className="iphone-time">9:41</span>
 
@@ -140,8 +146,9 @@ export default function App() {
           <main className="iphone-content">{renderPage()}</main>
 
           <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          </div>
         </div>
       </div>
-    </div>
+    </PetProvider>
   );
 }

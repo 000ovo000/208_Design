@@ -1,11 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, Plus, X } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
-import PixelDog from "../components/pixel-dog";
-import PixelCat from "../components/pixel-cat";
+import { usePet } from "../context/pet-context";
+import type { PetId, PetItem, PetSpecies } from "../data/pets";
 
 type JarView = "main" | "petSelection";
-type PetCategory = "cats" | "dogs";
 type MoodKey = "calm" | "tired" | "happy" | "anxious" | "homesick" | "needQuiet";
 type ShareMode = "private" | "soft" | "full";
 type FamilyReaction = "hug" | "tea" | "pet" | null;
@@ -456,55 +455,67 @@ function PawIcon() {
 }
 
 function PetSelectionCard({
-  label,
-  category,
+  pet,
   active = false,
+  unlocked = false,
   onClick,
 }: {
-  label: string;
-  category: PetCategory;
+  pet: PetItem;
   active?: boolean;
+  unlocked?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={!unlocked}
       className={`flex flex-col items-center justify-end rounded-[22px] transition-all ${
-        active ? "bg-[#B98A54] shadow-md" : "bg-transparent"
-      }`}
-      style={{ width: 118, height: 126, paddingBottom: 10 }}
+        active ? "bg-[#B98A54] shadow-md" : "bg-white/55 border border-white/70"
+      } ${!unlocked ? "opacity-50" : "active:scale-[0.98]"}`}
+      style={{ width: 118, height: 136, paddingBottom: 10 }}
     >
-      <div className="relative w-[92px] h-[74px] mb-2 flex items-end justify-center">
-        <div className="absolute inset-x-0 bottom-0 mx-auto w-[82px] h-[46px] rounded-full bg-[#E8B85E]" />
-        <div className="relative z-[2] scale-[0.42] origin-bottom">
-          {category === "cats" ? <PixelCat size={8} /> : <PixelDog size={8} />}
-        </div>
+      <div className="relative w-[96px] h-[82px] mb-2 flex items-end justify-center">
+        <div className="absolute inset-x-0 bottom-0 mx-auto w-[84px] h-[44px] rounded-full bg-[#E8B85E]/80" />
+        <img
+          src={pet.image}
+          alt={pet.name}
+          className="relative z-[2] max-h-[78px] max-w-[94px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
+        />
       </div>
 
       <span
-        className={`text-[18px] leading-none ${
+        className={`px-2 text-center text-[13px] font-semibold leading-[1.15] ${
           active ? "text-white" : "text-[#7A5A43]"
         }`}
       >
-        {label}
+        {pet.name}
       </span>
     </button>
   );
 }
 
 function PetSelectionView({
-  category,
-  setCategory,
+  selectedPetId,
+  setSelectedPetId,
+  currentPet,
+  petItems,
+  unlockedPetIds,
   onBack,
 }: {
-  category: PetCategory;
-  setCategory: (value: PetCategory) => void;
+  selectedPetId: PetId;
+  setSelectedPetId: (value: PetId) => void;
+  currentPet: PetItem;
+  petItems: PetItem[];
+  unlockedPetIds: PetId[];
   onBack: () => void;
 }) {
+  const [activeSpecies, setActiveSpecies] = useState<PetSpecies>(currentPet.species);
+  const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
+
   return (
     <div className="h-full overflow-y-auto px-5 pt-2 pb-24">
-      <div className="flex items-center justify-start mb-12">
+      <div className="flex items-center justify-start mb-8">
         <button
           type="button"
           aria-label="Back"
@@ -515,42 +526,70 @@ function PetSelectionView({
         </button>
       </div>
 
-      <div className="mb-10">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-[26px] font-medium text-[#171717]">categories</h2>
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-[26px] font-medium text-[#171717]">Pet Collection</h2>
+            <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
+              Choose one shared companion for Home and Mood Jar.
+            </p>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 rounded-[22px] bg-white/55 p-2 border border-white/70">
           <button
             type="button"
-            className="text-[14px] text-[#E8B85E] underline underline-offset-2"
+            onClick={() => setActiveSpecies("dog")}
+            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+              activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+            }`}
           >
-            SeeAll
+            Puppies
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSpecies("cat")}
+            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+              activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+            }`}
+          >
+            Kittens
           </button>
         </div>
 
-        <div className="flex items-end justify-center gap-8">
-          <PetSelectionCard
-            label="Cats"
-            category="cats"
-            active={category === "cats"}
-            onClick={() => setCategory("cats")}
-          />
-          <PetSelectionCard
-            label="Dogs"
-            category="dogs"
-            active={category === "dogs"}
-            onClick={() => setCategory("dogs")}
-          />
+        <div className="grid grid-cols-2 justify-items-center gap-4">
+          {visiblePets.map((pet) => {
+            const unlocked = unlockedPetIds.includes(pet.id);
+            return (
+              <PetSelectionCard
+                key={pet.id}
+                pet={pet}
+                active={selectedPetId === pet.id}
+                unlocked={unlocked}
+                onClick={() => setSelectedPetId(pet.id)}
+              />
+            );
+          })}
         </div>
       </div>
 
       <div>
-        <h3 className="text-[22px] font-medium text-[#171717] mb-8">
+        <h3 className="text-[22px] font-medium text-[#171717] mb-5">
           Your selection:
         </h3>
 
-        <div className="flex justify-center pt-2">
-          <div className="scale-[1.15] origin-top">
-            {category === "cats" ? <PixelCat size={8} /> : <PixelDog size={8} />}
-          </div>
+        <div className="flex flex-col items-center rounded-[28px] bg-white/55 border border-white/70 px-4 py-5">
+          <img
+            src={currentPet.image}
+            alt={currentPet.name}
+            className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+          />
+          <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
+            {currentPet.name}
+          </p>
+          <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
+            {currentPet.description}
+          </p>
         </div>
       </div>
     </div>
@@ -785,7 +824,7 @@ function SharedStatusCard({
               onClick={() => setFamilyReaction("pet")}
               className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
             >
-              🐶 Pet Daughter’s dog
+              🐶 Pet Daughter’s pet
             </button>
           </div>
 
@@ -793,7 +832,7 @@ function SharedStatusCard({
             <p className="text-[14px] mt-4 text-[#7A7287] leading-[1.4]">
               {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
               {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-              {familyReaction === "pet" && `${currentProfile.name} gently petted Daughter’s dog.`}
+              {familyReaction === "pet" && `${currentProfile.name} gently petted Daughter’s pet.`}
             </p>
           )}
         </div>
@@ -866,7 +905,7 @@ function SharedStatusCard({
                     onClick={() => setFamilyReaction("pet")}
                     className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
                   >
-                    🐶 Pet dog
+                    🐶 Pet
                   </button>
                 </div>
 
@@ -874,7 +913,7 @@ function SharedStatusCard({
                   <p className="text-[12px] mt-3 text-[#7A7287] leading-[1.4]">
                     {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
                     {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-                    {familyReaction === "pet" && `${currentProfile.name} gently petted Daughter’s dog.`}
+                    {familyReaction === "pet" && `${currentProfile.name} gently petted Daughter’s pet.`}
                   </p>
                 )}
               </>
@@ -907,7 +946,7 @@ function MainJarView({
   setFamilyReaction,
   onCalendarDayClick,
   onCandyClick,
-  category,
+  currentPet,
 }: {
   onOpenTodayPlus: () => void;
   onOpenPetSelection: () => void;
@@ -929,30 +968,34 @@ function MainJarView({
   setFamilyReaction: (value: FamilyReaction) => void;
   onCalendarDayClick: (day: number) => void;
   onCandyClick: (entry: CandyEntry) => void;
-  category: PetCategory;
+  currentPet: PetItem;
 }) {
   const isDaughter = currentUser === "daughter";
   const isParent = currentUser === "mum" || currentUser === "dad";
   const isGrandparent = currentUser === "grandma" || currentUser === "grandpa";
   const canRecordMood = isDaughter || isParent;
   const currentProfile = profileMap[currentUser];
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToCalendar = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    });
+  };
 
   return (
     <div
+      ref={scrollContainerRef}
       className={`h-full overflow-y-auto transition-all duration-200 ${
         isBlurred ? "blur-[6px] scale-[0.985]" : ""
       }`}
     >
       <section className="relative px-4 pt-1 shrink-0">
         <div className="relative flex items-start justify-start mb-2 min-h-[64px]">
-          <button
-            type="button"
-            aria-label="Back"
-            className="w-8 h-8 flex items-center justify-center text-[#333333] mt-1"
-          >
-            <ArrowLeft size={22} strokeWidth={2} />
-          </button>
-
           <AccountSwitcher
             currentUser={currentUser}
             onSwitchUser={onSwitchUser}
@@ -968,31 +1011,61 @@ function MainJarView({
             />
           </div>
 
-          <div className="absolute right-[12px] top-[18px] z-[10] flex flex-col items-center shrink-0">
-            <button
-              type="button"
-              aria-label="Change your pet"
-              onClick={onOpenPetSelection}
-              className="w-[68px] h-[68px] rounded-full flex items-center justify-center active:scale-95 transition-transform"
-              style={{
-                border: "1.2px solid rgba(244, 181, 219, 0.72)",
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(253,248,251,0.96) 100%)",
-                boxShadow:
-                  "0 0 0 1.5px rgba(241,222,233,0.35), 0 5px 12px rgba(0,0,0,0.04)",
-              }}
-            >
-              <PawIcon />
-            </button>
+          <div className="absolute right-[12px] top-[18px] z-[10] flex flex-col items-center gap-3 shrink-0">
+            <div className="flex flex-col items-center">
+              <button
+                type="button"
+                aria-label="Change your pet"
+                onClick={onOpenPetSelection}
+                className="w-[68px] h-[68px] rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                style={{
+                  border: "1.2px solid rgba(244, 181, 219, 0.72)",
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(253,248,251,0.96) 100%)",
+                  boxShadow:
+                    "0 0 0 1.5px rgba(241,222,233,0.35), 0 5px 12px rgba(0,0,0,0.04)",
+                }}
+              >
+                <PawIcon />
+              </button>
 
-            <p className="mt-1 w-[78px] text-center text-[10.5px] font-semibold leading-[1.15] text-[#5A2A86]">
-              Change your pet
-            </p>
+              <p className="mt-1 w-[78px] text-center text-[10.5px] font-semibold leading-[1.15] text-[#5A2A86]">
+                Change your pet
+              </p>
+            </div>
+
+            {canRecordMood && (
+              <div className="flex flex-col items-center">
+                <button
+                  type="button"
+                  aria-label="Jump to mood calendar"
+                  onClick={scrollToCalendar}
+                  className="w-[68px] h-[68px] rounded-full flex items-center justify-center text-[#341056] active:scale-95 transition-transform"
+                  style={{
+                    border: "1.2px solid rgba(244, 181, 219, 0.72)",
+                    background:
+                      "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(253,248,251,0.96) 100%)",
+                    boxShadow:
+                      "0 0 0 1.5px rgba(241,222,233,0.35), 0 5px 12px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <CalendarDays size={34} strokeWidth={2.2} />
+                </button>
+
+                <p className="mt-1 w-[78px] text-center text-[10.5px] font-semibold leading-[1.15] text-[#5A2A86]">
+                  See calendar
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="h-[132px] flex items-end justify-center">
-          {category === "cats" ? <PixelCat size={7} /> : <PixelDog size={7} />}
+          <img
+            src={currentPet.image}
+            alt={currentPet.name}
+            className="max-h-[128px] max-w-[220px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+          />
         </div>
 
         <div className="flex justify-center mb-2">
@@ -1239,9 +1312,9 @@ function MainJarView({
 }
 
 export function JarPage() {
+  const { selectedPetId, setSelectedPetId, unlockedPetIds, currentPet, petItems } = usePet();
   const [note, setNote] = useState("");
   const [view, setView] = useState<JarView>("main");
-  const [category, setCategory] = useState<PetCategory>("dogs");
   const [currentUser, setCurrentUser] = useState<UserRole>("daughter");
   const [currentMonth, setCurrentMonth] = useState(DEMO_TODAY_MONTH);
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
@@ -1532,7 +1605,7 @@ export function JarPage() {
                 candy: entry,
               });
             }}
-            category={category}
+            currentPet={currentPet}
           />
 
           {existingDayDialog.open && existingDayDialog.day !== null && (
@@ -1731,8 +1804,11 @@ export function JarPage() {
         </>
       ) : (
         <PetSelectionView
-          category={category}
-          setCategory={setCategory}
+          selectedPetId={selectedPetId}
+          setSelectedPetId={setSelectedPetId}
+          currentPet={currentPet}
+          petItems={petItems}
+          unlockedPetIds={unlockedPetIds}
           onBack={() => setView("main")}
         />
       )}

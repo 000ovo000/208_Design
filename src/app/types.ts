@@ -1,4 +1,4 @@
-export type TabKey = "home" | "album" | "jar" | "profile";
+export type TabKey = "home" | "album" | "jar" | "echo" | "profile";
 
 export type FamilyMemberId = "me" | "mom" | "dad";
 
