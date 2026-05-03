@@ -54,9 +54,9 @@ const profileMap: Record<
   { name: string; roleLabel: string; avatar: string; bg: string }
 > = {
   daughter: {
-    name: "Daughter",
+    name: "Grace",
     roleLabel: "Student account",
-    avatar: "👧",
+    avatar: "👩‍🎓",
     bg: "#FFE4EF",
   },
   mum: {
@@ -128,12 +128,12 @@ const shareLabelMap: Record<ShareMode, string> = {
 };
 
 const softShareTextMap: Record<MoodKey, string> = {
-  calm: "Daughter seems calm today.",
-  tired: "Daughter may feel a little tired today.",
-  happy: "Daughter seems to have a brighter mood today.",
-  anxious: "Daughter may need a gentler moment today.",
-  homesick: "Daughter may miss home a little today.",
-  needQuiet: "Daughter may need some quiet space today.",
+  calm: "Grace seems calm today.",
+  tired: "Grace may feel a little tired today.",
+  happy: "Grace seems to have a brighter mood today.",
+  anxious: "Grace may need a gentler moment today.",
+  homesick: "Grace may miss home a little today.",
+  needQuiet: "Grace may need some quiet space today.",
 };
 
 const extraCandySlots = [
@@ -275,7 +275,7 @@ function getPetState(moodMap: Record<number, MoodKey>, currentUser: UserRole) {
   if (currentUser === "grandma" || currentUser === "grandpa") {
     return {
       label: "Care mode",
-      bubble: "You can simply send a small care to Daughter.",
+      bubble: "You can simply send a small care to Grace.",
     };
   }
 
@@ -774,15 +774,15 @@ function SharedStatusCard({
       <section className="px-4 pt-2 pb-4 shrink-0">
         <div className="rounded-[26px] bg-white/62 backdrop-blur-sm border border-white/70 px-5 py-5 shadow-[0_10px_26px_rgba(0,0,0,0.05)]">
           <p className="text-[21px] font-semibold text-[#5A2A86] mb-2">
-            Daughter today
+            Grace today
           </p>
           <p className="text-[15px] leading-[1.5] text-[#6D647C] mb-4">
-            Only the mood Daughter chooses to share is shown here. A small response is enough.
+            Only the mood Grace chooses to share is shown here. A small response is enough.
           </p>
 
           {!canSeeEntry ? (
             <div className="rounded-[20px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4 text-[17px] leading-[1.45] text-[#3B3551]">
-              Daughter has not shared a mood today.
+              Grace has not shared a mood today.
             </div>
           ) : (
             <div className="rounded-[20px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4">
@@ -792,7 +792,7 @@ function SharedStatusCard({
                   <p className="text-[17px] font-semibold text-[#3B3551] leading-[1.4]">
                     {daughterEntry.shareMode === "soft"
                       ? softShareTextMap[daughterEntry.mood]
-                      : `Daughter feels ${moodLabelMap[daughterEntry.mood].toLowerCase()} today.`}
+                      : `Grace feels ${moodLabelMap[daughterEntry.mood].toLowerCase()} today.`}
                   </p>
                   {daughterEntry.shareMode === "full" && (
                     <p className="text-[15px] text-[#5C5670] leading-[1.5] mt-2">
@@ -824,7 +824,7 @@ function SharedStatusCard({
               onClick={() => setFamilyReaction("pet")}
               className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
             >
-              🐶 Pet Daughter’s pet
+              🐶 Pet Grace’s pet
             </button>
           </div>
 
@@ -832,7 +832,7 @@ function SharedStatusCard({
             <p className="text-[14px] mt-4 text-[#7A7287] leading-[1.4]">
               {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
               {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-              {familyReaction === "pet" && `${currentProfile.name} gently petted Daughter’s pet.`}
+              {familyReaction === "pet" && `${currentProfile.name} gently petted Grace’s pet.`}
             </p>
           )}
         </div>
@@ -840,11 +840,11 @@ function SharedStatusCard({
     );
   }
 
-  const title = isStudent ? "Family view preview" : "Daughter’s shared status";
+  const title = isStudent ? "Family view preview" : "Grace’s shared status";
   const subtitle = isStudent
     ? "Your calendar is private. Family only sees the status you choose to share."
-    : "You cannot see Daughter’s private calendar. Only her shared status appears here.";
-  const badgeLabel = isStudent ? "User controlled" : "Shared by Daughter";
+    : "You cannot see Grace’s private calendar. Only her shared status appears here.";
+  const badgeLabel = isStudent ? "User controlled" : "Shared by Grace";
 
   return (
     <section className="px-4 pt-2 pb-2 shrink-0">
@@ -861,7 +861,7 @@ function SharedStatusCard({
 
         {!daughterEntry || daughterEntry.shareMode === "private" ? (
           <div className="mt-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-3 text-[13px] leading-[1.45] text-[#5C5670]">
-            Daughter has not shared a mood today.
+            Grace has not shared a mood today.
           </div>
         ) : (
           <>
@@ -872,7 +872,7 @@ function SharedStatusCard({
                   <p className="text-[14px] font-medium text-[#3B3551] leading-[1.35]">
                     {daughterEntry.shareMode === "soft"
                       ? softShareTextMap[daughterEntry.mood]
-                      : `Daughter added a ${moodLabelMap[daughterEntry.mood].toLowerCase()} mood bead.`}
+                      : `Grace added a ${moodLabelMap[daughterEntry.mood].toLowerCase()} mood bead.`}
                   </p>
                   {daughterEntry.shareMode === "full" && (
                     <p className="text-[13px] text-[#5C5670] leading-[1.45] mt-2">
@@ -913,7 +913,7 @@ function SharedStatusCard({
                   <p className="text-[12px] mt-3 text-[#7A7287] leading-[1.4]">
                     {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
                     {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-                    {familyReaction === "pet" && `${currentProfile.name} gently petted Daughter’s pet.`}
+                    {familyReaction === "pet" && `${currentProfile.name} gently petted Grace’s pet.`}
                   </p>
                 )}
               </>
@@ -1150,7 +1150,7 @@ function MainJarView({
       )}
 
       {!isGrandparent && (
-        <section className="flex flex-col items-center justify-start pt-1 pb-6 shrink-0">
+        <section className="flex flex-col items-center justify-start pt-8 pb-6 shrink-0">
           <div className="relative w-[208px] h-[256px]">
             <JarAnimation lidOpen={lidOpen} />
 

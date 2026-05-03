@@ -7,6 +7,7 @@ export type DailyDrop = {
   name: string;
   emoji: string;
   image?: string;
+  sceneImage?: string;
   category: DailyDropCategory;
   petType: DailyDropPetType;
   description: string;

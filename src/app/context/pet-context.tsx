@@ -1,9 +1,18 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { dailyDrops, type DailyDrop } from "../data/daily-drops";
 import { defaultPetId, getPetById, petItems, PetId } from "../data/pets";
 
 const SELECTED_PET_STORAGE_KEY = "kinlight:selectedPetId";
 const UNLOCKED_PETS_STORAGE_KEY = "kinlight:unlockedPetIds";
+
+export type DailyDropInventory = Record<string, number>;
+
+const defaultDailyDropInventory: DailyDropInventory = {
+  "pet-biscuit": 2,
+  "pet-milk": 1,
+  "small-ball": 1,
+};
 
 type PetContextValue = {
   selectedPetId: PetId;
@@ -12,12 +21,22 @@ type PetContextValue = {
   unlockPet: (id: PetId) => void;
   currentPet: ReturnType<typeof getPetById>;
   petItems: typeof petItems;
+  dailyDropInventory: DailyDropInventory;
+  addDailyDropToInventory: (dropId: string, amount?: number) => void;
+  useDailyDropItem: (dropId: string) => DailyDrop | null;
+  getDailyDropCount: (dropId: string) => number;
+  lastPlacedDailyDrop: DailyDrop | null;
+  clearLastPlacedDailyDrop: () => void;
 };
 
 const PetContext = createContext<PetContextValue | null>(null);
 
 function isPetId(value: string | null): value is PetId {
   return Boolean(value && petItems.some((pet) => pet.id === value));
+}
+
+function isDailyDropId(value: string | null) {
+  return Boolean(value && dailyDrops.some((drop) => drop.id === value));
 }
 
 function readSelectedPetId() {
@@ -43,6 +62,12 @@ export function PetProvider({ children }: { children: ReactNode }) {
   const [selectedPetId, setSelectedPetIdState] = useState<PetId>(readSelectedPetId);
   const [unlockedPetIds, setUnlockedPetIds] = useState<PetId[]>(readUnlockedPetIds);
 
+  // Daily drop inventory is intentionally kept in memory only for easier debugging.
+  // Refreshing the page resets the inventory and the last placed item.
+  const [dailyDropInventory, setDailyDropInventory] =
+    useState<DailyDropInventory>(defaultDailyDropInventory);
+  const [lastPlacedDailyDropId, setLastPlacedDailyDropId] = useState<string | null>(null);
+
   useEffect(() => {
     window.localStorage.setItem(SELECTED_PET_STORAGE_KEY, selectedPetId);
   }, [selectedPetId]);
@@ -60,7 +85,31 @@ export function PetProvider({ children }: { children: ReactNode }) {
     setUnlockedPetIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
+  const addDailyDropToInventory = (dropId: string, amount = 1) => {
+    if (!isDailyDropId(dropId) || amount <= 0) return;
+    setDailyDropInventory((prev) => ({
+      ...prev,
+      [dropId]: (prev[dropId] ?? 0) + amount,
+    }));
+  };
+
+  const useDailyDropItem = (dropId: string) => {
+    const drop = dailyDrops.find((item) => item.id === dropId) ?? null;
+    if (!drop || (dailyDropInventory[dropId] ?? 0) <= 0) return null;
+
+    setDailyDropInventory((prev) => ({
+      ...prev,
+      [dropId]: Math.max((prev[dropId] ?? 0) - 1, 0),
+    }));
+    setLastPlacedDailyDropId(dropId);
+    return drop;
+  };
+
+  const getDailyDropCount = (dropId: string) => dailyDropInventory[dropId] ?? 0;
+
   const currentPet = getPetById(selectedPetId);
+  const lastPlacedDailyDrop =
+    dailyDrops.find((drop) => drop.id === lastPlacedDailyDropId) ?? null;
 
   const value = useMemo<PetContextValue>(
     () => ({
@@ -70,8 +119,14 @@ export function PetProvider({ children }: { children: ReactNode }) {
       unlockPet,
       currentPet,
       petItems,
+      dailyDropInventory,
+      addDailyDropToInventory,
+      useDailyDropItem,
+      getDailyDropCount,
+      lastPlacedDailyDrop,
+      clearLastPlacedDailyDrop: () => setLastPlacedDailyDropId(null),
     }),
-    [selectedPetId, unlockedPetIds, currentPet]
+    [selectedPetId, unlockedPetIds, currentPet, dailyDropInventory, lastPlacedDailyDrop]
   );
 
   return <PetContext.Provider value={value}>{children}</PetContext.Provider>;

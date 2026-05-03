@@ -1,4 +1,5 @@
-import { AlbumEntry, FamilyMember } from "../types";
+import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
+import { defaultPetId, type PetId } from "./pets";
 
 export const familyMembers: FamilyMember[] = [
   {
@@ -29,6 +30,16 @@ export const familyMembers: FamilyMember[] = [
       "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=400&auto=format&fit=crop",
   },
 ];
+
+export const mockFamilySelectedPetIds: Partial<Record<FamilyMemberId, PetId>> = {
+  me: "white-puppy",
+  mom: "orange-kitten",
+  dad: "corgi-puppy",
+};
+
+export function getFamilySelectedPetId(memberId: FamilyMemberId): PetId {
+  return mockFamilySelectedPetIds[memberId] ?? defaultPetId;
+}
 
 export const initialAlbumEntries: AlbumEntry[] = [
   {

@@ -42,7 +42,7 @@ export const petItems: PetItem[] = [
   },
   {
     id: "golden-puppy",
-    name: "Golden Puppy",
+    name: "Golden Retriever puppy",
     species: "dog",
     description: "A bright puppy for warm shared moments.",
     image: "/images/dog/Golden.png",
