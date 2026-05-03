@@ -9,7 +9,8 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { PixelPup } from "../components/pixel-pup";
+import { usePet } from "../context/pet-context";
+import { getPetProfileImage, type PetItem } from "../data/pets";
 import {
   AlbumEntry,
   AlbumReaction,
@@ -46,10 +47,11 @@ const reactionOptions: { value: Exclude<AlbumReaction, null>; emoji: string }[] 
   { value: "sad", emoji: "🥲" },
 ];
 
-function variantByMember(memberId: FamilyMemberId) {
-  if (memberId === "mom") return "pink";
-  if (memberId === "dad") return "blue";
-  return "white";
+const quickMessageTags = ["今天很忙", "想分享一下", "有点累", "开心一下"];
+
+function getMemberPetProfileImage(memberId: FamilyMemberId, currentPet: PetItem) {
+  if (memberId === "me") return getPetProfileImage(currentPet);
+  return "/images/dog/profile/dog-white.png";
 }
 
 function groupEntries(entries: AlbumEntry[]) {
@@ -149,6 +151,7 @@ export function ConnectPage({
   onCreateEntry,
   onUpdateReaction,
 }: ConnectPageProps) {
+  const { currentPet } = usePet();
   const [selectedMemberId, setSelectedMemberId] = useState<FamilyMemberId | null>(null);
   const [selectedRange, setSelectedRange] = useState<TimeRange>("week");
   const [draft, setDraft] = useState<UploadDraft | null>(null);
@@ -313,10 +316,10 @@ export function ConnectPage({
                   }`}
                 >
                   <div className="rounded-[10px] bg-[#f8eee7] p-2">
-                    <PixelPup
-                      size={2.8}
-                      headOnly
-                      variant={variantByMember(selectedMember.id)}
+                    <img
+                      src={getMemberPetProfileImage(selectedMember.id, currentPet)}
+                      alt={`${selectedMember.name}'s pet`}
+                      className="h-10 w-10 object-contain"
                     />
                   </div>
                   {summaryExpanded && (
@@ -471,7 +474,11 @@ export function ConnectPage({
               <div className="rounded-[24px] border border-[#efdfd1] bg-white px-4 py-4">
                 <div className="mb-3 flex items-center gap-3">
                   <div className="rounded-2xl bg-[#f7efe7] p-2">
-                    <PixelPup size={2.8} headOnly />
+                    <img
+                      src={getPetProfileImage(currentPet)}
+                      alt={currentPet.name}
+                      className="h-10 w-10 object-contain"
+                    />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-[#4f3c2e]">小狗传话</p>
@@ -492,6 +499,27 @@ export function ConnectPage({
                   rows={3}
                   className="w-full resize-none rounded-[20px] border border-[#ead8ca] bg-[#fffaf6] px-4 py-3 text-sm text-[#4f3c2e] outline-none placeholder:text-[#b59b89]"
                 />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {quickMessageTags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() =>
+                        setDraft((current) =>
+                          current ? { ...current, dogMessage: tag } : current
+                        )
+                      }
+                      className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                        draft.dogMessage === tag
+                          ? "bg-[#6d5645] text-white"
+                          : "bg-[#f7efe7] text-[#7b604f]"
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <button
@@ -540,7 +568,11 @@ export function ConnectPage({
                       </span>
                     </div>
                     <div className="mt-2 flex items-center gap-3 rounded-full bg-[#f5f5f6] px-3 py-2">
-                      <PixelPup size={2.1} headOnly variant={variantByMember(member.id)} />
+                      <img
+                        src={getMemberPetProfileImage(member.id, currentPet)}
+                        alt={`${member.name}'s pet`}
+                        className="h-8 w-8 object-contain"
+                      />
                       <p className="truncate text-[16px] text-[#1f1f1f]">
                         {latestEntry?.dogMessage.trim() || "To summarize?"}
                       </p>

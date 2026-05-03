@@ -9,6 +9,12 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
+import { weeklyCollectedDrops } from "../data/daily-drops";
+import {
+  selectWeeklyReward,
+  type WeeklyReward,
+  type WeeklyRewardStats,
+} from "../data/weekly-rewards";
 
 type EchoPageKey = "summary" | "moments" | "keepsakes";
 
@@ -22,39 +28,23 @@ const chalkFontStyle: CSSProperties = {
   fontFamily: '"Segoe Print", "Comic Sans MS", "Bradley Hand", cursive',
 };
 
-const weeklyStats = [
-  { label: "Pet messages", value: 3, icon: "🐾" },
-  { label: "Photo shares", value: 2, icon: "🖼️" },
-  { label: "Gentle reactions", value: 5, icon: "💗" },
-  { label: "Mood check-ins", value: 3, icon: "🫧" },
-];
-
-const weeklyMoments = [
-  "Mom reacted to your campus photo with a heart.",
-  "Dad left a short reply after dinner.",
-  "You shared 3 calm mood beads this week.",
-];
-
-const dailyDrops = [
-  { name: "Pet Biscuit", count: 3, type: "Food drop" },
-  { name: "Pet Milk", count: 1, type: "Drink drop" },
-  { name: "Small Ball", count: 2, type: "Basic toy" },
-];
-
 const petReplies: Record<PetReplyKey, string> = {
   gentle: "I kept the small moments safe for your family.",
   details: "This week felt warm: more reactions, a few photos, and gentle mood sharing.",
   thanks: "I can help you send a small thank-you back to your family.",
 };
 
-const weeklyKeepsake = {
-  name: "Cozy Bed",
-  emoji: "🛏️",
-  reason: "From this week's gentle family interactions.",
-  description: "A premium pet reward earned from your family's warm moments this week.",
-};
+interface WeeklyEchoPageProps {
+  stats: WeeklyRewardStats;
+  onAddKeepsake: (reward: WeeklyReward) => void;
+  addedKeepsakeIds: string[];
+}
 
-export function WeeklyEchoPage() {
+export function WeeklyEchoPage({
+  stats,
+  onAddKeepsake,
+  addedKeepsakeIds,
+}: WeeklyEchoPageProps) {
   const { currentPet } = usePet();
   const boardRef = useRef<HTMLDivElement | null>(null);
 
@@ -63,7 +53,19 @@ export function WeeklyEchoPage() {
 
   const [scene, setScene] = useState<WeeklyEchoScene>("boards");
   const [giftRevealStage, setGiftRevealStage] = useState<GiftRevealStage>("closed");
-  const [addedToToyBox, setAddedToToyBox] = useState(false);
+  const weeklyKeepsake = selectWeeklyReward(stats, currentPet.species);
+  const addedToToyBox = addedKeepsakeIds.includes(weeklyKeepsake.id);
+  const weeklyStats = [
+    { label: "Pet messages", value: stats.petMessages, icon: "🐾" },
+    { label: "Photo shares", value: stats.photoShares, icon: "🖼️" },
+    { label: "Gentle reactions", value: stats.gentleReactions, icon: "💗" },
+    { label: "Mood check-ins", value: stats.moodCheckIns, icon: "🫧" },
+  ];
+  const weeklyMoments = [
+    `Your family shared ${stats.photoShares} photos this week.`,
+    `${stats.petMessages} pet messages helped small moments travel home.`,
+    `${stats.gentleReactions} gentle reactions and ${stats.moodCheckIns} mood check-ins kept the week warm.`,
+  ];
   const giftBubbleText =
     giftRevealStage === "closed"
       ? "Tap the box to open it."
@@ -93,8 +95,8 @@ export function WeeklyEchoPage() {
       {
         key: "summary" as EchoPageKey,
         title: "This Week's Echo",
-        subtitle: "Your family shared 8 small moments.",
-        body: "You stayed lightly connected on 5 days. No pressure, just a few warm traces left behind.",
+        subtitle: `Your family shared ${stats.photoShares} small moments.`,
+        body: `You stayed lightly connected on ${stats.connectedDays} days. No pressure, just a few warm traces left behind.`,
       },
       {
         key: "moments" as EchoPageKey,
@@ -109,7 +111,7 @@ export function WeeklyEchoPage() {
         body: "Food drops can be used every day. Longer-lasting keepsakes are saved here as family memories.",
       },
     ],
-    []
+    [stats.connectedDays, stats.photoShares]
   );
 
   const scrollToPage = (index: number) => {
@@ -139,7 +141,6 @@ export function WeeklyEchoPage() {
           onClick={() => {
             setScene("boards");
             setGiftRevealStage("closed");
-            setAddedToToyBox(false);
           }}
           className="mb-4 flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-[#8d684d] shadow-sm"
         >
@@ -255,7 +256,7 @@ export function WeeklyEchoPage() {
 
                 <button
                   type="button"
-                  onClick={() => setAddedToToyBox(true)}
+                  onClick={() => onAddKeepsake(weeklyKeepsake)}
                   className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-bold shadow-sm transition ${
                     addedToToyBox
                       ? "bg-[#ead8c8] text-[#8b6042]"
@@ -374,7 +375,7 @@ export function WeeklyEchoPage() {
 
                 {page.key === "keepsakes" && (
                   <div className="mt-3 space-y-2">
-                    {dailyDrops.map((drop) => (
+                    {weeklyCollectedDrops.map((drop) => (
                       <div
                         key={drop.name}
                         className="flex items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-3 py-1.5"
@@ -385,7 +386,7 @@ export function WeeklyEchoPage() {
                             {drop.name} × {drop.count}
                           </div>
                           <div className="text-xs text-[#e7dcc0]">
-                            {drop.type}
+                            {drop.category}
                           </div>
                         </div>
                         <Gift className="h-5 w-5 text-[#f9d98f]" />
@@ -397,7 +398,6 @@ export function WeeklyEchoPage() {
                       onClick={() => {
                         setScene("gift");
                         setGiftRevealStage("closed");
-                        setAddedToToyBox(false);
                       }}
                       className="mt-4 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm"
                     >

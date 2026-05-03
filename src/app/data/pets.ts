@@ -109,3 +109,16 @@ export const petItems: PetItem[] = [
 export function getPetById(id: PetId) {
   return petItems.find((pet) => pet.id === id) ?? petItems[0];
 }
+
+export function getPetProfileImage(pet: PetItem) {
+  const segments = pet.image.split("/");
+  const fileName = segments[segments.length - 1];
+  const profileFileName =
+    pet.id === "white-kitten" ? "white-cat.png" : fileName;
+
+  if (pet.species === "cat") {
+    return `/images/cat/profile/${profileFileName}`;
+  }
+
+  return `/images/dog/profile/${profileFileName}`;
+}

@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { usePet } from "../context/pet-context";
 import { Bell } from "lucide-react";
+import type { WeeklyReward } from "../data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
 
 interface ChatPageProps {
   familyMembers: FamilyMember[];
   latestEntries: Record<FamilyMemberId, AlbumEntry | null>;
   bubbleMessage: string;
+  weeklyKeepsakes: WeeklyReward[];
 }
 
 type InventoryTab = "shop" | "food" | "toy";
@@ -35,6 +37,7 @@ export function ChatPage({
   familyMembers,
   latestEntries,
   bubbleMessage,
+  weeklyKeepsakes,
 }: ChatPageProps) {
   const { selectedPetId, setSelectedPetId, unlockedPetIds, currentPet, petItems } = usePet();
   const [selectedFamilyDog, setSelectedFamilyDog] =
@@ -347,6 +350,32 @@ export function ChatPage({
                     </button>
                   );
                 })}
+
+                {weeklyKeepsakes.map((keepsake) => (
+                  <button
+                    key={keepsake.id}
+                    type="button"
+                    onClick={() =>
+                      setPetFeedback(`${keepsake.name} is now in the Toy Box.`)
+                    }
+                    className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf] text-xl">
+                      {keepsake.emoji}
+                    </span>
+                    <span className="flex-1">
+                      <span className="block text-sm font-semibold text-[#49372a]">
+                        {keepsake.name}
+                      </span>
+                      <span className="block text-[11px] leading-4 text-[#8b705d]">
+                        {keepsake.description}
+                      </span>
+                    </span>
+                    <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                      Weekly
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
 

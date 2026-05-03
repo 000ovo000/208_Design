@@ -7,11 +7,13 @@ import { ProfilePage } from "./pages/profile-page";
 import { WeeklyEchoPage } from "./pages/weekly-echo-page";
 import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
+import type { WeeklyReward, WeeklyRewardStats } from "./data/weekly-rewards";
 import { AlbumEntry, FamilyMemberId, TabKey } from "./types";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(initialAlbumEntries);
+  const [weeklyKeepsakes, setWeeklyKeepsakes] = useState<WeeklyReward[]>([]);
   const [homeBubbleMessage, setHomeBubbleMessage] = useState(
     initialAlbumEntries.find((entry) => entry.memberId === "me" && entry.dogMessage)?.dogMessage ||
       "今天想让小狗帮你传什么话？"
@@ -32,10 +34,41 @@ export default function App() {
     );
   }, [albumEntries]);
 
+  const weeklyStats = useMemo<WeeklyRewardStats>(() => {
+    const weekEntries = albumEntries.filter((entry) => {
+      const parsed = new Date(entry.uploadedAt.replace(" ", "T"));
+      if (Number.isNaN(parsed.getTime())) return false;
+
+      const latestDate = new Date("2026-05-02T23:59:59");
+      const diffDays =
+        (latestDate.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays <= 7;
+    });
+
+    return {
+      petMessages: weekEntries.filter((entry) => entry.dogMessage.trim()).length,
+      photoShares: weekEntries.length,
+      gentleReactions: weekEntries.filter((entry) => entry.reaction).length,
+      moodCheckIns: 3,
+      connectedDays: new Set(
+        weekEntries.map((entry) => entry.uploadedAt.split(" ")[0])
+      ).size,
+    };
+  }, [albumEntries]);
+
+  const handleWeeklyKeepsakeAdd = (reward: WeeklyReward) => {
+    setWeeklyKeepsakes((prev) =>
+      prev.some((item) => item.id === reward.id) ? prev : [...prev, reward]
+    );
+  };
+
   const handleAlbumEntryCreate = (entry: AlbumEntry) => {
     setAlbumEntries((prev) => [entry, ...prev]);
-    if (entry.memberId === "me" && entry.dogMessage.trim()) {
-      setHomeBubbleMessage(entry.dogMessage.trim());
+    if (entry.memberId === "me") {
+      const me = familyMembers.find((member) => member.id === "me");
+      setHomeBubbleMessage(
+        entry.dogMessage.trim() || `${me?.name ?? "Grace"}的小狗有一张照片想给你看。`
+      );
       setActiveTab("home");
     }
   };
@@ -57,6 +90,7 @@ export default function App() {
             familyMembers={familyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
+            weeklyKeepsakes={weeklyKeepsakes}
           />
         );
 
@@ -74,7 +108,13 @@ export default function App() {
         return <JarPage />;
 
       case "echo":
-        return <WeeklyEchoPage />;
+        return (
+          <WeeklyEchoPage
+            stats={weeklyStats}
+            onAddKeepsake={handleWeeklyKeepsakeAdd}
+            addedKeepsakeIds={weeklyKeepsakes.map((item) => item.id)}
+          />
+        );
 
       case "profile":
         return <ProfilePage familyMembers={familyMembers} />;
@@ -85,6 +125,7 @@ export default function App() {
             familyMembers={familyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
+            weeklyKeepsakes={weeklyKeepsakes}
           />
         );
     }
