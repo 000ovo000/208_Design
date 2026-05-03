@@ -5,9 +5,10 @@ import { TabKey } from "../types";
 interface BottomNavProps {
   activeTab: TabKey;
   onTabChange: (tab: TabKey) => void;
+  hidden?: boolean;
 }
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export function BottomNav({ activeTab, onTabChange, hidden = false }: BottomNavProps) {
   const navItems = [
     { key: "home" as TabKey, icon: Home, label: "Home" },
     { key: "album" as TabKey, icon: Images, label: "Album" },
@@ -17,7 +18,13 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   ];
 
   return (
-    <div className="absolute z-40 translate-y-4 bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-white/50 px-4 pb-6 pt-3 rounded-t-3xl shadow-lg">
+    <div
+      className={`absolute z-40 bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-white/50 px-4 pb-6 pt-3 rounded-t-3xl shadow-lg transition-all duration-200 ${
+        hidden
+          ? "pointer-events-none translate-y-full opacity-0"
+          : "translate-y-4 opacity-100"
+      }`}
+    >
       <div className="flex items-center justify-around">
         {navItems.map((item, index) => {
           const isActive = activeTab === item.key;

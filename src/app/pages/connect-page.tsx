@@ -1,5 +1,6 @@
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   Camera,
   ChevronDown,
@@ -7,6 +8,7 @@ import {
   Send,
   Smile,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { usePet } from "../context/pet-context";
@@ -23,6 +25,8 @@ interface ConnectPageProps {
   albumEntries: AlbumEntry[];
   onCreateEntry: (entry: AlbumEntry) => void;
   onUpdateReaction: (entryId: string, reaction: AlbumReaction) => void;
+  onDeleteEntry: (entryId: string) => void;
+  onOverlayChange?: (hidden: boolean) => void;
 }
 
 type UploadDraft = {
@@ -32,6 +36,12 @@ type UploadDraft = {
 
 type TimeRange = "day" | "week" | "month" | "year";
 
+type DeleteMenuState = {
+  entryId: string;
+  x: number;
+  y: number;
+} | null;
+
 const rangeOptions: { key: TimeRange; label: string }[] = [
   { key: "day", label: "Today" },
   { key: "week", label: "Last Week" },
@@ -40,14 +50,19 @@ const rangeOptions: { key: TimeRange; label: string }[] = [
 ];
 
 const reactionOptions: { value: Exclude<AlbumReaction, null>; emoji: string }[] = [
-  { value: "smile", emoji: "🙂" },
+  { value: "smile", emoji: "😊" },
   { value: "love", emoji: "😍" },
   { value: "clap", emoji: "👏" },
   { value: "wow", emoji: "😮" },
-  { value: "sad", emoji: "🥲" },
+  { value: "sad", emoji: "😢" },
 ];
 
-const quickMessageTags = ["今天很忙", "想分享一下", "有点累", "开心一下"];
+const quickMessageTags = [
+  "Busy day today",
+  "Wanted to share this",
+  "A little tired",
+  "Feeling good",
+];
 
 function getMemberPetProfileImage(memberId: FamilyMemberId, currentPet: PetItem) {
   if (memberId === "me") return getPetProfileImage(currentPet);
@@ -116,29 +131,25 @@ function buildSummary(member: FamilyMember, range: TimeRange, entries: AlbumEntr
   const highlight = newest?.dogMessage.trim();
 
   if (!entries.length) {
-    if (range === "day") return `${member.dogName}总结：今天还没有新的更新。`;
-    if (range === "week") return `${member.dogName}总结：这周还没有新的更新。`;
-    if (range === "month") return `${member.dogName}总结：这个月还没有新的更新。`;
-    return `${member.dogName}总结：这一年还没有新的更新。`;
+    if (range === "day") return `${member.dogName} has not shared anything new today.`;
+    if (range === "week") return `${member.dogName} has not shared anything new this week.`;
+    if (range === "month") return `${member.dogName} has not shared anything new this month.`;
+    return `${member.dogName} has not shared anything new this year.`;
   }
 
   if (range === "day") {
-    return `${member.dogName}总结：今天更新了 ${entries.length} 张照片${highlight ? `，想说“${highlight}”` : "。"
-      }`;
+    return `${member.dogName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} today${highlight ? ` and wants to say "${highlight}"` : "."}`;
   }
 
   if (range === "week") {
-    return `${member.dogName}总结：这周一共更新了 ${entries.length} 张照片${highlight ? `，本周关键词是“${highlight}”` : "。"
-      }`;
+    return `${member.dogName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} this week${highlight ? `, and the main note was "${highlight}"` : "."}`;
   }
 
   if (range === "month") {
-    return `${member.dogName}总结：这个月记录了 ${entries.length} 张照片${highlight ? `，最近的一条是“${highlight}”` : "。"
-      }`;
+    return `${member.dogName} saved ${entries.length} photo${entries.length > 1 ? "s" : ""} this month${highlight ? `, and the latest note was "${highlight}"` : "."}`;
   }
 
-  return `${member.dogName}总结：这一年已经留下了 ${entries.length} 张照片${highlight ? `，印象最深的是“${highlight}”` : "。"
-    }`;
+  return `${member.dogName} kept ${entries.length} photo${entries.length > 1 ? "s" : ""} this year${highlight ? `, and the most memorable note was "${highlight}"` : "."}`;
 }
 
 function selectedReactionEmoji(reaction: AlbumReaction) {
@@ -150,6 +161,8 @@ export function ConnectPage({
   albumEntries,
   onCreateEntry,
   onUpdateReaction,
+  onDeleteEntry,
+  onOverlayChange,
 }: ConnectPageProps) {
   const { currentPet } = usePet();
   const [selectedMemberId, setSelectedMemberId] = useState<FamilyMemberId | null>(null);
@@ -159,6 +172,8 @@ export function ConnectPage({
   const [showUploadSheet, setShowUploadSheet] = useState(false);
   const [openReactionEntryId, setOpenReactionEntryId] = useState<string | null>(null);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [deleteMenu, setDeleteMenu] = useState<DeleteMenuState>(null);
+  const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -171,6 +186,34 @@ export function ConnectPage({
       matchesRange(entry.uploadedAt, selectedRange)
     );
   }, [albumsByMember, selectedMemberId, selectedRange]);
+
+  useEffect(() => {
+    onOverlayChange?.(
+      Boolean(
+        showUploadSheet ||
+          draft ||
+          showRangeMenu ||
+          openReactionEntryId ||
+          deleteMenu ||
+          pendingDeleteEntryId
+      )
+    );
+    return () => onOverlayChange?.(false);
+  }, [
+    deleteMenu,
+    draft,
+    onOverlayChange,
+    openReactionEntryId,
+    pendingDeleteEntryId,
+    showRangeMenu,
+    showUploadSheet,
+  ]);
+
+  const closeTransientUi = () => {
+    setShowRangeMenu(false);
+    setOpenReactionEntryId(null);
+    setDeleteMenu(null);
+  };
 
   const handleChooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -205,12 +248,24 @@ export function ConnectPage({
     setDraft(null);
   };
 
+  const handleDeleteConfirm = () => {
+    if (!pendingDeleteEntryId) return;
+    onDeleteEntry(pendingDeleteEntryId);
+    setPendingDeleteEntryId(null);
+    setDeleteMenu(null);
+  };
+
   if (selectedMember) {
     const rangeLabel =
       rangeOptions.find((item) => item.key === selectedRange)?.label ?? "Last Week";
 
     return (
-      <div className="relative flex h-full flex-col bg-[#f5ede5]">
+      <div
+        className="relative flex h-full flex-col bg-[#f5ede5]"
+        onClick={() => {
+          if (deleteMenu) setDeleteMenu(null);
+        }}
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -237,6 +292,8 @@ export function ConnectPage({
                 setShowUploadSheet(false);
                 setOpenReactionEntryId(null);
                 setSummaryExpanded(false);
+                setDeleteMenu(null);
+                setPendingDeleteEntryId(null);
               }}
               className="flex h-10 w-10 items-center justify-center rounded-full text-[#2d2721]"
             >
@@ -254,7 +311,11 @@ export function ConnectPage({
             <div className="relative flex justify-center">
               <button
                 type="button"
-                onClick={() => setShowRangeMenu((current) => !current)}
+                onClick={() => {
+                  setShowRangeMenu((current) => !current);
+                  setOpenReactionEntryId(null);
+                  setDeleteMenu(null);
+                }}
                 className="flex items-center gap-2 text-[18px] font-medium text-[#25211d]"
               >
                 <span>{rangeLabel}</span>
@@ -272,6 +333,7 @@ export function ConnectPage({
                         setShowRangeMenu(false);
                         setOpenReactionEntryId(null);
                         setSummaryExpanded(false);
+                        setDeleteMenu(null);
                       }}
                       className={`w-full rounded-[14px] px-3 py-2 text-sm ${
                         option.key === selectedRange
@@ -289,7 +351,10 @@ export function ConnectPage({
             {selectedMember.id === "me" ? (
               <button
                 type="button"
-                onClick={() => setShowUploadSheet(true)}
+                onClick={() => {
+                  closeTransientUi();
+                  setShowUploadSheet(true);
+                }}
                 className="ml-auto flex h-11 w-11 items-center justify-center rounded-[14px] bg-white text-black shadow-sm"
               >
                 <Camera className="h-5 w-5" />
@@ -310,7 +375,10 @@ export function ConnectPage({
               <div className="absolute left-0 top-2 z-10">
                 <button
                   type="button"
-                  onClick={() => setSummaryExpanded((current) => !current)}
+                  onClick={() => {
+                    setSummaryExpanded((current) => !current);
+                    setDeleteMenu(null);
+                  }}
                   className={`flex items-center gap-3 rounded-[20px] bg-white shadow-[0_16px_30px_rgba(93,67,46,0.12)] transition-all ${
                     summaryExpanded ? "max-w-[74%] px-4 py-4" : "px-3 py-3"
                   }`}
@@ -341,77 +409,158 @@ export function ConnectPage({
           )}
 
           <div className={`space-y-6 ${summaryExpanded ? "pt-20" : "pt-8"}`}>
-            {selectedEntries.map((entry) => (
-              <article key={entry.id} className="relative">
-                <div className="relative overflow-hidden rounded-[28px]">
-                  <img
-                    src={entry.imageUrl}
-                    alt={`${selectedMember.name} album`}
-                    className="aspect-[4/3.2] w-full object-cover"
-                  />
+            {selectedEntries.map((entry) => {
+              const canDelete = selectedMember.id === "me";
 
-                  <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/48 via-black/12 to-transparent px-5 pb-4 pt-10">
-                    <p className="text-[12px] tracking-[0.08em] text-white">
-                      {formatGalleryTime(entry.uploadedAt)}
-                    </p>
+              return (
+                <article key={entry.id} className="relative">
+                  <div
+                    className="relative overflow-hidden rounded-[28px]"
+                    onContextMenu={(event) => {
+                      if (!canDelete) return;
+                      event.preventDefault();
+                      setDeleteMenu({
+                        entryId: entry.id,
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
+                      setOpenReactionEntryId(null);
+                    }}
+                  >
+                    <img
+                      src={entry.imageUrl}
+                      alt={`${selectedMember.name} album`}
+                      className="aspect-[4/3.2] w-full object-cover"
+                    />
 
-                    <div className="relative">
-                      {openReactionEntryId === entry.id && (
-                        <div className="absolute bottom-16 right-0 flex gap-2 rounded-full bg-white/94 px-3 py-2 shadow-lg">
-                          {reactionOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => {
-                                onUpdateReaction(entry.id, option.value);
-                                setOpenReactionEntryId(null);
-                              }}
-                              className={`flex h-9 w-9 items-center justify-center rounded-full text-xl ${
-                                entry.reaction === option.value ? "bg-[#f3efe9]" : ""
-                              }`}
-                            >
-                              {option.emoji}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/48 via-black/12 to-transparent px-5 pb-4 pt-10">
+                      <p className="text-[12px] tracking-[0.08em] text-white">
+                        {formatGalleryTime(entry.uploadedAt)}
+                      </p>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenReactionEntryId((current) =>
-                            current === entry.id ? null : entry.id
-                          )
-                        }
-                        className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white/8 text-white backdrop-blur-sm"
-                      >
-                        {selectedReactionEmoji(entry.reaction) ? (
-                          <span className="text-[30px] leading-none">
-                            {selectedReactionEmoji(entry.reaction)}
-                          </span>
-                        ) : (
-                          <Smile className="h-7 w-7" strokeWidth={2.2} />
+                      <div className="relative">
+                        {openReactionEntryId === entry.id && (
+                          <div className="absolute bottom-16 right-0 flex gap-2 rounded-full bg-white/94 px-3 py-2 shadow-lg">
+                            {reactionOptions.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  onUpdateReaction(entry.id, option.value);
+                                  setOpenReactionEntryId(null);
+                                }}
+                                className={`flex h-9 w-9 items-center justify-center rounded-full text-xl ${
+                                  entry.reaction === option.value ? "bg-[#f3efe9]" : ""
+                                }`}
+                              >
+                                {option.emoji}
+                              </button>
+                            ))}
+                          </div>
                         )}
-                      </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenReactionEntryId((current) =>
+                              current === entry.id ? null : entry.id
+                            )
+                          }
+                          className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white/8 text-white backdrop-blur-sm"
+                        >
+                          {selectedReactionEmoji(entry.reaction) ? (
+                            <span className="text-[30px] leading-none">
+                              {selectedReactionEmoji(entry.reaction)}
+                            </span>
+                          ) : (
+                            <Smile className="h-7 w-7" strokeWidth={2.2} />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {entry.dogMessage.trim() && (
-                  <div className="mt-2 px-2 text-[14px] text-[#6d5849]">
-                    {entry.dogMessage}
-                  </div>
-                )}
-              </article>
-            ))}
+                  {entry.dogMessage.trim() && (
+                    <div className="mt-2 px-2 text-[14px] text-[#6d5849]">
+                      {entry.dogMessage}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
 
             {selectedEntries.length === 0 && (
               <div className="rounded-[24px] bg-white px-5 py-6 text-center text-sm leading-6 text-[#8d7060] shadow-[0_12px_28px_rgba(79,57,38,0.08)]">
-                这个时间范围里还没有内容。
+                There is nothing in this time range yet.
               </div>
             )}
           </div>
         </div>
+
+        {deleteMenu && (
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setDeleteMenu(null)}
+          >
+            <div
+              className="absolute w-40 rounded-[18px] border border-[#eadbcd] bg-white p-1 shadow-[0_14px_30px_rgba(89,67,49,0.18)]"
+              style={{
+                left: Math.min(deleteMenu.x, window.innerWidth - 172),
+                top: Math.min(deleteMenu.y, window.innerHeight - 80),
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingDeleteEntryId(deleteMenu.entryId);
+                  setDeleteMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-sm font-semibold text-[#9b3d2e] hover:bg-[#fff2ef]"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete photo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pendingDeleteEntryId && (
+          <div className="absolute inset-0 z-50 flex items-end bg-black/30 px-4 pb-6">
+            <div className="w-full rounded-[28px] bg-white p-5 shadow-2xl">
+              <div className="mb-4 flex items-start gap-3">
+                <div className="rounded-2xl bg-[#fff2ef] p-3 text-[#c14d36]">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[#3f2f24]">
+                    Delete this photo?
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-[#8b705d]">
+                    This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPendingDeleteEntryId(null)}
+                  className="flex-1 rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm font-semibold text-[#745d4c]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteConfirm}
+                  className="flex-1 rounded-[18px] bg-[#c14d36] px-4 py-3 text-sm font-semibold text-white"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showUploadSheet && selectedMember.id === "me" && (
           <div className="absolute inset-0 z-40 flex items-end bg-black/20 px-5 pb-6">
@@ -423,7 +572,7 @@ export function ConnectPage({
                   className="flex flex-col items-center justify-center rounded-[22px] bg-[#f8efe4] px-4 py-5 text-[#5d4637]"
                 >
                   <Camera className="mb-2 h-6 w-6" />
-                  <span className="text-sm font-semibold">相机</span>
+                  <span className="text-sm font-semibold">Camera</span>
                 </button>
                 <button
                   type="button"
@@ -431,15 +580,15 @@ export function ConnectPage({
                   className="flex flex-col items-center justify-center rounded-[22px] bg-[#eef4fb] px-4 py-5 text-[#465c78]"
                 >
                   <ImagePlus className="mb-2 h-6 w-6" />
-                  <span className="text-sm font-semibold">相册</span>
+                  <span className="text-sm font-semibold">Library</span>
                 </button>
               </div>
               <button
                 type="button"
                 onClick={() => setShowUploadSheet(false)}
-                className="mt-3 w-full rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm text-[#745d4c]"
+                className="mt-3 w-full rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm font-semibold text-[#745d4c]"
               >
-                取消
+                Cancel
               </button>
             </div>
           </div>
@@ -450,9 +599,9 @@ export function ConnectPage({
             <div className="w-full max-w-md rounded-[30px] bg-[#fffaf5] p-5 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-[#3f2f24]">确认上传</h2>
+                  <h2 className="text-lg font-semibold text-[#3f2f24]">Confirm upload</h2>
                   <p className="mt-1 text-sm text-[#8b705d]">
-                    自己上传的图片仍然会保留小狗传话功能。
+                    Your own upload can still carry a pet note to the home page.
                   </p>
                 </div>
 
@@ -481,9 +630,9 @@ export function ConnectPage({
                     />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-[#4f3c2e]">小狗传话</p>
+                    <p className="text-sm font-semibold text-[#4f3c2e]">Pet note</p>
                     <p className="text-xs text-[#9a7e69]">
-                      例如：今天过得很好，想把这句话同步到首页。
+                      Example: Today felt good, so I want this note to appear on the home page.
                     </p>
                   </div>
                 </div>
@@ -495,7 +644,7 @@ export function ConnectPage({
                       current ? { ...current, dogMessage: event.target.value } : current
                     )
                   }
-                  placeholder="输入想让首页小狗说的话"
+                  placeholder="Write the line you want the home pet to say"
                   rows={3}
                   className="w-full resize-none rounded-[20px] border border-[#ead8ca] bg-[#fffaf6] px-4 py-3 text-sm text-[#4f3c2e] outline-none placeholder:text-[#b59b89]"
                 />
@@ -528,7 +677,7 @@ export function ConnectPage({
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#6d5645] px-4 py-4 text-sm font-semibold text-white"
               >
                 <Send className="h-4 w-4" />
-                提交图片和传话
+                Save photo and note
               </button>
             </div>
           </div>
@@ -574,7 +723,7 @@ export function ConnectPage({
                         className="h-8 w-8 object-contain"
                       />
                       <p className="truncate text-[16px] text-[#1f1f1f]">
-                        {latestEntry?.dogMessage.trim() || "To summarize?"}
+                        {latestEntry?.dogMessage.trim() || "Tap to open the album"}
                       </p>
                     </div>
                   </div>
@@ -589,7 +738,7 @@ export function ConnectPage({
                     />
                   ) : (
                     <div className="flex aspect-[4/3.9] items-center justify-center bg-[#f7f1eb] text-sm text-[#a18a79]">
-                      还没有上传图片
+                      No photo uploaded yet
                     </div>
                   )}
                 </div>

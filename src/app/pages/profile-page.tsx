@@ -17,10 +17,10 @@ export function ProfilePage({ familyMembers }: ProfilePageProps) {
           Settings
         </p>
         <h1 className="mt-2 text-[30px] font-semibold text-[#3d2d22]">
-          个人设置
+          Account
         </h1>
         <p className="mt-2 text-sm leading-6 text-[#8b705d]">
-          管理当前账号、家庭关系和小狗提醒方式。
+          Manage the current profile, family connections, and pet reminders.
         </p>
 
         <section className="mt-6 rounded-[30px] border border-white/80 bg-white/86 p-5 shadow-[0_14px_30px_rgba(84,62,44,0.08)]">
@@ -33,9 +33,9 @@ export function ProfilePage({ familyMembers }: ProfilePageProps) {
               />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-lg font-semibold text-[#463326]">{me?.name ?? "我"}</p>
+              <p className="text-lg font-semibold text-[#463326]">{me?.name ?? "Me"}</p>
               <p className="mt-1 text-sm text-[#8b705d]">
-                当前绑定宠物：{currentPet.name}
+                Current pet: {currentPet.name}
               </p>
             </div>
             <UserRound className="h-5 w-5 text-[#8b705d]" />
@@ -46,18 +46,18 @@ export function ProfilePage({ familyMembers }: ProfilePageProps) {
           {[
             {
               icon: Dog,
-              title: "家庭成员",
-              desc: `当前已连接 ${familyMembers.length} 位家庭成员`,
+              title: "Family members",
+              desc: `${familyMembers.length} family members are connected right now.`,
             },
             {
               icon: Bell,
-              title: "通知提醒",
-              desc: "上传新图片后提醒首页狗狗同步更新",
+              title: "Notifications",
+              desc: "New uploads can update the home pet and trigger reminders.",
             },
             {
               icon: ShieldCheck,
-              title: "隐私设置",
-              desc: "图片按个人相册独立展示，仅显示上传时间",
+              title: "Privacy",
+              desc: "Photos stay grouped by personal album and only show upload time.",
             },
           ].map((item) => (
             <article

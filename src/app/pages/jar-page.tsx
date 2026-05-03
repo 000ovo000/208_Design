@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CalendarDays, Check, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
@@ -1311,7 +1311,11 @@ function MainJarView({
   );
 }
 
-export function JarPage() {
+export function JarPage({
+  onOverlayChange,
+}: {
+  onOverlayChange?: (hidden: boolean) => void;
+}) {
   const { selectedPetId, setSelectedPetId, unlockedPetIds, currentPet, petItems } = usePet();
   const [note, setNote] = useState("");
   const [view, setView] = useState<JarView>("main");
@@ -1404,6 +1408,11 @@ export function JarPage() {
 
   const isAnyOverlayOpen =
     editor.open || existingDayDialog.open || candyMessageDialog.open;
+
+  useEffect(() => {
+    onOverlayChange?.(isAnyOverlayOpen);
+    return () => onOverlayChange?.(false);
+  }, [isAnyOverlayOpen, onOverlayChange]);
 
   const candyMessageLabel = candyMessageDialog.candy
     ? `${monthNames[Number(candyMessageDialog.candy.monthKey.split("-")[1]) - 1]} ${

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Bell } from "lucide-react";
+﻿import { useEffect, useMemo, useState } from "react";
+import { Bell, MessageCircle, Send } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
 import {
@@ -18,16 +18,35 @@ interface ChatPageProps {
   latestEntries: Record<FamilyMemberId, AlbumEntry | null>;
   bubbleMessage: string;
   weeklyKeepsakes: WeeklyReward[];
+  onOverlayChange?: (hidden: boolean) => void;
 }
 
 type InventoryTab = "shop" | "food" | "toy";
 type DailyDropState = "available" | "claiming" | "claimed";
 type StorageArea = "food" | "toy";
+type PetMessage = {
+  id: string;
+  fromId: FamilyMemberId;
+  toId: FamilyMemberId;
+  text: string;
+  createdAt: string;
+  readAt: string | null;
+};
+
+const PET_MESSAGES_STORAGE_KEY = "kinlight:petMessages";
+const DEMO_INCOMING_MESSAGE: PetMessage = {
+  id: "demo-incoming-mom",
+  fromId: "mom",
+  toId: "me",
+  text: "I left a small note for you. Call me when you are free.",
+  createdAt: "2026-05-03T10:15:00.000Z",
+  readAt: null,
+};
 
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
   { key: "shop", label: "Shop", title: "Pet Collection", emoji: "🛍️" },
   { key: "food", label: "Food", title: "Food Storage", emoji: "🍪" },
-  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🎾" },
+  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
 ];
 
 const getPetSpeakerLabel = (member: FamilyMember) => `${member.name}'s pet`;
@@ -40,11 +59,33 @@ const pickRandomDrop = (drops: DailyDrop[]) => {
   return drops[Math.floor(Math.random() * drops.length)] ?? dailyDrops[0];
 };
 
+const readPetMessages = (): PetMessage[] => {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PET_MESSAGES_STORAGE_KEY) || "[]");
+    if (!Array.isArray(saved)) return [];
+
+    return saved.filter(
+      (item): item is PetMessage =>
+        typeof item?.id === "string" &&
+        typeof item?.fromId === "string" &&
+        typeof item?.toId === "string" &&
+        typeof item?.text === "string" &&
+        typeof item?.createdAt === "string" &&
+        (typeof item?.readAt === "string" || item?.readAt === null)
+    );
+  } catch {
+    return [];
+  }
+};
+
 export function ChatPage({
   familyMembers,
   latestEntries,
   bubbleMessage,
   weeklyKeepsakes,
+  onOverlayChange,
 }: ChatPageProps) {
   const {
     selectedPetId,
@@ -69,6 +110,10 @@ export function ChatPage({
   });
   const [storagePulse, setStoragePulse] = useState<StorageArea | null>(null);
   const [petFeedback, setPetFeedback] = useState("Your companion is waiting for a small family moment.");
+  const [petMessages, setPetMessages] = useState<PetMessage[]>(readPetMessages);
+  const [contextMemberId, setContextMemberId] = useState<FamilyMemberId | null>(null);
+  const [messageTargetId, setMessageTargetId] = useState<FamilyMemberId | null>(null);
+  const [messageDraft, setMessageDraft] = useState("");
 
   const me =
     familyMembers.find((member) => member.id === "me") ?? familyMembers[0];
@@ -78,13 +123,29 @@ export function ChatPage({
   const selectedMember =
     familyMembers.find((member) => member.id === selectedFamilyDog) ?? me;
 
+  const activeIncomingMessage =
+    selectedFamilyDog === "me"
+      ? null
+      : petMessages.find(
+          (message) =>
+            !message.readAt &&
+            message.toId === "me" &&
+            message.fromId === selectedFamilyDog
+        ) ?? null;
+
   const selectedBubble =
     selectedFamilyDog === "me"
       ? bubbleMessage
-      : latestEntries[selectedFamilyDog]?.dogMessage?.trim() ||
+      : activeIncomingMessage?.text.trim() ||
+        latestEntries[selectedFamilyDog]?.dogMessage?.trim() ||
         "No message yet.";
 
   const selectedBubbleSpeaker = getPetSpeakerLabel(selectedMember);
+  const messageTarget = familyMembers.find((member) => member.id === messageTargetId) ?? null;
+  const selectedDisplayPet =
+    selectedFamilyDog === "me"
+      ? currentPet
+      : getPetById(getFamilySelectedPetId(selectedFamilyDog));
 
   const availableDailyDrops = useMemo(() => {
     return getDailyDropsForPet(currentPet.species);
@@ -99,6 +160,26 @@ export function ChatPage({
     setDailyDropState("available");
     setCollectedMessage("");
   }, [availableDailyDrops]);
+
+  useEffect(() => {
+    setPetMessages((prev) => {
+      const hasIncomingDemo = prev.some(
+        (message) =>
+          message.toId === "me" &&
+          (message.fromId === "mom" || message.fromId === "dad")
+      );
+      return hasIncomingDemo ? prev : [DEMO_INCOMING_MESSAGE, ...prev];
+    });
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(PET_MESSAGES_STORAGE_KEY, JSON.stringify(petMessages));
+  }, [petMessages]);
+
+  useEffect(() => {
+    onOverlayChange?.(Boolean(messageTarget || activeInventory || contextMemberId));
+    return () => onOverlayChange?.(false);
+  }, [activeInventory, contextMemberId, messageTarget, onOverlayChange]);
 
   const foodInventory = useMemo(
     () =>
@@ -126,10 +207,59 @@ export function ChatPage({
 
   const openInventory = (tab: InventoryTab) => {
     setActiveInventory(tab);
+    setContextMemberId(null);
 
     if (tab === "food" || tab === "toy") {
       setStorageDot((prev) => ({ ...prev, [tab]: false }));
     }
+  };
+
+  const hasPetMessageDot = (memberId: FamilyMemberId) => {
+    return petMessages.some(
+      (message) =>
+        !message.readAt &&
+        ((message.toId === "me" && message.fromId === memberId) ||
+          message.toId === memberId)
+    );
+  };
+
+  const openMessageComposer = (memberId: FamilyMemberId) => {
+    setContextMemberId(null);
+    setMessageTargetId(memberId);
+    setMessageDraft("");
+  };
+
+  const focusFamilyPet = (memberId: FamilyMemberId) => {
+    const nextMemberId = selectedFamilyDog === memberId ? "me" : memberId;
+    setSelectedFamilyDog(nextMemberId);
+    setContextMemberId(null);
+
+    setPetMessages((prev) =>
+      prev.map((message) =>
+        !message.readAt && message.toId === "me" && message.fromId === memberId
+          ? { ...message, readAt: new Date().toISOString() }
+          : message
+      )
+    );
+  };
+
+  const sendPetMessage = () => {
+    const text = messageDraft.trim();
+    if (!messageTarget || !text) return;
+
+    const nextMessage: PetMessage = {
+      id: `pet-message-${Date.now()}`,
+      fromId: "me",
+      toId: messageTarget.id,
+      text,
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    };
+
+    setPetMessages((prev) => [nextMessage, ...prev]);
+    setPetFeedback(`Message sent to ${messageTarget.name}'s pet.`);
+    setMessageTargetId(null);
+    setMessageDraft("");
   };
 
   const claimDailyDrop = () => {
@@ -218,28 +348,60 @@ export function ChatPage({
             {parentMembers.map((member) => {
               const isActive = selectedFamilyDog === member.id;
               const familyPet = getPetById(getFamilySelectedPetId(member.id));
+              const showMessageDot = hasPetMessageDot(member.id);
+              const contextOpen = contextMemberId === member.id;
 
               return (
-                <button
+                <div
                   key={member.id}
-                  type="button"
-                  onClick={() => setSelectedFamilyDog(member.id)}
-                  className={`w-[72px] rounded-2xl px-0 py-1 text-center transition ${
+                  className={`relative w-[72px] rounded-2xl px-0 py-1 text-center transition ${
                     isActive ? "bg-white/55 shadow-[0_8px_18px_rgba(97,74,56,0.08)]" : ""
                   }`}
                 >
-                  <p className="mb-1 text-xs font-semibold text-[#5a4433]">
+                  <button
+                    type="button"
+                    onClick={() => focusFamilyPet(member.id)}
+                    className="mb-1 w-full text-xs font-semibold text-[#5a4433]"
+                  >
                     {member.name}
-                  </p>
+                  </button>
 
-                  <div className="mx-auto flex w-fit items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => focusFamilyPet(member.id)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setSelectedFamilyDog(member.id);
+                      setContextMemberId((current) =>
+                        current === member.id ? null : member.id
+                      );
+                    }}
+                    className="relative mx-auto flex w-fit items-center justify-center"
+                    aria-label={`Open ${member.name}'s pet actions`}
+                  >
                     <img
                       src={getPetProfileImage(familyPet)}
                       alt={`${member.name}'s pet`}
                       className="h-12 w-12 object-contain"
                     />
-                  </div>
-                </button>
+                    {showMessageDot && (
+                      <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-white bg-[#e84a3a] shadow-sm" />
+                    )}
+                  </button>
+
+                  {contextOpen && (
+                    <div className="absolute left-[58px] top-6 z-30 w-28 rounded-2xl border border-white/80 bg-white/95 p-1 text-left shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur">
+                      <button
+                        type="button"
+                        onClick={() => openMessageComposer(member.id)}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[#5d4435] hover:bg-[#f7eadf]"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        Send note
+                      </button>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -375,18 +537,18 @@ export function ChatPage({
               )}
 
               <img
-                src={currentPet.image}
-                alt={`${me.name}'s companion pet ${me.dogName}`}
+                src={selectedDisplayPet.image}
+                alt={`${selectedMember.name}'s companion pet`}
                 className="h-[190px] w-auto object-contain drop-shadow-[0_14px_18px_rgba(73,56,42,0.18)]"
               />
             </div>
 
             <p className="mt-3 text-sm font-semibold text-[#4c3a2d]">
-              {me.name}'s companion pet {me.dogName}
+              {selectedMember.name}'s companion pet {selectedMember.dogName}
             </p>
 
             <p className="mt-1 text-[11px] text-[#8b705d]">
-              {currentPet.name} · {lastPlacedDailyDrop ? lastPlacedDailyDrop.name : "waiting for care"}
+              {selectedDisplayPet.name} · {lastPlacedDailyDrop ? lastPlacedDailyDrop.name : "waiting for care"}
             </p>
 
             {selectedFamilyDog !== "me" && (
@@ -416,6 +578,68 @@ export function ChatPage({
         </div>
       </div>
 
+      {messageTarget && (
+        <div className="absolute inset-0 z-40 flex items-end bg-[#3d2d22]/28 px-4 pb-5 backdrop-blur-sm">
+          <div className="w-full rounded-[28px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f7eadf]">
+                  <img
+                    src={getPetProfileImage(
+                      getPetById(getFamilySelectedPetId(messageTarget.id))
+                    )}
+                    alt={`${messageTarget.name}'s pet`}
+                    className="h-10 w-10 object-contain"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#49372a]">
+                    Send a note to {messageTarget.name}
+                  </p>
+                  <p className="mt-1 text-xs leading-4 text-[#8b705d]">
+                    This note will stay in that pet's unread inbox.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <textarea
+              value={messageDraft}
+              onChange={(event) => setMessageDraft(event.target.value)}
+              placeholder="Type the message you want this pet to deliver"
+              rows={4}
+              className="w-full resize-none rounded-[22px] border border-[#ead8ca] bg-white px-4 py-3 text-sm leading-6 text-[#4f3c2e] outline-none placeholder:text-[#b59b89]"
+            />
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMessageTargetId(null);
+                  setMessageDraft("");
+                }}
+                className="flex-1 rounded-[20px] border border-[#e6d6c7] bg-white px-4 py-3 text-sm font-semibold text-[#7d6554]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={sendPetMessage}
+                disabled={!messageDraft.trim()}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-[20px] px-4 py-3 text-sm font-semibold transition ${
+                  messageDraft.trim()
+                    ? "bg-[#6d5645] text-white"
+                    : "bg-[#eadfd4] text-[#9a8170]"
+                }`}
+              >
+                <Send className="h-4 w-4" />
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeInventory && (
         <div className="absolute inset-0 z-30 flex items-end bg-[#3d2d22]/28 px-3 pb-5 backdrop-blur-sm">
           <div className="max-h-[82vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]">
@@ -434,7 +658,7 @@ export function ChatPage({
                 onClick={() => setActiveInventory(null)}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3e5d8] text-sm font-bold text-[#7d6554]"
               >
-                ×
+                X
               </button>
             </div>
 
@@ -502,7 +726,7 @@ export function ChatPage({
                         </span>
                       </span>
                       <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        × {count}
+                        x {count}
                       </span>
                     </button>
                   );
@@ -543,7 +767,7 @@ export function ChatPage({
                         </span>
                       </span>
                       <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        Use × {count}
+                        Use x {count}
                       </span>
                     </button>
                   );

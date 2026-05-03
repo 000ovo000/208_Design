@@ -12,11 +12,12 @@ import { AlbumEntry, FamilyMemberId, TabKey } from "./types";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const [bottomNavHidden, setBottomNavHidden] = useState(false);
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(initialAlbumEntries);
   const [weeklyKeepsakes, setWeeklyKeepsakes] = useState<WeeklyReward[]>([]);
   const [homeBubbleMessage, setHomeBubbleMessage] = useState(
     initialAlbumEntries.find((entry) => entry.memberId === "me" && entry.dogMessage)?.dogMessage ||
-      "今天想让小狗帮你传什么话？"
+      "What do you want your pet to say today?"
   );
 
   const latestEntries = useMemo(() => {
@@ -67,7 +68,7 @@ export default function App() {
     if (entry.memberId === "me") {
       const me = familyMembers.find((member) => member.id === "me");
       setHomeBubbleMessage(
-        entry.dogMessage.trim() || `${me?.name ?? "Grace"}的小狗有一张照片想给你看。`
+        entry.dogMessage.trim() || `${me?.name ?? "Grace"}'s pet has a photo to show you.`
       );
       setActiveTab("home");
     }
@@ -82,6 +83,10 @@ export default function App() {
     );
   };
 
+  const handleAlbumEntryDelete = (entryId: string) => {
+    setAlbumEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+  };
+
   const renderPage = () => {
     switch (activeTab) {
       case "home":
@@ -91,6 +96,7 @@ export default function App() {
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
             weeklyKeepsakes={weeklyKeepsakes}
+            onOverlayChange={setBottomNavHidden}
           />
         );
 
@@ -101,11 +107,13 @@ export default function App() {
             albumEntries={albumEntries}
             onCreateEntry={handleAlbumEntryCreate}
             onUpdateReaction={handleAlbumEntryReactionChange}
+            onDeleteEntry={handleAlbumEntryDelete}
+            onOverlayChange={setBottomNavHidden}
           />
         );
 
       case "jar":
-        return <JarPage />;
+        return <JarPage onOverlayChange={setBottomNavHidden} />;
 
       case "echo":
         return (
@@ -126,6 +134,7 @@ export default function App() {
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
             weeklyKeepsakes={weeklyKeepsakes}
+            onOverlayChange={setBottomNavHidden}
           />
         );
     }
@@ -140,53 +149,57 @@ export default function App() {
 
         <div className="iphone-frame-shell">
           <div className="iphone-screen">
-          <header className="iphone-status-bar">
-            <span className="iphone-time">9:41</span>
+            <header className="iphone-status-bar">
+              <span className="iphone-time">9:41</span>
 
-            <div className="iphone-status-icons" aria-label="phone status">
-              <span className="signal-icon" aria-hidden="true">
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-              </span>
+              <div className="iphone-status-icons" aria-label="phone status">
+                <span className="signal-icon" aria-hidden="true">
+                  <i></i>
+                  <i></i>
+                  <i></i>
+                  <i></i>
+                </span>
 
-              <span className="wifi-icon" aria-hidden="true">
-                <svg viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg">
-                  <path
-                    d="M3.45 4.45C6.35 2.4 11.65 2.4 14.55 4.45"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    fill="none"
-                  />
-                  <path
-                    d="M6.05 7.1C7.7 5.95 10.3 5.95 11.95 7.1"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    fill="none"
-                  />
-                  <path
-                    d="M9 9.92
-                       C8.32 9.92 7.78 9.42 7.78 8.84
-                       C8.14 8.52 8.5 8.3 9 8.3
-                       C9.5 8.3 9.86 8.52 10.22 8.84
-                       C10.22 9.42 9.68 9.92 9 9.92Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </span>
+                <span className="wifi-icon" aria-hidden="true">
+                  <svg viewBox="0 0 18 12" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                      d="M3.45 4.45C6.35 2.4 11.65 2.4 14.55 4.45"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                    <path
+                      d="M6.05 7.1C7.7 5.95 10.3 5.95 11.95 7.1"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                    <path
+                      d="M9 9.92
+                         C8.32 9.92 7.78 9.42 7.78 8.84
+                         C8.14 8.52 8.5 8.3 9 8.3
+                         C9.5 8.3 9.86 8.52 10.22 8.84
+                         C10.22 9.42 9.68 9.92 9 9.92Z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </span>
 
-              <span className="battery-icon" aria-hidden="true">
-                <span className="battery-level"></span>
-              </span>
-            </div>
-          </header>
+                <span className="battery-icon" aria-hidden="true">
+                  <span className="battery-level"></span>
+                </span>
+              </div>
+            </header>
 
-          <main className="iphone-content">{renderPage()}</main>
+            <main className="iphone-content">{renderPage()}</main>
 
-          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+            <BottomNav
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              hidden={bottomNavHidden}
+            />
           </div>
         </div>
       </div>

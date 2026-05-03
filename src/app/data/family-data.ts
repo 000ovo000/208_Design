@@ -5,8 +5,8 @@ export const familyMembers: FamilyMember[] = [
   {
     id: "me",
     name: "Grace",
-    role: "我的相册",
-    dogName: "团团",
+    role: "My album",
+    dogName: "Mochi",
     accentColor: "#f4b183",
     avatarUrl:
       "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=400&auto=format&fit=crop",
@@ -14,8 +14,8 @@ export const familyMembers: FamilyMember[] = [
   {
     id: "mom",
     name: "Mom",
-    role: "妈妈的相册",
-    dogName: "糖糖",
+    role: "Mom's album",
+    dogName: "Toffee",
     accentColor: "#f29fb1",
     avatarUrl:
       "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=400&auto=format&fit=crop",
@@ -23,8 +23,8 @@ export const familyMembers: FamilyMember[] = [
   {
     id: "dad",
     name: "Dad",
-    role: "爸爸的相册",
-    dogName: "栗栗",
+    role: "Dad's album",
+    dogName: "Chestnut",
     accentColor: "#8fb5e8",
     avatarUrl:
       "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=400&auto=format&fit=crop",
@@ -48,7 +48,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1511920170033-f8396924c348?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-05-01 08:00",
-    dogMessage: "早上的桌面和热饮看起来很治愈。",
+    dogMessage: "The desk and morning drink felt calm today.",
     reaction: "smile",
   },
   {
@@ -66,7 +66,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1511044568932-338cba0ad803?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-04-30 22:10",
-    dogMessage: "今天用毛绒小狗收尾，心情很放松。",
+    dogMessage: "Ending the day with the plush dog felt relaxing.",
     reaction: null,
   },
   {
@@ -75,7 +75,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-04-16 09:20",
-    dogMessage: "四月中旬也记得好好吃饭。",
+    dogMessage: "Mid-April still deserves a proper meal.",
     reaction: null,
   },
   {
@@ -84,7 +84,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-02-07 17:40",
-    dogMessage: "年初的散步也被记录下来了。",
+    dogMessage: "Even the early-year walk was worth saving.",
     reaction: null,
   },
   {
@@ -93,7 +93,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-05-01 08:00",
-    dogMessage: "good weather",
+    dogMessage: "Good weather today.",
     reaction: "smile",
   },
   {
@@ -102,7 +102,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-05-02 11:30",
-    dogMessage: "今天的山坡很安静。",
+    dogMessage: "The hillside felt quiet today.",
     reaction: null,
   },
   {
@@ -111,7 +111,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-04-26 21:00",
-    dogMessage: "晚上也想记录一点生活。",
+    dogMessage: "I still wanted to save a little of the evening.",
     reaction: null,
   },
   {
@@ -120,7 +120,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-03-20 18:10",
-    dogMessage: "三月也有很温柔的天空。",
+    dogMessage: "March had a gentle sky too.",
     reaction: null,
   },
   {
@@ -129,7 +129,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-01-12 07:50",
-    dogMessage: "年初的清晨光线很好。",
+    dogMessage: "The early morning light at the start of the year was lovely.",
     reaction: null,
   },
   {
@@ -138,7 +138,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1544943910-4c1dc44aab44?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-05-02 11:30",
-    dogMessage: "fish",
+    dogMessage: "Fish.",
     reaction: "clap",
   },
   {
@@ -147,7 +147,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-04-29 16:10",
-    dogMessage: "这张雪山留给四月末。",
+    dogMessage: "Saving this snow mountain for the end of April.",
     reaction: null,
   },
   {
@@ -156,7 +156,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-04-20 18:30",
-    dogMessage: "春天的黄昏也值得留一张。",
+    dogMessage: "Spring dusk deserved one more photo.",
     reaction: null,
   },
   {
@@ -165,7 +165,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2026-03-11 10:20",
-    dogMessage: "三月的远景像旅行海报。",
+    dogMessage: "The March view looked like a travel poster.",
     reaction: null,
   },
   {
@@ -174,7 +174,7 @@ export const initialAlbumEntries: AlbumEntry[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=1200&auto=format&fit=crop",
     uploadedAt: "2025-11-08 15:15",
-    dogMessage: "去年的风景也保留下来。",
+    dogMessage: "I kept last year's landscape too.",
     reaction: null,
   },
 ];
