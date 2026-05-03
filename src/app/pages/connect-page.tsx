@@ -1,5 +1,6 @@
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   Camera,
   ChevronDown,
@@ -7,6 +8,7 @@ import {
   Send,
   Smile,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { usePet } from "../context/pet-context";
@@ -23,14 +25,44 @@ interface ConnectPageProps {
   albumEntries: AlbumEntry[];
   onCreateEntry: (entry: AlbumEntry) => void;
   onUpdateReaction: (entryId: string, reaction: AlbumReaction) => void;
+  onDeleteEntry: (entryId: string) => void;
+  onOverlayChange?: (hidden: boolean) => void;
 }
 
 type UploadDraft = {
   imageUrl: string;
+  file: File | null;
   dogMessage: string;
 };
 
+type DbPost = {
+  id: number | string;
+  family_member_id?: number | string;
+  user_id?: number;
+  family_id?: number;
+  title?: string;
+  content?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  uploadedAt?: string;
+  reaction?: AlbumReaction;
+};
+type CurrentUser = {
+  id: number | string;
+  name: string;
+  email?: string;
+  family_id?: number | string;
+};
+
 type TimeRange = "day" | "week" | "month" | "year";
+
+type DeleteMenuState = {
+  entryId: string;
+  x: number;
+  y: number;
+} | null;
 
 const rangeOptions: { key: TimeRange; label: string }[] = [
   { key: "day", label: "Today" },
@@ -40,32 +72,44 @@ const rangeOptions: { key: TimeRange; label: string }[] = [
 ];
 
 const reactionOptions: { value: Exclude<AlbumReaction, null>; emoji: string }[] = [
-  { value: "smile", emoji: "🙂" },
+  { value: "smile", emoji: "😊" },
   { value: "love", emoji: "😍" },
   { value: "clap", emoji: "👏" },
   { value: "wow", emoji: "😮" },
-  { value: "sad", emoji: "🥲" },
+  { value: "sad", emoji: "😢" },
 ];
 
-const quickMessageTags = ["今天很忙", "想分享一下", "有点累", "开心一下"];
+const quickMessageTags = [
+  "Busy day today",
+  "Wanted to share this",
+  "A little tired",
+  "Feeling good",
+];
 
-function getMemberPetProfileImage(memberId: FamilyMemberId, currentPet: PetItem) {
-  if (memberId === "me") return getPetProfileImage(currentPet);
+function getMemberPetProfileImage(member: FamilyMember, currentPet: PetItem) {
+  if (member.is_current_user) return getPetProfileImage(currentPet);
   return "/images/dog/profile/dog-white.png";
 }
 
 function groupEntries(entries: AlbumEntry[]) {
-  return entries.reduce<Record<FamilyMemberId, AlbumEntry[]>>(
+  const grouped = entries.reduce<Record<string, AlbumEntry[]>>(
     (accumulator, entry) => {
-      accumulator[entry.memberId].push(entry);
+      const key = String(entry.memberId);
+      if (!accumulator[key]) accumulator[key] = [];
+      accumulator[key].push(entry);
       return accumulator;
     },
-    {
-      me: [],
-      mom: [],
-      dad: [],
-    }
+    {}
   );
+
+  Object.values(grouped).forEach((memberEntries) => {
+    memberEntries.sort(
+      (first, second) =>
+        parseUploadedAt(second.uploadedAt).getTime() - parseUploadedAt(first.uploadedAt).getTime()
+    );
+  });
+
+  return grouped;
 }
 
 function formatNow() {
@@ -116,33 +160,40 @@ function buildSummary(member: FamilyMember, range: TimeRange, entries: AlbumEntr
   const highlight = newest?.dogMessage.trim();
 
   if (!entries.length) {
-    if (range === "day") return `${member.dogName}总结：今天还没有新的更新。`;
-    if (range === "week") return `${member.dogName}总结：这周还没有新的更新。`;
-    if (range === "month") return `${member.dogName}总结：这个月还没有新的更新。`;
-    return `${member.dogName}总结：这一年还没有新的更新。`;
+    if (range === "day") return `${member.dogName} has not shared anything new today.`;
+    if (range === "week") return `${member.dogName} has not shared anything new this week.`;
+    if (range === "month") return `${member.dogName} has not shared anything new this month.`;
+    return `${member.dogName} has not shared anything new this year.`;
   }
 
   if (range === "day") {
-    return `${member.dogName}总结：今天更新了 ${entries.length} 张照片${highlight ? `，想说“${highlight}”` : "。"
-      }`;
+    return `${member.dogName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} today${highlight ? ` and wants to say "${highlight}"` : "."}`;
   }
 
   if (range === "week") {
-    return `${member.dogName}总结：这周一共更新了 ${entries.length} 张照片${highlight ? `，本周关键词是“${highlight}”` : "。"
-      }`;
+    return `${member.dogName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} this week${highlight ? `, and the main note was "${highlight}"` : "."}`;
   }
 
   if (range === "month") {
-    return `${member.dogName}总结：这个月记录了 ${entries.length} 张照片${highlight ? `，最近的一条是“${highlight}”` : "。"
-      }`;
+    return `${member.dogName} saved ${entries.length} photo${entries.length > 1 ? "s" : ""} this month${highlight ? `, and the latest note was "${highlight}"` : "."}`;
   }
 
-  return `${member.dogName}总结：这一年已经留下了 ${entries.length} 张照片${highlight ? `，印象最深的是“${highlight}”` : "。"
-    }`;
+  return `${member.dogName} kept ${entries.length} photo${entries.length > 1 ? "s" : ""} this year${highlight ? `, and the most memorable note was "${highlight}"` : "."}`;
 }
 
 function selectedReactionEmoji(reaction: AlbumReaction) {
   return reactionOptions.find((option) => option.value === reaction)?.emoji ?? null;
+}
+
+function convertPostToAlbumEntry(post: DbPost): AlbumEntry {
+  return {
+    id: String(post.id),
+    memberId: String((post as DbPost & { family_member_id?: string | number }).family_member_id ?? post.user_id ?? ""),
+    imageUrl: post.media_url || "/images/dog/profile/dog-white.png",
+    uploadedAt: post.created_at ?? post.createdAt ?? post.uploadedAt ?? formatNow(),
+    dogMessage: post.content ?? "",
+    reaction: post.reaction ?? null,
+  };
 }
 
 export function ConnectPage({
@@ -150,8 +201,11 @@ export function ConnectPage({
   albumEntries,
   onCreateEntry,
   onUpdateReaction,
+  onDeleteEntry,
+  onOverlayChange,
 }: ConnectPageProps) {
   const { currentPet } = usePet();
+  const [dbPosts, setDbPosts] = useState<DbPost[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<FamilyMemberId | null>(null);
   const [selectedRange, setSelectedRange] = useState<TimeRange>("week");
   const [draft, setDraft] = useState<UploadDraft | null>(null);
@@ -159,18 +213,144 @@ export function ConnectPage({
   const [showUploadSheet, setShowUploadSheet] = useState(false);
   const [openReactionEntryId, setOpenReactionEntryId] = useState<string | null>(null);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [deleteMenu, setDeleteMenu] = useState<DeleteMenuState>(null);
+  const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
-  const albumsByMember = useMemo(() => groupEntries(albumEntries), [albumEntries]);
+  void onCreateEntry;
+
+  const dbAlbumEntries = useMemo(
+    () => dbPosts.map((post) => convertPostToAlbumEntry(post)),
+    [dbPosts]
+  );
+  const mergedAlbumEntries = useMemo(
+    () => [...dbAlbumEntries, ...albumEntries],
+    [albumEntries, dbAlbumEntries]
+  );
+  const albumsByMember = useMemo(
+    () => groupEntries(mergedAlbumEntries),
+    [mergedAlbumEntries]
+  );
   const selectedMember = familyMembers.find((member) => member.id === selectedMemberId) ?? null;
+  const isCurrentUserMember = (member?: FamilyMember | null) => {
+    if (!member || !currentUser) return false;
+    return (
+      String(member.id) === String(currentUser.id) ||
+      Boolean(member.email && currentUser.email && member.email === currentUser.email)
+    );
+  };
+  const currentMember =
+    familyMembers.find((member) => isCurrentUserMember(member)) ?? familyMembers[0] ?? null;
+  const isSelectedMemberCurrentUser =
+    selectedMember && currentMember
+      ? String(selectedMember.id) === String(currentMember.id)
+      : false;
   const selectedEntries = useMemo(() => {
     if (!selectedMemberId) return [];
 
-    return albumsByMember[selectedMemberId].filter((entry) =>
+    return (albumsByMember[String(selectedMemberId)] ?? []).filter((entry) =>
       matchesRange(entry.uploadedAt, selectedRange)
     );
   }, [albumsByMember, selectedMemberId, selectedRange]);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch("http://localhost:3001/api/me");
+        if (!response.ok) throw new Error("Failed to fetch current user");
+        const user = await response.json();
+        setCurrentUser(user);
+      } catch (error) {
+        console.warn("Failed to load current user, using first family member as fallback.");
+        setCurrentUser(null);
+      }
+    };
+    void fetchCurrentUser();
+    const refreshOnFocus = () => {
+      void fetchCurrentUser();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void fetchCurrentUser();
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
+  }, []);
+  useEffect(() => {
+    if (!familyMembers.length) {
+      setSelectedMemberId(null);
+      return;
+    }
+    if (!selectedMemberId) return;
+    const stillExists = familyMembers.some(
+      (member) => String(member.id) === String(selectedMemberId)
+    );
+    if (!stillExists) {
+      setSelectedMemberId(currentMember?.id ?? familyMembers[0]?.id ?? null);
+    }
+  }, [familyMembers, selectedMemberId, currentMember]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchPosts = async () => {
+      try {
+        const response = await fetch("http://localhost:3001/api/posts");
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const posts = Array.isArray(data) ? data : data.posts;
+
+        if (isMounted && Array.isArray(posts)) {
+          setDbPosts(posts);
+        }
+      } catch (error) {
+        // Keep the local album entries visible if the backend is unavailable.
+      }
+    };
+
+    setDbPosts([]);
+    void fetchPosts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    onOverlayChange?.(
+      Boolean(
+        showUploadSheet ||
+          draft ||
+          showRangeMenu ||
+          openReactionEntryId ||
+          deleteMenu ||
+          pendingDeleteEntryId
+      )
+    );
+    return () => onOverlayChange?.(false);
+  }, [
+    deleteMenu,
+    draft,
+    onOverlayChange,
+    openReactionEntryId,
+    pendingDeleteEntryId,
+    showRangeMenu,
+    showUploadSheet,
+  ]);
+
+  const closeTransientUi = () => {
+    setShowRangeMenu(false);
+    setOpenReactionEntryId(null);
+    setDeleteMenu(null);
+  };
 
   const handleChooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -182,27 +362,121 @@ export function ConnectPage({
       return;
     }
 
-    setDraft({
-      imageUrl: URL.createObjectURL(file),
-      dogMessage: "",
-    });
+    const previewUrl = URL.createObjectURL(file);
+
+    setDraft((current) => ({
+      imageUrl: previewUrl,
+      file,
+      dogMessage: current?.dogMessage ?? "",
+    }));
     setShowUploadSheet(false);
     event.target.value = "";
   };
 
-  const handleSubmitDraft = () => {
-    if (!draft?.imageUrl || selectedMemberId !== "me") return;
+  const handleRemoveDraftPhoto = () => {
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            imageUrl: "",
+            file: null,
+          }
+        : current
+    );
+  };
 
-    onCreateEntry({
-      id: `me-${Date.now()}`,
-      memberId: "me",
-      imageUrl: draft.imageUrl,
-      uploadedAt: formatNow(),
-      dogMessage: draft.dogMessage.trim(),
-      reaction: null,
-    });
+  const handleSubmitDraft = async () => {
+    if (!draft || !isSelectedMemberCurrentUser || !currentMember) return;
 
-    setDraft(null);
+    let uploadedImageUrl: string | null = null;
+
+    if (draft.file) {
+      const formData = new FormData();
+      formData.append("image", draft.file);
+
+      try {
+        const uploadResponse = await fetch("http://localhost:3001/api/uploads", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          alert("Failed to upload image.");
+          return;
+        }
+
+        const uploadResult = await uploadResponse.json();
+        uploadedImageUrl = uploadResult.imageUrl;
+      } catch (error) {
+        alert("Failed to upload image.");
+        return;
+      }
+    }
+
+    try {
+      const postResponse = await fetch("http://localhost:3001/api/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: currentMember.id,
+          family_member_id: currentMember.id,
+          family_id: currentMember.family_id ?? 1,
+          title: "Family Update",
+          content: draft.dogMessage.trim(),
+          media_url: uploadedImageUrl,
+          media_type: uploadedImageUrl ? "image" : "text",
+        }),
+      });
+
+      if (!postResponse.ok) {
+        alert("Failed to create post.");
+        return;
+      }
+
+      const result = await postResponse.json();
+      const savedPost: DbPost = {
+        ...result,
+        id: result.id ?? `local-${Date.now()}`,
+        content: result.content ?? draft.dogMessage.trim(),
+        media_url: result.media_url ?? uploadedImageUrl,
+        media_type: result.media_type ?? (uploadedImageUrl ? "image" : "text"),
+        created_at: result.created_at ?? formatNow(),
+      };
+
+      setDbPosts((prev) => [savedPost, ...prev]);
+      window.dispatchEvent(new Event("home-data-updated"));
+      setDraft(null);
+    } catch (error) {
+      alert("Failed to create post.");
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!pendingDeleteEntryId) return;
+
+    const entryIdToDelete = String(pendingDeleteEntryId);
+
+    setDbPosts((prev) => prev.filter((post) => String(post.id) !== entryIdToDelete));
+    try {
+      onDeleteEntry(entryIdToDelete);
+    } catch (error) {
+      // Keep deletion working in Connect even if parent callback fails.
+      console.error("Failed to sync delete to parent:", error);
+    }
+    setPendingDeleteEntryId(null);
+    setDeleteMenu(null);
+
+    if (!entryIdToDelete.startsWith("local-")) {
+      try {
+        await fetch(`http://localhost:3001/api/posts/${entryIdToDelete}`, {
+          method: "DELETE",
+        });
+      } catch (error) {
+        // The item is still removed from the current UI even if the backend has no delete endpoint yet.
+      }
+    }
   };
 
   if (selectedMember) {
@@ -210,8 +484,14 @@ export function ConnectPage({
       rangeOptions.find((item) => item.key === selectedRange)?.label ?? "Last Week";
 
     return (
-      <div className="relative flex h-full flex-col bg-[#f5ede5]">
+      <div
+        className="relative flex h-full flex-col bg-[#f5ede5]"
+        onClick={() => {
+          if (deleteMenu) setDeleteMenu(null);
+        }}
+      >
         <input
+          id="album-library-input"
           ref={fileInputRef}
           type="file"
           accept="image/*"
@@ -219,6 +499,7 @@ export function ConnectPage({
           onChange={handleChooseFile}
         />
         <input
+          id="album-camera-input"
           ref={cameraInputRef}
           type="file"
           accept="image/*"
@@ -237,6 +518,8 @@ export function ConnectPage({
                 setShowUploadSheet(false);
                 setOpenReactionEntryId(null);
                 setSummaryExpanded(false);
+                setDeleteMenu(null);
+                setPendingDeleteEntryId(null);
               }}
               className="flex h-10 w-10 items-center justify-center rounded-full text-[#2d2721]"
             >
@@ -254,7 +537,11 @@ export function ConnectPage({
             <div className="relative flex justify-center">
               <button
                 type="button"
-                onClick={() => setShowRangeMenu((current) => !current)}
+                onClick={() => {
+                  setShowRangeMenu((current) => !current);
+                  setOpenReactionEntryId(null);
+                  setDeleteMenu(null);
+                }}
                 className="flex items-center gap-2 text-[18px] font-medium text-[#25211d]"
               >
                 <span>{rangeLabel}</span>
@@ -272,6 +559,7 @@ export function ConnectPage({
                         setShowRangeMenu(false);
                         setOpenReactionEntryId(null);
                         setSummaryExpanded(false);
+                        setDeleteMenu(null);
                       }}
                       className={`w-full rounded-[14px] px-3 py-2 text-sm ${
                         option.key === selectedRange
@@ -286,10 +574,13 @@ export function ConnectPage({
               )}
             </div>
 
-            {selectedMember.id === "me" ? (
+            {isSelectedMemberCurrentUser ? (
               <button
                 type="button"
-                onClick={() => setShowUploadSheet(true)}
+                onClick={() => {
+                  closeTransientUi();
+                  setShowUploadSheet(true);
+                }}
                 className="ml-auto flex h-11 w-11 items-center justify-center rounded-[14px] bg-white text-black shadow-sm"
               >
                 <Camera className="h-5 w-5" />
@@ -310,14 +601,17 @@ export function ConnectPage({
               <div className="absolute left-0 top-2 z-10">
                 <button
                   type="button"
-                  onClick={() => setSummaryExpanded((current) => !current)}
+                  onClick={() => {
+                    setSummaryExpanded((current) => !current);
+                    setDeleteMenu(null);
+                  }}
                   className={`flex items-center gap-3 rounded-[20px] bg-white shadow-[0_16px_30px_rgba(93,67,46,0.12)] transition-all ${
                     summaryExpanded ? "max-w-[74%] px-4 py-4" : "px-3 py-3"
                   }`}
                 >
                   <div className="rounded-[10px] bg-[#f8eee7] p-2">
                     <img
-                      src={getMemberPetProfileImage(selectedMember.id, currentPet)}
+                      src={getMemberPetProfileImage(selectedMember, currentPet)}
                       alt={`${selectedMember.name}'s pet`}
                       className="h-10 w-10 object-contain"
                     />
@@ -341,118 +635,209 @@ export function ConnectPage({
           )}
 
           <div className={`space-y-6 ${summaryExpanded ? "pt-20" : "pt-8"}`}>
-            {selectedEntries.map((entry) => (
-              <article key={entry.id} className="relative">
-                <div className="relative overflow-hidden rounded-[28px]">
-                  <img
-                    src={entry.imageUrl}
-                    alt={`${selectedMember.name} album`}
-                    className="aspect-[4/3.2] w-full object-cover"
-                  />
+            {selectedEntries.map((entry) => {
+              const canDelete = isSelectedMemberCurrentUser;
 
-                  <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/48 via-black/12 to-transparent px-5 pb-4 pt-10">
-                    <p className="text-[12px] tracking-[0.08em] text-white">
-                      {formatGalleryTime(entry.uploadedAt)}
-                    </p>
+              return (
+                <article key={entry.id} className="relative">
+                  <div
+                    className="relative overflow-hidden rounded-[28px]"
+                    onContextMenu={(event) => {
+                      if (!canDelete) return;
+                      event.preventDefault();
+                      setDeleteMenu({
+                        entryId: entry.id,
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
+                      setOpenReactionEntryId(null);
+                    }}
+                  >
+                    <img
+                      src={entry.imageUrl}
+                      alt={`${selectedMember.name} album`}
+                      className="aspect-[4/3.2] w-full object-cover"
+                    />
 
-                    <div className="relative">
-                      {openReactionEntryId === entry.id && (
-                        <div className="absolute bottom-16 right-0 flex gap-2 rounded-full bg-white/94 px-3 py-2 shadow-lg">
-                          {reactionOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => {
-                                onUpdateReaction(entry.id, option.value);
-                                setOpenReactionEntryId(null);
-                              }}
-                              className={`flex h-9 w-9 items-center justify-center rounded-full text-xl ${
-                                entry.reaction === option.value ? "bg-[#f3efe9]" : ""
-                              }`}
-                            >
-                              {option.emoji}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/48 via-black/12 to-transparent px-5 pb-4 pt-10">
+                      <p className="text-[12px] tracking-[0.08em] text-white">
+                        {formatGalleryTime(entry.uploadedAt)}
+                      </p>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenReactionEntryId((current) =>
-                            current === entry.id ? null : entry.id
-                          )
-                        }
-                        className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white/8 text-white backdrop-blur-sm"
-                      >
-                        {selectedReactionEmoji(entry.reaction) ? (
-                          <span className="text-[30px] leading-none">
-                            {selectedReactionEmoji(entry.reaction)}
-                          </span>
-                        ) : (
-                          <Smile className="h-7 w-7" strokeWidth={2.2} />
+                      <div className="relative">
+                        {openReactionEntryId === entry.id && (
+                          <div className="absolute bottom-16 right-0 flex gap-2 rounded-full bg-white/94 px-3 py-2 shadow-lg">
+                            {reactionOptions.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  onUpdateReaction(entry.id, option.value);
+                                  setOpenReactionEntryId(null);
+                                }}
+                                className={`flex h-9 w-9 items-center justify-center rounded-full text-xl ${
+                                  entry.reaction === option.value ? "bg-[#f3efe9]" : ""
+                                }`}
+                              >
+                                {option.emoji}
+                              </button>
+                            ))}
+                          </div>
                         )}
-                      </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenReactionEntryId((current) =>
+                              current === entry.id ? null : entry.id
+                            )
+                          }
+                          className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white/8 text-white backdrop-blur-sm"
+                        >
+                          {selectedReactionEmoji(entry.reaction) ? (
+                            <span className="text-[30px] leading-none">
+                              {selectedReactionEmoji(entry.reaction)}
+                            </span>
+                          ) : (
+                            <Smile className="h-7 w-7" strokeWidth={2.2} />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {entry.dogMessage.trim() && (
-                  <div className="mt-2 px-2 text-[14px] text-[#6d5849]">
-                    {entry.dogMessage}
-                  </div>
-                )}
-              </article>
-            ))}
+                  {entry.dogMessage.trim() && (
+                    <div className="mt-2 px-2 text-[14px] text-[#6d5849]">
+                      {entry.dogMessage}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
 
             {selectedEntries.length === 0 && (
               <div className="rounded-[24px] bg-white px-5 py-6 text-center text-sm leading-6 text-[#8d7060] shadow-[0_12px_28px_rgba(79,57,38,0.08)]">
-                这个时间范围里还没有内容。
+                There is nothing in this time range yet.
               </div>
             )}
           </div>
         </div>
 
-        {showUploadSheet && selectedMember.id === "me" && (
+        {deleteMenu && (
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setDeleteMenu(null)}
+          >
+            <div
+              className="absolute w-40 rounded-[18px] border border-[#eadbcd] bg-white p-1 shadow-[0_14px_30px_rgba(89,67,49,0.18)]"
+              style={{
+                left: Math.min(deleteMenu.x, window.innerWidth - 172),
+                top: Math.min(deleteMenu.y, window.innerHeight - 80),
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingDeleteEntryId(deleteMenu.entryId);
+                  setDeleteMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-sm font-semibold text-[#9b3d2e] hover:bg-[#fff2ef]"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete photo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pendingDeleteEntryId && (
+          <div
+            className="absolute inset-0 z-[999] flex items-end bg-black/30 px-4 pb-6 pointer-events-auto"
+            onClick={() => setPendingDeleteEntryId(null)}
+          >
+            <div
+              className="w-full rounded-[28px] bg-white p-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-4 flex items-start gap-3">
+                <div className="rounded-2xl bg-[#fff2ef] p-3 text-[#c14d36]">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[#3f2f24]">
+                    Delete this photo?
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-[#8b705d]">
+                    This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPendingDeleteEntryId(null);
+                  }}
+                  className="flex-1 rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm font-semibold text-[#745d4c]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleDeleteConfirm();
+                  }}
+                  className="flex-1 rounded-[18px] bg-[#c14d36] px-4 py-3 text-sm font-semibold text-white"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showUploadSheet && isSelectedMemberCurrentUser && (
           <div className="absolute inset-0 z-40 flex items-end bg-black/20 px-5 pb-6">
             <div className="w-full rounded-[28px] bg-white p-4 shadow-2xl">
               <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center rounded-[22px] bg-[#f8efe4] px-4 py-5 text-[#5d4637]"
+                <label
+                  htmlFor="album-camera-input"
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-[22px] bg-[#f8efe4] px-4 py-5 text-[#5d4637]"
                 >
                   <Camera className="mb-2 h-6 w-6" />
-                  <span className="text-sm font-semibold">相机</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center rounded-[22px] bg-[#eef4fb] px-4 py-5 text-[#465c78]"
+                  <span className="text-sm font-semibold">Camera</span>
+                </label>
+                <label
+                  htmlFor="album-library-input"
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-[22px] bg-[#eef4fb] px-4 py-5 text-[#465c78]"
                 >
                   <ImagePlus className="mb-2 h-6 w-6" />
-                  <span className="text-sm font-semibold">相册</span>
-                </button>
+                  <span className="text-sm font-semibold">Library</span>
+                </label>
               </div>
               <button
                 type="button"
                 onClick={() => setShowUploadSheet(false)}
-                className="mt-3 w-full rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm text-[#745d4c]"
+                className="mt-3 w-full rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm font-semibold text-[#745d4c]"
               >
-                取消
+                Cancel
               </button>
             </div>
           </div>
         )}
 
         {draft && (
-          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/30 px-4 pb-6">
-            <div className="w-full max-w-md rounded-[30px] bg-[#fffaf5] p-5 shadow-2xl">
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
+            <div className="max-h-full w-full max-w-md overflow-y-auto rounded-[30px] bg-[#fffaf5] p-5 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-[#3f2f24]">确认上传</h2>
+                  <h2 className="text-lg font-semibold text-[#3f2f24]">Confirm upload</h2>
                   <p className="mt-1 text-sm text-[#8b705d]">
-                    自己上传的图片仍然会保留小狗传话功能。
+                    Your own upload can still carry a pet note to the home page.
                   </p>
                 </div>
 
@@ -465,11 +850,27 @@ export function ConnectPage({
                 </button>
               </div>
 
-              <img
-                src={draft.imageUrl}
-                alt="Upload preview"
-                className="mb-4 aspect-[4/5] w-full rounded-[24px] object-cover"
-              />
+              {draft.imageUrl ? (
+                <div className="mb-4">
+                  <img
+                    src={draft.imageUrl}
+                    alt="Upload preview"
+                    className="max-h-[280px] w-full rounded-[24px] object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRemoveDraftPhoto}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#f3e7dc] px-4 py-3 text-sm font-semibold text-[#7b604f]"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete photo
+                  </button>
+                </div>
+              ) : (
+                <div className="mb-4 rounded-[24px] border border-dashed border-[#d8c3b1] bg-[#fff7f0] px-4 py-8 text-center text-sm text-[#9a7e69]">
+                  Photo removed. You can keep the note only, or choose another photo from Camera / Library.
+                </div>
+              )}
 
               <div className="rounded-[24px] border border-[#efdfd1] bg-white px-4 py-4">
                 <div className="mb-3 flex items-center gap-3">
@@ -481,9 +882,9 @@ export function ConnectPage({
                     />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-[#4f3c2e]">小狗传话</p>
+                    <p className="text-sm font-semibold text-[#4f3c2e]">Pet note</p>
                     <p className="text-xs text-[#9a7e69]">
-                      例如：今天过得很好，想把这句话同步到首页。
+                      Example: Today felt good, so I want this note to appear on the home page.
                     </p>
                   </div>
                 </div>
@@ -495,7 +896,7 @@ export function ConnectPage({
                       current ? { ...current, dogMessage: event.target.value } : current
                     )
                   }
-                  placeholder="输入想让首页小狗说的话"
+                  placeholder="Write the line you want the home pet to say"
                   rows={3}
                   className="w-full resize-none rounded-[20px] border border-[#ead8ca] bg-[#fffaf6] px-4 py-3 text-sm text-[#4f3c2e] outline-none placeholder:text-[#b59b89]"
                 />
@@ -528,7 +929,7 @@ export function ConnectPage({
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#6d5645] px-4 py-4 text-sm font-semibold text-white"
               >
                 <Send className="h-4 w-4" />
-                提交图片和传话
+                Save photo and note
               </button>
             </div>
           </div>
@@ -542,7 +943,7 @@ export function ConnectPage({
       <div className="hide-scrollbar flex-1 overflow-y-auto">
         <div className="space-y-4">
           {familyMembers.map((member) => {
-            const latestEntry = albumsByMember[member.id][0] ?? null;
+            const latestEntry = albumsByMember[String(member.id)]?.[0] ?? null;
 
             return (
               <button
@@ -569,12 +970,12 @@ export function ConnectPage({
                     </div>
                     <div className="mt-2 flex items-center gap-3 rounded-full bg-[#f5f5f6] px-3 py-2">
                       <img
-                        src={getMemberPetProfileImage(member.id, currentPet)}
+                        src={getMemberPetProfileImage(member, currentPet)}
                         alt={`${member.name}'s pet`}
                         className="h-8 w-8 object-contain"
                       />
                       <p className="truncate text-[16px] text-[#1f1f1f]">
-                        {latestEntry?.dogMessage.trim() || "To summarize?"}
+                        {latestEntry?.dogMessage.trim() || "Tap to open the album"}
                       </p>
                     </div>
                   </div>
@@ -589,7 +990,7 @@ export function ConnectPage({
                     />
                   ) : (
                     <div className="flex aspect-[4/3.9] items-center justify-center bg-[#f7f1eb] text-sm text-[#a18a79]">
-                      还没有上传图片
+                      No photo uploaded yet
                     </div>
                   )}
                 </div>

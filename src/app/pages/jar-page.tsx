@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CalendarDays, Check, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
@@ -9,6 +9,22 @@ type MoodKey = "calm" | "tired" | "happy" | "anxious" | "homesick" | "needQuiet"
 type ShareMode = "private" | "soft" | "full";
 type FamilyReaction = "hug" | "tea" | "pet" | null;
 type UserRole = "daughter" | "mum" | "dad" | "grandma" | "grandpa";
+
+type DbMoodEntry = {
+  id: number;
+  user_name: string;
+  mood: string;
+  comment: string | null;
+  entry_date: string;
+  created_at: string;
+};
+
+type CurrentUser = {
+  id: number | string;
+  name?: string;
+  email?: string;
+  family_id?: number | string;
+};
 
 type CandyEntry = {
   id: string;
@@ -352,6 +368,54 @@ function getLatestEntryForOwner(entries: CandyEntry[], owner: UserRole) {
   const ownerEntries = entries.filter((entry) => entry.owner === owner);
   if (ownerEntries.length === 0) return null;
   return ownerEntries[ownerEntries.length - 1];
+}
+
+function isMoodKey(value: string): value is MoodKey {
+  return value in moodColorMap;
+}
+
+function getOwnerFromDbUserName(userName: string): UserRole {
+  const normalizedName = userName.trim().toLowerCase();
+
+  if (normalizedName === "mom" || normalizedName === "mum") return "mum";
+  if (normalizedName === "dad") return "dad";
+  if (normalizedName === "grandma") return "grandma";
+  if (normalizedName === "grandpa") return "grandpa";
+
+  return "daughter";
+}
+
+function getMonthDayFromDbDate(dateValue: string) {
+  const datePart = dateValue.slice(0, 10);
+  const [, month, day] = datePart.split("-").map(Number);
+
+  return {
+    month,
+    day,
+  };
+}
+
+function convertDbMoodEntriesToCandyEntries(dbEntries: DbMoodEntry[]): CandyEntry[] {
+  return dbEntries
+    .filter((entry) => isMoodKey(entry.mood))
+    .map((entry, index) => {
+      const { month, day } = getMonthDayFromDbDate(entry.entry_date);
+      const slot = extraCandySlots[index % extraCandySlots.length];
+      const mood = entry.mood as MoodKey;
+      const owner = getOwnerFromDbUserName(entry.user_name);
+
+      return createCandyEntry({
+        id: `db-${entry.id}`,
+        owner,
+        month,
+        day,
+        mood,
+        note: entry.comment ?? "",
+        shareMode: "private",
+        x: slot.x,
+        y: slot.y,
+      });
+    });
 }
 
 function MoodFace({ mood, size = 30 }: { mood: MoodKey; size?: number }) {
@@ -1316,11 +1380,13 @@ export function JarPage() {
   const [note, setNote] = useState("");
   const [view, setView] = useState<JarView>("main");
   const [currentUser, setCurrentUser] = useState<UserRole>("daughter");
+  const [realCurrentUser, setRealCurrentUser] = useState<CurrentUser | null>(null);
   const [currentMonth, setCurrentMonth] = useState(DEMO_TODAY_MONTH);
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
   const [shareMode, setShareMode] = useState<ShareMode>("private");
   const [allEntries, setAllEntries] = useState<CandyEntry[]>(sampleCandyEntries);
   const [familyReaction, setFamilyReaction] = useState<FamilyReaction>(null);
+  const [isSavingMood, setIsSavingMood] = useState(false);
   const [lidOpen, setLidOpen] = useState(false);
   const [droppingMood, setDroppingMood] = useState<MoodKey | null>(null);
   const [droppingTarget, setDroppingTarget] = useState<{
@@ -1348,6 +1414,63 @@ export function JarPage() {
     });
 
   const timersRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch("http://localhost:3001/api/me");
+        if (!response.ok) throw new Error("Failed to fetch current user");
+        const user = await response.json();
+        setRealCurrentUser(user);
+        if (typeof user?.name === "string") {
+          setCurrentUser(getOwnerFromDbUserName(user.name));
+        }
+      } catch (error) {
+        console.warn("Failed to load current user:", error);
+        setRealCurrentUser(null);
+      }
+    };
+    void fetchCurrentUser();
+    const refreshOnFocus = () => {
+      void fetchCurrentUser();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void fetchCurrentUser();
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadMoodEntries = async () => {
+      try {
+        const response = await fetch("http://localhost:3001/api/moods");
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error("Failed to load moods:", data);
+          return;
+        }
+
+        const loadedEntries = convertDbMoodEntriesToCandyEntries(data as DbMoodEntry[]);
+
+        setAllEntries((prev) => [
+          ...prev.filter((entry) => !entry.id.startsWith("db-")),
+          ...loadedEntries,
+        ]);
+      } catch (error) {
+        console.error("Failed to connect backend:", error);
+      }
+    };
+
+    void loadMoodEntries();
+  }, [realCurrentUser?.id]);
 
   const currentMonthKey = getMonthKey(DEMO_YEAR, currentMonth);
   const ownRecordMap = useMemo(
@@ -1524,19 +1647,61 @@ export function JarPage() {
     timersRef.current = [t1, t2, t3, t4];
   }
 
-  const handleSaveEditor = () => {
-    if (editor.day === null || !selectedMood) return;
+  const handleSaveEditor = async () => {
+    if (editor.day === null || !selectedMood || isSavingMood) return;
 
-    addCandyEntry({
-      month: editor.month,
-      day: editor.day,
-      mood: selectedMood,
-      note,
-      shareMode,
-      withDrop: true,
-    });
+    if (!realCurrentUser?.id) {
+      console.warn("Current user is not available.");
+      return;
+    }
 
-    closeEditor();
+    const familyId = realCurrentUser?.family_id ?? 1;
+
+    const entryDate = `${DEMO_YEAR}-${String(editor.month).padStart(2, "0")}-${String(
+      editor.day
+    ).padStart(2, "0")}`;
+
+    try {
+      setIsSavingMood(true);
+
+      const response = await fetch("http://localhost:3001/api/moods", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: Number(realCurrentUser.id),
+          family_id: familyId,
+          mood: selectedMood,
+          comment: note,
+          entry_date: entryDate,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error("Failed to save mood:", result);
+        alert(result.error || "Failed to save mood.");
+        return;
+      }
+
+      addCandyEntry({
+        month: editor.month,
+        day: editor.day,
+        mood: selectedMood,
+        note,
+        shareMode,
+        withDrop: true,
+      });
+
+      closeEditor();
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+      alert("Failed to connect backend.");
+    } finally {
+      setIsSavingMood(false);
+    }
   };
 
   const handleCalendarDayClick = (day: number) => {
@@ -1739,14 +1904,14 @@ export function JarPage() {
                       <button
                         type="button"
                         onClick={handleSaveEditor}
-                        disabled={!selectedMood}
+                        disabled={!selectedMood || isSavingMood}
                         className={`px-4 py-2 rounded-full text-[14px] font-medium ${
-                          selectedMood
+                          selectedMood && !isSavingMood
                             ? "bg-[#341056] text-white"
                             : "bg-[#DDD7E7] text-[#8E879D]"
                         }`}
                       >
-                        Save
+                        {isSavingMood ? "Saving..." : "Save"}
                       </button>
                     </div>
                   </div>

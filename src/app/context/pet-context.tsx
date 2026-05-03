@@ -3,16 +3,11 @@ import type { ReactNode } from "react";
 import { dailyDrops, type DailyDrop } from "../data/daily-drops";
 import { defaultPetId, getPetById, petItems, PetId } from "../data/pets";
 
-const SELECTED_PET_STORAGE_KEY = "kinlight:selectedPetId";
-const UNLOCKED_PETS_STORAGE_KEY = "kinlight:unlockedPetIds";
+const SELECTED_PET_STORAGE_KEY = "selectedPetId";
+const UNLOCKED_PETS_STORAGE_KEY = "unlockedPetIds";
+const GUEST_SCOPE = "guest";
 
 export type DailyDropInventory = Record<string, number>;
-
-const defaultDailyDropInventory: DailyDropInventory = {
-  "pet-biscuit": 2,
-  "pet-milk": 1,
-  "small-ball": 1,
-};
 
 type PetContextValue = {
   selectedPetId: PetId;
@@ -22,8 +17,8 @@ type PetContextValue = {
   currentPet: ReturnType<typeof getPetById>;
   petItems: typeof petItems;
   dailyDropInventory: DailyDropInventory;
-  addDailyDropToInventory: (dropId: string, amount?: number) => void;
-  useDailyDropItem: (dropId: string) => DailyDrop | null;
+  addDailyDropToInventory: (dropId: string, amount?: number) => Promise<boolean>;
+  useDailyDropItem: (dropId: string) => Promise<DailyDrop | null>;
   getDailyDropCount: (dropId: string) => number;
   lastPlacedDailyDrop: DailyDrop | null;
   clearLastPlacedDailyDrop: () => void;
@@ -39,18 +34,26 @@ function isDailyDropId(value: string | null) {
   return Boolean(value && dailyDrops.some((drop) => drop.id === value));
 }
 
-function readSelectedPetId() {
+function getUserScopedKey(baseKey: string, userId: string) {
+  return `kinlight:${baseKey}:${userId}`;
+}
+
+function readSelectedPetId(userId: string) {
   if (typeof window === "undefined") return defaultPetId;
-  const saved = window.localStorage.getItem(SELECTED_PET_STORAGE_KEY);
+  const saved = window.localStorage.getItem(
+    getUserScopedKey(SELECTED_PET_STORAGE_KEY, userId)
+  );
   return isPetId(saved) ? saved : defaultPetId;
 }
 
-function readUnlockedPetIds() {
+function readUnlockedPetIds(userId: string) {
   const defaultUnlocked = petItems.filter((pet) => pet.unlocked).map((pet) => pet.id);
   if (typeof window === "undefined") return defaultUnlocked;
 
   try {
-    const saved = JSON.parse(window.localStorage.getItem(UNLOCKED_PETS_STORAGE_KEY) || "[]");
+    const saved = JSON.parse(
+      window.localStorage.getItem(getUserScopedKey(UNLOCKED_PETS_STORAGE_KEY, userId)) || "[]"
+    );
     const savedIds = Array.isArray(saved) ? saved.filter((id): id is PetId => isPetId(id)) : [];
     return Array.from(new Set([...defaultUnlocked, ...savedIds]));
   } catch {
@@ -58,23 +61,45 @@ function readUnlockedPetIds() {
   }
 }
 
-export function PetProvider({ children }: { children: ReactNode }) {
-  const [selectedPetId, setSelectedPetIdState] = useState<PetId>(readSelectedPetId);
-  const [unlockedPetIds, setUnlockedPetIds] = useState<PetId[]>(readUnlockedPetIds);
+export function PetProvider({
+  children,
+  currentUserId,
+}: {
+  children: ReactNode;
+  currentUserId?: string | number | null;
+}) {
+  const userScope = currentUserId != null ? String(currentUserId) : GUEST_SCOPE;
+  const defaultUnlocked = useMemo(
+    () => petItems.filter((pet) => pet.unlocked).map((pet) => pet.id),
+    []
+  );
+  const [selectedPetId, setSelectedPetIdState] = useState<PetId>(defaultPetId);
+  const [unlockedPetIds, setUnlockedPetIds] = useState<PetId[]>(defaultUnlocked);
 
-  // Daily drop inventory is intentionally kept in memory only for easier debugging.
-  // Refreshing the page resets the inventory and the last placed item.
-  const [dailyDropInventory, setDailyDropInventory] =
-    useState<DailyDropInventory>(defaultDailyDropInventory);
+  const [dailyDropInventory, setDailyDropInventory] = useState<DailyDropInventory>({});
   const [lastPlacedDailyDropId, setLastPlacedDailyDropId] = useState<string | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(SELECTED_PET_STORAGE_KEY, selectedPetId);
-  }, [selectedPetId]);
+    setSelectedPetIdState(readSelectedPetId(userScope));
+    setUnlockedPetIds(readUnlockedPetIds(userScope));
+    setLastPlacedDailyDropId(null);
+  }, [userScope]);
 
   useEffect(() => {
-    window.localStorage.setItem(UNLOCKED_PETS_STORAGE_KEY, JSON.stringify(unlockedPetIds));
-  }, [unlockedPetIds]);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      getUserScopedKey(SELECTED_PET_STORAGE_KEY, userScope),
+      selectedPetId
+    );
+  }, [selectedPetId, userScope]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      getUserScopedKey(UNLOCKED_PETS_STORAGE_KEY, userScope),
+      JSON.stringify(unlockedPetIds)
+    );
+  }, [unlockedPetIds, userScope]);
 
   const setSelectedPetId = (id: PetId) => {
     if (!unlockedPetIds.includes(id)) return;
@@ -85,17 +110,85 @@ export function PetProvider({ children }: { children: ReactNode }) {
     setUnlockedPetIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
-  const addDailyDropToInventory = (dropId: string, amount = 1) => {
-    if (!isDailyDropId(dropId) || amount <= 0) return;
+  useEffect(() => {
+    const syncInventory = async () => {
+      try {
+        const [itemsRes, myItemsRes] = await Promise.all([
+          fetch("http://localhost:3001/api/items"),
+          fetch("http://localhost:3001/api/my-items"),
+        ]);
+        if (!itemsRes.ok || !myItemsRes.ok) return;
+        const items = await itemsRes.json();
+        const myItems = await myItemsRes.json();
+        const itemIdByName = new Map(
+          items.map((item: { id: number; name: string }) => [item.name, item.id])
+        );
+        const qtyByItemId = new Map(
+          myItems.map((item: { item_id: number; quantity: number }) => [item.item_id, item.quantity])
+        );
+        const next: DailyDropInventory = {};
+        dailyDrops.forEach((drop) => {
+          const itemId = itemIdByName.get(drop.name);
+          if (!itemId) return;
+          next[drop.id] = qtyByItemId.get(itemId) ?? 0;
+        });
+        setDailyDropInventory(next);
+      } catch {
+        setDailyDropInventory({});
+      }
+    };
+    syncInventory();
+  }, [userScope]);
+
+  const addDailyDropToInventory = async (dropId: string, amount = 1) => {
+    if (!isDailyDropId(dropId) || amount <= 0) return false;
+    const drop = dailyDrops.find((item) => item.id === dropId);
+    if (!drop) return false;
+
+    try {
+      const itemsRes = await fetch("http://localhost:3001/api/items");
+      if (!itemsRes.ok) return false;
+      const items = await itemsRes.json();
+      const item = items.find((entry: { name: string }) => entry.name === drop.name);
+      if (!item?.id) return false;
+
+      const addRes = await fetch("http://localhost:3001/api/my-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: item.id, quantity: amount }),
+      });
+      if (!addRes.ok) return false;
+    } catch (error) {
+      return false;
+    }
+
     setDailyDropInventory((prev) => ({
       ...prev,
       [dropId]: (prev[dropId] ?? 0) + amount,
     }));
+    return true;
   };
 
-  const useDailyDropItem = (dropId: string) => {
+  const useDailyDropItem = async (dropId: string) => {
     const drop = dailyDrops.find((item) => item.id === dropId) ?? null;
     if (!drop || (dailyDropInventory[dropId] ?? 0) <= 0) return null;
+
+    try {
+      const itemsRes = await fetch("http://localhost:3001/api/items");
+      if (!itemsRes.ok) return null;
+      const items = await itemsRes.json();
+      const item = items.find((entry: { name: string }) => entry.name === drop.name);
+      if (!item?.id) return null;
+
+      const useRes = await fetch("http://localhost:3001/api/my-items/use", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: item.id, quantity: 1 }),
+      });
+      if (!useRes.ok) return null;
+    } catch (error) {
+      return null;
+    }
 
     setDailyDropInventory((prev) => ({
       ...prev,
