@@ -6,6 +6,7 @@ import type { PetItem } from "../data/pets";
 type MoodKey = "calm" | "tired" | "happy" | "anxious" | "homesick" | "needQuiet";
 type ShareMode = "private" | "soft" | "full";
 type FamilyReaction = "hug" | "tea" | "pet" | null;
+type ParentInteraction = "love" | "hug" | "feed";
 type UserRole = "daughter" | "mum" | "dad" | "grandma" | "grandpa";
 
 type DbMoodEntry = {
@@ -60,6 +61,7 @@ const DEMO_TODAY_MONTH =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getMonth() + 1 : 5;
 const DEMO_TODAY_DAY =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getDate() : 1;
+const LATEST_PARENT_INTERACTION_KEY = "kinlight:latestParentInteraction";
 
 const profileOrder: UserRole[] = ["daughter", "mum", "dad", "grandma", "grandpa"];
 
@@ -378,6 +380,32 @@ function getLatestEntryForOwner(entries: CandyEntry[], owner: UserRole) {
   return ownerEntries[ownerEntries.length - 1];
 }
 
+function isParentInteraction(value: string | null): value is ParentInteraction {
+  return value === "love" || value === "hug" || value === "feed";
+}
+
+function getParentInteractionFromReaction(
+  reaction: Exclude<FamilyReaction, null>
+): ParentInteraction {
+  if (reaction === "tea") return "feed";
+  if (reaction === "pet") return "love";
+  return "hug";
+}
+
+function getParentFeedbackText(reaction: FamilyReaction) {
+  if (reaction === "pet") return "Grace's pet felt your love 💗";
+  if (reaction === "hug") return "Grace's pet feels comforted by your hug 🤗";
+  if (reaction === "tea") return "Yummy! Thank you! 🐾";
+  return "";
+}
+
+function getGraceParentInteractionBubble(interaction: ParentInteraction | null) {
+  if (interaction === "love") return "Mom sent you some love today 💗";
+  if (interaction === "hug") return "Mom sent you a warm hug today 🤗";
+  if (interaction === "feed") return "Mom gave me a little treat today 🐾";
+  return "";
+}
+
 function isMoodKey(value: string): value is MoodKey {
   return value in moodColorMap;
 }
@@ -675,27 +703,25 @@ function SharedStatusCard({
   familyReaction,
   setFamilyReaction,
   currentUser,
+  onParentInteraction,
 }: {
   daughterEntry: CandyEntry | null;
   familyReaction: FamilyReaction;
   setFamilyReaction: (value: FamilyReaction) => void;
   currentUser: UserRole;
+  onParentInteraction: (interaction: ParentInteraction) => void;
 }) {
   const isStudent = false;
   const isGrandparent = false;
   const canSeeEntry = daughterEntry && daughterEntry.shareMode !== "private";
   const { currentPet } = usePet();
-  const feedbackText =
-    familyReaction === "hug"
-      ? "I feel better now! 😊"
-      : familyReaction === "tea"
-        ? "Yummy! Thank you! 🐾"
-        : familyReaction === "pet"
-          ? "I feel so loved! ❤️"
-          : "";
+  const feedbackText = getParentFeedbackText(familyReaction);
 
   const showMoodJarFeedback = (reaction: Exclude<FamilyReaction, null>) => {
     setFamilyReaction(reaction);
+    if (currentUser !== "daughter") {
+      onParentInteraction(getParentInteractionFromReaction(reaction));
+    }
   };
 
   if (isGrandparent) {
@@ -882,6 +908,7 @@ function MainJarView({
   daughterLatestEntry,
   familyReaction,
   setFamilyReaction,
+  onParentInteraction,
   onCalendarDayClick,
   onCandyClick,
   currentPet,
@@ -903,6 +930,7 @@ function MainJarView({
   daughterLatestEntry: CandyEntry | null;
   familyReaction: FamilyReaction;
   setFamilyReaction: (value: FamilyReaction) => void;
+  onParentInteraction: (interaction: ParentInteraction) => void;
   onCalendarDayClick: (day: number) => void;
   onCandyClick: (entry: CandyEntry) => void;
   currentPet: PetItem;
@@ -1196,6 +1224,7 @@ function MainJarView({
         familyReaction={familyReaction}
         setFamilyReaction={setFamilyReaction}
         currentUser={currentUser}
+        onParentInteraction={onParentInteraction}
       />
 
       {canRecordMood && (
@@ -1236,6 +1265,8 @@ export function JarPage() {
   const [shareMode, setShareMode] = useState<ShareMode>("full");
   const [allEntries, setAllEntries] = useState<CandyEntry[]>(sampleCandyEntries);
   const [familyReaction, setFamilyReaction] = useState<FamilyReaction>(null);
+  const [latestParentInteraction, setLatestParentInteraction] =
+    useState<ParentInteraction | null>(null);
   const [isSavingMood, setIsSavingMood] = useState(false);
   const [lidOpen, setLidOpen] = useState(false);
   const [droppingMood, setDroppingMood] = useState<MoodKey | null>(null);
@@ -1298,6 +1329,14 @@ export function JarPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedInteraction = window.localStorage.getItem(LATEST_PARENT_INTERACTION_KEY);
+    setLatestParentInteraction(
+      isParentInteraction(savedInteraction) ? savedInteraction : null
+    );
+  }, []);
+
+  useEffect(() => {
     const loadMoodEntries = async () => {
       try {
         const response = await fetch("http://localhost:3001/api/moods");
@@ -1321,6 +1360,17 @@ export function JarPage() {
 
     void loadMoodEntries();
   }, [realCurrentUser?.id]);
+
+  useEffect(() => {
+    setFamilyReaction(null);
+  }, [currentUser]);
+
+  const recordParentInteraction = (interaction: ParentInteraction) => {
+    setLatestParentInteraction(interaction);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(LATEST_PARENT_INTERACTION_KEY, interaction);
+    }
+  };
 
   const currentMonthKey = getMonthKey(DEMO_YEAR, currentMonth);
   const ownRecordMap = useMemo(
@@ -1352,6 +1402,11 @@ export function JarPage() {
     () => getPetState(ownMoodMap, currentUser),
     [ownMoodMap, currentUser]
   );
+  const graceParentInteractionBubble =
+    currentUser === "daughter"
+      ? getGraceParentInteractionBubble(latestParentInteraction)
+      : "";
+  const displayedPetBubble = graceParentInteractionBubble || petState.bubble;
 
   const weekMoods = useMemo(() => {
     return getCurrentWeekMoods(
@@ -1599,7 +1654,7 @@ export function JarPage() {
           ownMoodMap={ownMoodMap}
           weekMoods={weekMoods}
           petLabel={petState.label}
-          petBubble={petState.bubble}
+          petBubble={displayedPetBubble}
           lidOpen={lidOpen}
           droppingMood={droppingMood}
           droppingTarget={droppingTarget}
@@ -1607,6 +1662,7 @@ export function JarPage() {
           daughterLatestEntry={daughterLatestEntry}
           familyReaction={familyReaction}
           setFamilyReaction={setFamilyReaction}
+          onParentInteraction={recordParentInteraction}
           onCalendarDayClick={handleCalendarDayClick}
           onCandyClick={(entry) => {
             const isOwnEntry = entry.owner === currentUser;
