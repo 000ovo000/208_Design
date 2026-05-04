@@ -139,8 +139,8 @@ export default function App() {
     return localLatestEntries;
   }, [albumEntries, latestMePostEntry, dbFamilyMembers]);
 
-  const weeklyStats = useMemo<WeeklyRewardStats>(() => {
-    const weekEntries = albumEntries.filter((entry) => {
+  const weeklyAlbumEntries = useMemo(() => {
+    return albumEntries.filter((entry) => {
       const parsed = new Date(entry.uploadedAt.replace(" ", "T"));
       if (Number.isNaN(parsed.getTime())) return false;
 
@@ -149,17 +149,19 @@ export default function App() {
         (latestDate.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24);
       return diffDays <= 7;
     });
+  }, [albumEntries]);
 
+  const weeklyStats = useMemo<WeeklyRewardStats>(() => {
     return {
-      petMessages: weekEntries.filter((entry) => entry.dogMessage.trim()).length,
-      photoShares: weekEntries.length,
-      gentleReactions: weekEntries.filter((entry) => entry.reaction).length,
+      petMessages: weeklyAlbumEntries.filter((entry) => entry.dogMessage.trim()).length,
+      photoShares: weeklyAlbumEntries.length,
+      gentleReactions: weeklyAlbumEntries.filter((entry) => entry.reaction).length,
       moodCheckIns: 3,
       connectedDays: new Set(
-        weekEntries.map((entry) => entry.uploadedAt.split(" ")[0])
+        weeklyAlbumEntries.map((entry) => entry.uploadedAt.split(" ")[0])
       ).size,
     };
-  }, [albumEntries]);
+  }, [weeklyAlbumEntries]);
 
   const handleWeeklyKeepsakeAdd = (reward: WeeklyReward) => {
     setWeeklyKeepsakes((prev) =>
@@ -222,6 +224,9 @@ export default function App() {
         return (
           <WeeklyEchoPage
             stats={weeklyStats}
+            weeklyAlbumEntries={weeklyAlbumEntries}
+            familyMembers={dbFamilyMembers}
+            weeklyKeepsakes={weeklyKeepsakes}
             onAddKeepsake={handleWeeklyKeepsakeAdd}
             addedKeepsakeIds={weeklyKeepsakes.map((item) => item.id)}
           />
