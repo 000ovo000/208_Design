@@ -218,7 +218,7 @@ export default function App() {
         );
 
       case "jar":
-        return <JarPage />;
+        return <JarPage familyMembers={dbFamilyMembers} />;
 
       case "echo":
         return (

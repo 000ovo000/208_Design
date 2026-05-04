@@ -170,27 +170,32 @@ export function MoodCalendar({
           {days.map((item, index) => (
             <div
               key={index}
-              className="flex flex-col items-center min-h-[48px] w-full"
+              className="w-full h-[54px] flex flex-col items-center"
             >
               {item.day !== null ? (
                 <button
                   type="button"
                   onClick={() => onDayClick?.(item.day!)}
-                  className="flex flex-col items-center w-full"
+                  className="w-full h-full flex flex-col items-center"
                 >
-                  <span className="text-[15px] leading-none text-[#1F1F1F] mb-1">
+                  <span className="h-[20px] flex items-start justify-center text-[15px] leading-none text-[#1F1F1F]">
                     {item.day}
                   </span>
 
-                  {item.mood ? (
-                    <CalendarMoodFace mood={item.mood} />
-                  ) : (
-                    <span className="w-[28px] h-[28px] rounded-full bg-[#E8E8E8]" />
-                  )}
+                  <span className="h-[34px] flex items-start justify-center">
+                    {item.mood ? (
+                      <CalendarMoodFace mood={item.mood} />
+                    ) : (
+                      <span className="w-[30px] h-[30px] rounded-full bg-[#E8E8E8]" />
+                    )}
+                  </span>
                 </button>
               ) : (
-                <div className="pt-[22px]">
-                  <span className="w-[28px] h-[28px] rounded-full bg-[#E8E8E8] inline-block" />
+                <div className="w-full h-full flex flex-col items-center">
+                  <span className="h-[20px]" />
+                  <span className="h-[34px] flex items-start justify-center">
+                    <span className="w-[30px] h-[30px] rounded-full bg-[#E8E8E8]" />
+                  </span>
                 </div>
               )}
             </div>

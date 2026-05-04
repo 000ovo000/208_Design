@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, ChevronDown, Trash2 } from "lucide-react";
+import { ArrowLeft, Bell, ChevronDown, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
 import {
@@ -8,7 +8,14 @@ import {
   type DailyDrop,
 } from "../data/daily-drops";
 import { getFamilySelectedPetId } from "../data/family-data";
-import { defaultPetId, getPetById, getPetProfileImage, type PetId } from "../data/pets";
+import {
+  defaultPetId,
+  getPetById,
+  getPetProfileImage,
+  type PetId,
+  type PetItem,
+  type PetSpecies,
+} from "../data/pets";
 import { getPetReaction } from "../data/pet-reactions";
 import type { WeeklyReward } from "../data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
@@ -20,7 +27,7 @@ interface ChatPageProps {
   weeklyKeepsakes: WeeklyReward[];
 }
 
-type InventoryTab = "shop" | "food" | "toy";
+type InventoryTab = "petSelection" | "food" | "toy";
 type DailyDropState = "available" | "claiming" | "claimed";
 type StorageArea = "food" | "toy";
 type DbPost = {
@@ -54,9 +61,9 @@ type CurrentUser = {
 };
 
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
-  { key: "shop", label: "Shop", title: "Pet Collection", emoji: "🛍️" },
-  { key: "food", label: "Food", title: "Food Storage", emoji: "🍪" },
-  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🎾" },
+  { key: "petSelection", label: "Change your pet", title: "Pet Collection", emoji: "🐾" },
+  { key: "food", label: "Food", title: "Food Storage", emoji: "🍖" },
+  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
 ];
 
 const getStorageArea = (drop: DailyDrop): StorageArea => {
@@ -80,6 +87,160 @@ const readSelectedPetIdForUser = (userId: FamilyMemberId | null | undefined): Pe
   }
   return getFamilySelectedPetId(userId) ?? defaultPetId;
 };
+
+function PawIcon() {
+  return (
+    <div className="relative w-9 h-9">
+      <span className="absolute left-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute left-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute right-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute right-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute left-1/2 bottom-0 -translate-x-1/2 w-[26px] h-[21px] bg-[#341056] rounded-[18px_18px_14px_14px]" />
+    </div>
+  );
+}
+
+function PetSelectionCard({
+  pet,
+  active = false,
+  unlocked = false,
+  onClick,
+}: {
+  pet: PetItem;
+  active?: boolean;
+  unlocked?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!unlocked}
+      className={`flex flex-col items-center justify-end rounded-[22px] transition-all ${
+        active ? "bg-[#B98A54] shadow-md" : "bg-white/55 border border-white/70"
+      } ${!unlocked ? "opacity-50" : "active:scale-[0.98]"}`}
+      style={{ width: 118, height: 136, paddingBottom: 10 }}
+    >
+      <div className="relative w-[96px] h-[82px] mb-2 flex items-end justify-center">
+        <div className="absolute inset-x-0 bottom-0 mx-auto w-[84px] h-[44px] rounded-full bg-[#E8B85E]/80" />
+        <img
+          src={pet.image}
+          alt={pet.name}
+          className="relative z-[2] max-h-[78px] max-w-[94px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
+        />
+      </div>
+
+      <span
+        className={`px-2 text-center text-[13px] font-semibold leading-[1.15] ${
+          active ? "text-white" : "text-[#7A5A43]"
+        }`}
+      >
+        {pet.name}
+      </span>
+    </button>
+  );
+}
+
+function PetSelectionView({
+  selectedPetId,
+  setSelectedPetId,
+  currentPet,
+  petItems,
+  unlockedPetIds,
+  onBack,
+}: {
+  selectedPetId: PetId;
+  setSelectedPetId: (value: PetId) => void;
+  currentPet: PetItem;
+  petItems: PetItem[];
+  unlockedPetIds: PetId[];
+  onBack: () => void;
+}) {
+  const [activeSpecies, setActiveSpecies] = useState<PetSpecies>(currentPet.species);
+  const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
+
+  return (
+    <div className="h-full overflow-y-auto px-5 pt-2 pb-8">
+      <div className="flex items-center justify-start mb-6">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={onBack}
+          className="w-8 h-8 flex items-center justify-center text-[#333333]"
+        >
+          <ArrowLeft size={22} strokeWidth={2} />
+        </button>
+      </div>
+
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-[26px] font-medium text-[#171717]">Pet Collection</h2>
+            <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
+              Choose one shared companion for Home and Mood Jar.
+            </p>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 rounded-[22px] bg-white/55 p-2 border border-white/70">
+          <button
+            type="button"
+            onClick={() => setActiveSpecies("dog")}
+            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+              activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+            }`}
+          >
+            Puppies
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSpecies("cat")}
+            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+              activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+            }`}
+          >
+            Kittens
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 justify-items-center gap-4">
+          {visiblePets.map((pet) => {
+            const unlocked = unlockedPetIds.includes(pet.id);
+            return (
+              <PetSelectionCard
+                key={pet.id}
+                pet={pet}
+                active={selectedPetId === pet.id}
+                unlocked={unlocked}
+                onClick={() => setSelectedPetId(pet.id)}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-[22px] font-medium text-[#171717] mb-5">
+          Your selection:
+        </h3>
+
+        <div className="flex flex-col items-center rounded-[28px] bg-white/55 border border-white/70 px-4 py-5">
+          <img
+            src={currentPet.image}
+            alt={currentPet.name}
+            className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+          />
+          <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
+            {currentPet.name}
+          </p>
+          <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
+            {currentPet.description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function ChatPage({
   familyMembers,
@@ -572,14 +733,6 @@ export function ChatPage({
     setActiveInventory(null);
   };
 
-  const choosePet = (petId: typeof petItems[number]["id"]) => {
-    setShowMemberSwitcher(false);
-    const pet = petItems.find((item) => item.id === petId);
-    if (!pet || !unlockedPetIds.includes(pet.id)) return;
-    setSelectedPetId(pet.id);
-    setPetFeedback(`${me.name}'s pet changed into ${pet.name}.`);
-  };
-
   const renderDropIcon = (drop: DailyDrop, sizeClass = "h-11 w-11") => {
     if (drop.image) {
       return (
@@ -710,7 +863,7 @@ export function ChatPage({
           )}
 
           {isViewingOwnHome && (
-            <div className="absolute right-5 top-[100px] z-30 flex flex-col items-center gap-4">
+            <div className="absolute right-[15px] top-[100px] z-30 flex flex-col items-center gap-4">
               {inventoryTabs.map((item) => {
                 const hasDot = item.key === "food" || item.key === "toy" ? storageDot[item.key] : false;
                 const isPulsing = item.key === storagePulse;
@@ -727,12 +880,12 @@ export function ChatPage({
                         isPulsing ? "scale-110 ring-2 ring-[#f0a35f]/50" : ""
                       }`}
                     >
-                      <span className="text-2xl leading-none" aria-hidden="true">
+                      <span className="text-[26px] leading-none" aria-hidden="true">
                         {item.emoji}
                       </span>
                     </div>
 
-                    {(hasDot || isPulsing) && item.key !== "shop" && (
+                    {(hasDot || isPulsing) && item.key !== "petSelection" && (
                       <span
                         className={`absolute right-1 top-0 rounded-full bg-[#e76f51] shadow-sm ${
                           isPulsing
@@ -756,14 +909,14 @@ export function ChatPage({
 
         <div className="relative flex flex-1 items-center justify-center">
           <div className="absolute left-1/2 top-[50px] z-20 h-[150px] w-[230px] -translate-x-1/2">
-            {/* 相框底层 */}
+            {/* Frame base layer */}
             <img
               src="/images/home/hanging-frame.png"
               alt="Hanging photo frame"
               className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
             />
 
-            {/* 照片层：固定内框大小，超出部分裁剪，效果和 Connect 相册一致 */}
+            {/* Photo layer with the same clipped inner frame as Connect. */}
             <div
               className="absolute z-20 overflow-hidden rounded-[3px] bg-[#f3e1cf]"
               style={{
@@ -898,7 +1051,7 @@ export function ChatPage({
 
             <p className="mt-1 text-[11px] text-[#8b705d]">
               {selectedHomePet.name +
-                ` · ${lastPlacedDailyDrop ? lastPlacedDailyDrop.name : "waiting for care"}`}
+                ` - ${lastPlacedDailyDrop ? lastPlacedDailyDrop.name : "waiting for care"}`}
             </p>
 
             {String(selectedHomeMemberId) !== String(me?.id) && (
@@ -918,9 +1071,23 @@ export function ChatPage({
           onClick={() => setShowMemberSwitcher(false)}
         >
           <div
-            className="max-h-[68vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
+            className="max-h-[76vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
             onClick={(event) => event.stopPropagation()}
           >
+            {activeInventory === "petSelection" ? (
+              <PetSelectionView
+                selectedPetId={selectedPetId}
+                setSelectedPetId={setSelectedPetId}
+                currentPet={currentPet}
+                petItems={petItems}
+                unlockedPetIds={unlockedPetIds}
+                onBack={() => {
+                  setShowMemberSwitcher(false);
+                  setActiveInventory(null);
+                }}
+              />
+            ) : (
+              <>
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#b08a6d]">
@@ -939,40 +1106,9 @@ export function ChatPage({
                 }}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3e5d8] text-sm font-bold text-[#7d6554]"
               >
-                ×
+                X
               </button>
             </div>
-
-            {activeInventory === "shop" && (
-              <div className="grid grid-cols-2 gap-3">
-                {petItems.map((pet) => {
-                  const isSelected = selectedPetId === pet.id;
-                  const isUnlocked = unlockedPetIds.includes(pet.id);
-
-                  return (
-                    <button
-                      key={pet.id}
-                      type="button"
-                      disabled={!isUnlocked}
-                      onClick={() => choosePet(pet.id)}
-                      className={`rounded-3xl border p-3 text-left transition ${
-                        isSelected
-                          ? "border-[#d18b63] bg-[#fff1df]"
-                          : "border-[#f2dfcf] bg-white"
-                      } ${!isUnlocked ? "opacity-50" : "active:scale-[0.98]"}`}
-                    >
-                      <div className="mb-2 flex h-20 items-center justify-center rounded-2xl bg-[#f7eadf]">
-                        <img src={pet.image} alt="" className="h-16 w-auto object-contain" />
-                      </div>
-                      <p className="text-xs font-semibold text-[#49372a]">{pet.name}</p>
-                      <p className="mt-1 text-[10px] leading-4 text-[#8b705d]">
-                        {pet.description}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
 
             {activeInventory === "food" && (
               <div className="space-y-2">
@@ -1007,7 +1143,7 @@ export function ChatPage({
                         </span>
                       </span>
                       <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        × {count}
+                        x {count}
                       </span>
                     </button>
                   );
@@ -1048,7 +1184,7 @@ export function ChatPage({
                         </span>
                       </span>
                       <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        Use × {count}
+                        Use x {count}
                       </span>
                     </button>
                   );
@@ -1094,6 +1230,8 @@ export function ChatPage({
             <p className="mt-3 text-center text-[11px] leading-4 text-[#9a7a61]">
               Food and drink are consumable. Toys, care items, and weekly keepsakes can stay as shared pet memories.
             </p>
+              </>
+            )}
           </div>
         </div>
       )}

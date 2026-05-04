@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronUp, Heart, Package, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
-import type { PetItem } from "../data/pets";
+import { defaultPetId, getPetById, petItems, type PetId, type PetItem } from "../data/pets";
+import { getFamilySelectedPetId } from "../data/family-data";
+import type { FamilyMember, FamilyMemberId } from "../types";
 type MoodKey = "calm" | "tired" | "happy" | "anxious" | "homesick" | "needQuiet";
 type ShareMode = "private" | "soft" | "full";
 type FamilyReaction = "hug" | "tea" | "pet" | null;
@@ -62,6 +64,7 @@ const DEMO_TODAY_MONTH =
 const DEMO_TODAY_DAY =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getDate() : 1;
 const LATEST_PARENT_INTERACTION_KEY = "kinlight:latestParentInteraction";
+const SELECTED_PET_STORAGE_KEY = "selectedPetId";
 
 const profileOrder: UserRole[] = ["daughter", "mum", "dad", "grandma", "grandpa"];
 
@@ -72,33 +75,41 @@ const profileMap: Record<
   daughter: {
     name: "Grace",
     roleLabel: "Student account",
-    avatar: "👩‍🎓",
+    avatar: "\u{1F469}\u200D\u{1F393}",
     bg: "#FFE4EF",
   },
   mum: {
     name: "Mum",
     roleLabel: "Family account",
-    avatar: "👩",
+    avatar: "\u{1F469}",
     bg: "#E9E2FF",
   },
   dad: {
     name: "Dad",
     roleLabel: "Family account",
-    avatar: "👨",
+    avatar: "\u{1F468}",
     bg: "#DFF1FF",
   },
   grandma: {
     name: "Grandma",
     roleLabel: "Care account",
-    avatar: "👵",
+    avatar: "\u{1F475}",
     bg: "#FFF0CC",
   },
   grandpa: {
     name: "Grandpa",
     roleLabel: "Care account",
-    avatar: "👴",
+    avatar: "\u{1F474}",
     bg: "#DDEFE8",
   },
+};
+
+const fallbackMemberIdByRole: Record<UserRole, FamilyMemberId> = {
+  daughter: "me",
+  mum: "mom",
+  dad: "dad",
+  grandma: "grandma",
+  grandpa: "grandpa",
 };
 
 const BALL_SIZE = 22;
@@ -384,6 +395,79 @@ function isParentInteraction(value: string | null): value is ParentInteraction {
   return value === "love" || value === "hug" || value === "feed";
 }
 
+function isPetId(value: string | null): value is PetId {
+  return Boolean(value && petItems.some((pet) => pet.id === value));
+}
+
+function getUserScopedPetKey(userId: FamilyMemberId) {
+  return `kinlight:${SELECTED_PET_STORAGE_KEY}:${String(userId)}`;
+}
+
+function readSelectedPetIdForMember(memberId: FamilyMemberId): PetId {
+  if (typeof window !== "undefined") {
+    const savedId = window.localStorage.getItem(getUserScopedPetKey(memberId));
+    if (isPetId(savedId)) return savedId;
+  }
+
+  return getFamilySelectedPetId(memberId) ?? defaultPetId;
+}
+
+function getUserRoleFromName(name?: string | null): UserRole | null {
+  if (!name) return null;
+  const normalizedName = name.trim().toLowerCase();
+
+  if (normalizedName === "mom" || normalizedName === "mum") return "mum";
+  if (normalizedName === "dad") return "dad";
+  if (normalizedName === "grandma") return "grandma";
+  if (normalizedName === "grandpa") return "grandpa";
+  if (normalizedName === "grace" || normalizedName === "daughter") return "daughter";
+
+  return null;
+}
+
+function getFamilyMemberForRole(
+  role: UserRole,
+  familyMembers: FamilyMember[],
+  realCurrentUser: CurrentUser | null
+) {
+  const currentUserRole = getUserRoleFromName(realCurrentUser?.name);
+  if (currentUserRole === role) {
+    const currentMember = familyMembers.find(
+      (member) =>
+        String(member.id) === String(realCurrentUser?.id) ||
+        String(member.user_id) === String(realCurrentUser?.id) ||
+        Boolean(member.email && realCurrentUser?.email && member.email === realCurrentUser.email)
+    );
+    if (currentMember) return currentMember;
+  }
+
+  return familyMembers.find((member) => {
+    const memberRole = getUserRoleFromName(member.name);
+    if (memberRole === role) return true;
+    return String(member.id).toLowerCase() === String(fallbackMemberIdByRole[role]).toLowerCase();
+  });
+}
+
+function getPetForRole({
+  role,
+  familyMembers,
+  realCurrentUser,
+  currentPet,
+}: {
+  role: UserRole;
+  familyMembers: FamilyMember[];
+  realCurrentUser: CurrentUser | null;
+  currentPet: PetItem;
+}) {
+  const currentUserRole = getUserRoleFromName(realCurrentUser?.name);
+  if (currentUserRole === role) return currentPet;
+
+  const member = getFamilyMemberForRole(role, familyMembers, realCurrentUser);
+  const memberId = member?.id ?? fallbackMemberIdByRole[role];
+
+  return getPetById(readSelectedPetIdForMember(memberId));
+}
+
 function getParentInteractionFromReaction(
   reaction: Exclude<FamilyReaction, null>
 ): ParentInteraction {
@@ -393,16 +477,22 @@ function getParentInteractionFromReaction(
 }
 
 function getParentFeedbackText(reaction: FamilyReaction, targetName: string) {
-  if (reaction === "pet") return `${targetName}'s pet felt your love 💗`;
-  if (reaction === "hug") return `${targetName}'s pet feels comforted by your hug 🤗`;
-  if (reaction === "tea") return "Yummy! Thank you! 🐾";
-  return "";
+  switch (reaction) {
+    case "pet":
+      return `${targetName}'s pet felt your love \u{1F497}`;
+    case "hug":
+      return `${targetName}'s pet feels comforted by your hug \u{1F917}`;
+    case "tea":
+      return "Yummy! Thank you! \u{1F43E}";
+    default:
+      return "";
+  }
 }
 
 function getGraceParentInteractionBubble(interaction: ParentInteraction | null) {
-  if (interaction === "love") return "Mom sent you some love today 💗";
-  if (interaction === "hug") return "Mom sent you a warm hug today 🤗";
-  if (interaction === "feed") return "Mom gave me a little treat today 🐾";
+  if (interaction === "love") return "Mom sent you some love today \u{1F497}";
+  if (interaction === "hug") return "Mom sent you a warm hug today \u{1F917}";
+  if (interaction === "feed") return "Mom gave me a little treat today \u{1F43E}";
   return "";
 }
 
@@ -803,6 +893,7 @@ function SharedStatusCard({
   setFamilyReaction,
   setFamilyReactionTarget,
   currentUser,
+  targetPet,
   onParentInteraction,
 }: {
   targetUser: UserRole;
@@ -814,17 +905,19 @@ function SharedStatusCard({
   setFamilyReaction: (value: FamilyReaction) => void;
   setFamilyReactionTarget: (value: UserRole | null) => void;
   currentUser: UserRole;
+  targetPet: PetItem;
   onParentInteraction: (interaction: ParentInteraction) => void;
 }) {
   const targetProfile = profileMap[targetUser];
   const canSeeEntry = targetEntry && targetEntry.shareMode !== "private";
   const canReact = targetUser !== currentUser;
-  const { currentPet } = usePet();
   const feedbackText = getParentFeedbackText(familyReaction, targetProfile.name);
+  const shouldShowFeedback =
+    familyReaction !== null && familyReactionTarget === targetUser;
 
   const showMoodJarFeedback = (reaction: Exclude<FamilyReaction, null>) => {
-    setFamilyReaction(reaction);
     setFamilyReactionTarget(targetUser);
+    setFamilyReaction(reaction);
     if (targetUser === "daughter" && currentUser !== "daughter") {
       onParentInteraction(getParentInteractionFromReaction(reaction));
     }
@@ -843,14 +936,18 @@ function SharedStatusCard({
           onSelectCareTarget={onSelectCareTarget}
         />
 
-        <div className="flex items-start justify-between gap-3 mb-2">
-          <div>
-            <p className="text-[14px] font-semibold text-[#5A2A86]">{title}</p>
-            <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.4]">{subtitle}</p>
+        <div className="mb-2">
+          <div className="flex items-start justify-between gap-3">
+            <p className="min-w-0 text-[14px] font-semibold text-[#5A2A86]">
+              {title}
+            </p>
+            <span className="px-2.5 py-1 rounded-full bg-[#F4ECFF] text-[#341056] text-[11px] font-semibold whitespace-nowrap">
+              {badgeLabel}
+            </span>
           </div>
-          <span className="px-2.5 py-1 rounded-full bg-[#F4ECFF] text-[#341056] text-[11px] font-semibold whitespace-nowrap">
-            {badgeLabel}
-          </span>
+          <p className="mt-1 text-[12px] text-[#7A7287] leading-[1.4]">
+            {subtitle}
+          </p>
         </div>
 
         {!canSeeEntry ? (
@@ -905,11 +1002,11 @@ function SharedStatusCard({
                   </button>
                 </div>
 
-                {familyReaction && familyReactionTarget === targetUser && (
+                {shouldShowFeedback && (
                   <div className="mt-3 flex items-center gap-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-3 py-3 shadow-[0_6px_16px_rgba(52,16,86,0.06)]">
                     <img
-                      src={currentPet.image}
-                      alt={currentPet.name}
+                      src={targetPet.image}
+                      alt={targetPet.name}
                       className="w-9 h-9 object-contain shrink-0"
                     />
                     <p className="text-[12px] leading-[1.45] text-[#5C5670]">
@@ -944,6 +1041,7 @@ function MainJarView({
   careTargetUsers,
   selectedCareTarget,
   selectedCareTargetEntry,
+  selectedCareTargetPet,
   onSelectCareTarget,
   familyReaction,
   familyReactionTarget,
@@ -971,6 +1069,7 @@ function MainJarView({
   careTargetUsers: UserRole[];
   selectedCareTarget: UserRole | null;
   selectedCareTargetEntry: CandyEntry | null;
+  selectedCareTargetPet: PetItem | null;
   onSelectCareTarget: (value: UserRole) => void;
   familyReaction: FamilyReaction;
   familyReactionTarget: UserRole | null;
@@ -987,6 +1086,8 @@ function MainJarView({
   const canRecordMood = true;
   const currentProfile = profileMap[currentUser];
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const jarSectionRef = useRef<HTMLDivElement | null>(null);
+  const sharedStatusRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToCalendar = () => {
     const container = scrollContainerRef.current;
@@ -994,6 +1095,33 @@ function MainJarView({
 
     container.scrollTo({
       top: container.scrollHeight,
+      behavior: "smooth",
+    });
+  };
+
+  const scrollToSharedStatus = () => {
+    sharedStatusRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
+  const scrollToJar = () => {
+    const container = scrollContainerRef.current;
+    const target = jarSectionRef.current;
+    if (!container || !target) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const centerTop =
+      targetRect.top -
+      containerRect.top +
+      container.scrollTop -
+      container.clientHeight / 2 +
+      target.clientHeight / 2;
+
+    container.scrollTo({
+      top: centerTop + 10,
       behavior: "smooth",
     });
   };
@@ -1013,7 +1141,7 @@ function MainJarView({
           />
         </div>
 
-        <div className="relative mb-1 min-h-[86px]">
+        <div className="relative -mt-[40px] mb-1 min-h-[86px]">
           <div className="relative inline-flex max-w-[205px] px-[12px] py-[11px] rounded-[22px] bg-[#E3E3E3] text-[#161616] text-[16px] leading-[1.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] break-words">
             <span className="block pr-[6px]">{petBubble}</span>
             <span
@@ -1022,29 +1150,51 @@ function MainJarView({
             />
           </div>
 
-          <div className="absolute right-[12px] top-[50px] z-[10] flex flex-col items-center gap-3 shrink-0">
+          <div className="absolute right-[8px] top-[40px] z-[10] flex flex-col items-end gap-2.5 shrink-0">
             {canRecordMood && (
-              <div className="flex flex-col items-center">
-                <button
-                  type="button"
-                  aria-label="Jump to mood calendar"
-                  onClick={scrollToCalendar}
-                  className="w-[68px] h-[68px] rounded-full flex items-center justify-center text-[#341056] active:scale-95 transition-transform"
-                  style={{
-                    border: "1.2px solid rgba(244, 181, 219, 0.72)",
-                    background:
-                      "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(253,248,251,0.96) 100%)",
-                    boxShadow:
-                      "0 0 0 1.5px rgba(241,222,233,0.35), 0 5px 12px rgba(0,0,0,0.04)",
-                  }}
-                >
-                  <CalendarDays size={34} strokeWidth={2.2} />
-                </button>
+              <>
+                <div className="flex w-[82px] max-w-[24vw] flex-col items-center">
+                  <button
+                    type="button"
+                    aria-label="Go to jar"
+                    onClick={scrollToJar}
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E4D2C3] bg-[#F8EFE7] text-[#4F3C2E] shadow-[0_8px_18px_rgba(97,74,56,0.12)] transition-all hover:bg-[#FFF7F0] active:scale-[0.95]"
+                  >
+                    <Package size={20} strokeWidth={2.3} />
+                  </button>
+                  <span className="mt-1 w-full text-center text-[10.5px] font-semibold leading-[1.12] text-[#4F3C2E]">
+                    Go to jar
+                  </span>
+                </div>
 
-                <p className="mt-1 w-[78px] text-center text-[10.5px] font-semibold leading-[1.15] text-[#5A2A86]">
-                  See calendar
-                </p>
-              </div>
+                <div className="flex w-[82px] max-w-[24vw] flex-col items-center">
+                  <button
+                    type="button"
+                    aria-label="Care for someone"
+                    onClick={scrollToSharedStatus}
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#D8C6F2] bg-[#F4ECFF] text-[#341056] shadow-[0_8px_18px_rgba(52,16,86,0.12)] transition-all hover:bg-[#FAF5FF] active:scale-[0.95]"
+                  >
+                    <Heart size={20} strokeWidth={2.3} />
+                  </button>
+                  <span className="mt-1 w-full text-center text-[10.5px] font-semibold leading-[1.12] text-[#4F3C2E]">
+                    Care for someone
+                  </span>
+                </div>
+
+                <div className="flex w-[82px] max-w-[24vw] flex-col items-center">
+                  <button
+                    type="button"
+                    aria-label="Jump to mood calendar"
+                    onClick={scrollToCalendar}
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E4D2C3] bg-[#F8EFE7] text-[#4F3C2E] shadow-[0_8px_18px_rgba(97,74,56,0.12)] transition-all hover:bg-[#FFF7F0] active:scale-[0.95]"
+                  >
+                    <CalendarDays size={20} strokeWidth={2.3} />
+                  </button>
+                  <span className="mt-1 w-full text-center text-[10.5px] font-semibold leading-[1.12] text-[#4F3C2E]">
+                    See calendar
+                  </span>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -1066,7 +1216,7 @@ function MainJarView({
         <p className="text-center text-[13px] leading-[1.45] text-[#6D647C] px-3 mb-4">
           {isGrandparent
             ? "This view is simplified for care. You do not need to manage a mood calendar."
-            : "The jar is shared, but each person’s mood calendar is private to themselves."}
+            : "The jar is shared, but each person's mood calendar is private to themselves."}
         </p>
       </section>
 
@@ -1139,8 +1289,8 @@ function MainJarView({
       )}
 
       {!isGrandparent && (
-        <section className="flex flex-col items-center justify-start pt-8 pb-6 shrink-0">
-          <div className="relative w-[208px] h-[256px]">
+        <section className="flex flex-col items-center justify-start pt-[5px] pb-6 shrink-0">
+          <div ref={jarSectionRef} className="relative w-[208px] h-[256px]">
             <JarAnimation lidOpen={lidOpen} />
 
             <div
@@ -1265,20 +1415,23 @@ function MainJarView({
         </section>
       )}
 
-      {selectedCareTarget && (
-        <SharedStatusCard
-          targetUser={selectedCareTarget}
-          targetEntry={selectedCareTargetEntry}
-          careTargetUsers={careTargetUsers}
-          onSelectCareTarget={onSelectCareTarget}
-          familyReaction={familyReaction}
-          familyReactionTarget={familyReactionTarget}
-          setFamilyReaction={setFamilyReaction}
-          setFamilyReactionTarget={setFamilyReactionTarget}
-          currentUser={currentUser}
-          onParentInteraction={onParentInteraction}
-        />
-      )}
+      <div ref={sharedStatusRef}>
+        {selectedCareTarget && (
+          <SharedStatusCard
+            targetUser={selectedCareTarget}
+            targetEntry={selectedCareTargetEntry}
+            careTargetUsers={careTargetUsers}
+            onSelectCareTarget={onSelectCareTarget}
+            familyReaction={familyReaction}
+            familyReactionTarget={familyReactionTarget}
+            setFamilyReaction={setFamilyReaction}
+            setFamilyReactionTarget={setFamilyReactionTarget}
+            currentUser={currentUser}
+            targetPet={selectedCareTargetPet ?? currentPet}
+            onParentInteraction={onParentInteraction}
+          />
+        )}
+      </div>
 
       {canRecordMood && (
         <>
@@ -1308,7 +1461,11 @@ function MainJarView({
   );
 }
 
-export function JarPage() {
+export function JarPage({
+  familyMembers = [],
+}: {
+  familyMembers?: FamilyMember[];
+}) {
   const { currentPet } = usePet();
   const [note, setNote] = useState("");
   const [currentUser, setCurrentUser] = useState<UserRole>("daughter");
@@ -1495,6 +1652,30 @@ export function JarPage() {
         ? getLatestEntryForOwner(allEntries, selectedCareTarget)
         : null,
     [allEntries, selectedCareTarget]
+  );
+
+  const currentRolePet = useMemo(
+    () =>
+      getPetForRole({
+        role: currentUser,
+        familyMembers,
+        realCurrentUser,
+        currentPet,
+      }),
+    [currentUser, familyMembers, realCurrentUser, currentPet]
+  );
+
+  const selectedCareTargetPet = useMemo(
+    () =>
+      selectedCareTarget
+        ? getPetForRole({
+            role: selectedCareTarget,
+            familyMembers,
+            realCurrentUser,
+            currentPet,
+          })
+        : null,
+    [selectedCareTarget, familyMembers, realCurrentUser, currentPet]
   );
 
   const handleSelectCareTarget = (targetUser: UserRole) => {
@@ -1744,6 +1925,7 @@ export function JarPage() {
           careTargetUsers={careTargetUsers}
           selectedCareTarget={selectedCareTarget}
           selectedCareTargetEntry={selectedCareTargetEntry}
+          selectedCareTargetPet={selectedCareTargetPet}
           onSelectCareTarget={handleSelectCareTarget}
           familyReaction={familyReaction}
           familyReactionTarget={familyReactionTarget}
@@ -1762,7 +1944,7 @@ export function JarPage() {
               candy: entry,
             });
           }}
-          currentPet={currentPet}
+          currentPet={currentRolePet}
         />
 
         {existingDayDialog.open && existingDayDialog.day !== null && (
