@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, Plus, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronUp, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
 import type { PetItem } from "../data/pets";
@@ -392,9 +392,9 @@ function getParentInteractionFromReaction(
   return "hug";
 }
 
-function getParentFeedbackText(reaction: FamilyReaction) {
-  if (reaction === "pet") return "Grace's pet felt your love 💗";
-  if (reaction === "hug") return "Grace's pet feels comforted by your hug 🤗";
+function getParentFeedbackText(reaction: FamilyReaction, targetName: string) {
+  if (reaction === "pet") return `${targetName}'s pet felt your love 💗`;
+  if (reaction === "hug") return `${targetName}'s pet feels comforted by your hug 🤗`;
   if (reaction === "tea") return "Yummy! Thank you! 🐾";
   return "";
 }
@@ -698,117 +698,151 @@ function AccountSwitcher({
   );
 }
 
+function CareTargetSwitcher({
+  careTargetUsers,
+  selectedCareTarget,
+  onSelectCareTarget,
+}: {
+  careTargetUsers: UserRole[];
+  selectedCareTarget: UserRole;
+  onSelectCareTarget: (value: UserRole) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedProfile = profileMap[selectedCareTarget];
+
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="w-full grid grid-cols-[46px_1fr_28px] items-center gap-3 rounded-full bg-white/72 backdrop-blur-xl border border-white/80 px-3 py-2.5 text-left shadow-[0_10px_24px_rgba(52,16,86,0.08)] active:scale-[0.99] transition-all"
+      >
+        <span
+          className="w-[42px] h-[42px] rounded-full border border-white/90 flex items-center justify-center text-[23px] shadow-[0_5px_12px_rgba(0,0,0,0.08)]"
+          style={{ backgroundColor: selectedProfile.bg }}
+        >
+          {selectedProfile.avatar}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[15px] font-semibold text-[#3B3551] truncate">
+            {selectedProfile.name}
+          </span>
+          <span className="block mt-0.5 text-[10px] font-bold tracking-[0.08em] text-[#8B82A0]">
+            CARE FOR SOMEONE
+          </span>
+        </span>
+        <span className="flex justify-center text-[#5A2A86]">
+          {open ? (
+            <ChevronUp size={20} strokeWidth={2.3} />
+          ) : (
+            <ChevronDown size={20} strokeWidth={2.3} />
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-[24px] bg-white/94 backdrop-blur-xl border border-white/80 shadow-[0_18px_42px_rgba(52,16,86,0.16)] px-3 py-3">
+          <p className="px-2 pb-2 text-[10px] font-bold tracking-[0.08em] text-[#8B82A0]">
+            CARE FOR SOMEONE
+          </p>
+          <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
+            {careTargetUsers.map((targetUser) => {
+              const profile = profileMap[targetUser];
+              const active = targetUser === selectedCareTarget;
+
+              return (
+                <button
+                  key={targetUser}
+                  type="button"
+                  onClick={() => {
+                    onSelectCareTarget(targetUser);
+                    setOpen(false);
+                  }}
+                  className={`w-full grid grid-cols-[42px_1fr_18px] items-center gap-3 rounded-[18px] px-3 py-2.5 text-left transition-colors ${
+                    active
+                      ? "bg-[#F4ECFF] border border-[#D8C6F2]"
+                      : "bg-[#FCFBFE] border border-[#EEE7F5]"
+                  }`}
+                >
+                  <span
+                    className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-[21px] border border-white/80"
+                    style={{ backgroundColor: profile.bg }}
+                  >
+                    {profile.avatar}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-semibold text-[#3B3551] truncate">
+                      {profile.name}
+                    </span>
+                    <span className="block text-[11px] text-[#7A7287] mt-0.5">
+                      View shared mood
+                    </span>
+                  </span>
+                  <span className="flex justify-end">
+                    {active && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#BFA7E8]" />
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SharedStatusCard({
-  daughterEntry,
+  targetUser,
+  targetEntry,
+  careTargetUsers,
+  onSelectCareTarget,
   familyReaction,
+  familyReactionTarget,
   setFamilyReaction,
+  setFamilyReactionTarget,
   currentUser,
   onParentInteraction,
 }: {
-  daughterEntry: CandyEntry | null;
+  targetUser: UserRole;
+  targetEntry: CandyEntry | null;
+  careTargetUsers: UserRole[];
+  onSelectCareTarget: (value: UserRole) => void;
   familyReaction: FamilyReaction;
+  familyReactionTarget: UserRole | null;
   setFamilyReaction: (value: FamilyReaction) => void;
+  setFamilyReactionTarget: (value: UserRole | null) => void;
   currentUser: UserRole;
   onParentInteraction: (interaction: ParentInteraction) => void;
 }) {
-  const isStudent = false;
-  const isGrandparent = false;
-  const canSeeEntry = daughterEntry && daughterEntry.shareMode !== "private";
+  const targetProfile = profileMap[targetUser];
+  const canSeeEntry = targetEntry && targetEntry.shareMode !== "private";
+  const canReact = targetUser !== currentUser;
   const { currentPet } = usePet();
-  const feedbackText = getParentFeedbackText(familyReaction);
+  const feedbackText = getParentFeedbackText(familyReaction, targetProfile.name);
 
   const showMoodJarFeedback = (reaction: Exclude<FamilyReaction, null>) => {
     setFamilyReaction(reaction);
-    if (currentUser !== "daughter") {
+    setFamilyReactionTarget(targetUser);
+    if (targetUser === "daughter" && currentUser !== "daughter") {
       onParentInteraction(getParentInteractionFromReaction(reaction));
     }
   };
 
-  if (isGrandparent) {
-    return (
-      <section className="px-4 pt-2 pb-4 shrink-0">
-        <div className="rounded-[26px] bg-white/62 backdrop-blur-sm border border-white/70 px-5 py-5 shadow-[0_10px_26px_rgba(0,0,0,0.05)]">
-          <p className="text-[21px] font-semibold text-[#5A2A86] mb-2">
-            Grace today
-          </p>
-          <p className="text-[15px] leading-[1.5] text-[#6D647C] mb-4">
-            Only the mood Grace chooses to share is shown here. A small response is enough.
-          </p>
-
-          {!canSeeEntry ? (
-            <div className="rounded-[20px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4 text-[17px] leading-[1.45] text-[#3B3551]">
-              Grace has not shared a mood today.
-            </div>
-          ) : (
-            <div className="rounded-[20px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4">
-              <div className="flex items-start gap-3">
-                <MoodFace mood={daughterEntry.mood} size={44} />
-                <div>
-                  <p className="text-[17px] font-semibold text-[#3B3551] leading-[1.4]">
-                    {daughterEntry.shareMode === "soft"
-                      ? softShareTextMap[daughterEntry.mood]
-                      : `Grace feels ${moodLabelMap[daughterEntry.mood].toLowerCase()} today.`}
-                  </p>
-                  {daughterEntry.shareMode === "full" && (
-                    <p className="text-[15px] text-[#5C5670] leading-[1.5] mt-2">
-                      {daughterEntry.note.trim() || "No note was left."}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 space-y-3">
-            <button
-              type="button"
-              onClick={() => showMoodJarFeedback("hug")}
-              className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
-            >
-              Hug
-            </button>
-            <button
-              type="button"
-              onClick={() => showMoodJarFeedback("tea")}
-              className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
-            >
-              Feed
-            </button>
-            <button
-              type="button"
-              onClick={() => showMoodJarFeedback("pet")}
-              className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
-            >
-              Love
-            </button>
-          </div>
-
-          {familyReaction && (
-            <div className="mt-4 flex items-center gap-3 rounded-[18px] bg-[#FCFBFE] border border-[#EEE7F5] px-3 py-3 shadow-[0_6px_16px_rgba(52,16,86,0.06)]">
-              <img
-                src={currentPet.image}
-                alt={currentPet.name}
-                className="w-9 h-9 object-contain shrink-0"
-              />
-              <p className="text-[14px] leading-[1.4] text-[#5C5670]">
-                {feedbackText}
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-    );
-  }
-
-  const title = isStudent ? "Family view preview" : "Grace's shared status";
-  const subtitle = isStudent
-    ? "Your calendar is private. Family only sees the status you choose to share."
-    : "You cannot see Grace's private calendar. Only her shared status appears here.";
-  const badgeLabel = isStudent ? "User controlled" : "Shared by Grace";
+  const title = `${targetProfile.name}'s shared status`;
+  const subtitle = `You cannot see ${targetProfile.name}'s private calendar. Only their shared status appears here.`;
+  const badgeLabel = `Shared by ${targetProfile.name}`;
 
   return (
     <section className="px-4 pt-2 pb-2 shrink-0">
       <div className="rounded-[20px] bg-white/55 backdrop-blur-sm border border-white/60 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+        <CareTargetSwitcher
+          careTargetUsers={careTargetUsers}
+          selectedCareTarget={targetUser}
+          onSelectCareTarget={onSelectCareTarget}
+        />
+
         <div className="flex items-start justify-between gap-3 mb-2">
           <div>
             <p className="text-[14px] font-semibold text-[#5A2A86]">{title}</p>
@@ -819,31 +853,33 @@ function SharedStatusCard({
           </span>
         </div>
 
-        {!daughterEntry || daughterEntry.shareMode === "private" ? (
+        {!canSeeEntry ? (
           <div className="mt-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-3 text-[13px] leading-[1.45] text-[#5C5670]">
-            Grace has not shared a mood today.
+            {targetProfile.name} has not shared a mood today.
           </div>
         ) : (
           <>
             <div className="mt-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-3">
               <div className="flex items-start gap-3">
-                <MoodFace mood={daughterEntry.mood} size={34} />
+                <MoodFace mood={targetEntry.mood} size={34} />
                 <div className="min-w-0">
                   <p className="text-[14px] font-medium text-[#3B3551] leading-[1.35]">
-                    {daughterEntry.shareMode === "soft"
-                      ? softShareTextMap[daughterEntry.mood]
-                      : `Grace added a ${moodLabelMap[daughterEntry.mood].toLowerCase()} mood bead.`}
+                    {targetEntry.shareMode === "soft"
+                      ? getSoftShareText(targetProfile.name, targetEntry.mood)
+                      : `${targetProfile.name} added a ${moodLabelMap[
+                          targetEntry.mood
+                        ].toLowerCase()} mood bead.`}
                   </p>
-                  {daughterEntry.shareMode === "full" && (
+                  {targetEntry.shareMode === "full" && (
                     <p className="text-[13px] text-[#5C5670] leading-[1.45] mt-2">
-                      {daughterEntry.note.trim() || "No note was left for this mood bead."}
+                      {targetEntry.note.trim() || "No note was left for this mood bead."}
                     </p>
                   )}
                 </div>
               </div>
             </div>
 
-            {!isStudent && (
+            {canReact && (
               <>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <button
@@ -869,7 +905,7 @@ function SharedStatusCard({
                   </button>
                 </div>
 
-                {familyReaction && (
+                {familyReaction && familyReactionTarget === targetUser && (
                   <div className="mt-3 flex items-center gap-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-3 py-3 shadow-[0_6px_16px_rgba(52,16,86,0.06)]">
                     <img
                       src={currentPet.image}
@@ -905,9 +941,14 @@ function MainJarView({
   droppingMood,
   droppingTarget,
   visibleJarEntries,
-  daughterLatestEntry,
+  careTargetUsers,
+  selectedCareTarget,
+  selectedCareTargetEntry,
+  onSelectCareTarget,
   familyReaction,
+  familyReactionTarget,
   setFamilyReaction,
+  setFamilyReactionTarget,
   onParentInteraction,
   onCalendarDayClick,
   onCandyClick,
@@ -927,9 +968,14 @@ function MainJarView({
   droppingMood: MoodKey | null;
   droppingTarget: { x: string; y: string } | null;
   visibleJarEntries: CandyEntry[];
-  daughterLatestEntry: CandyEntry | null;
+  careTargetUsers: UserRole[];
+  selectedCareTarget: UserRole | null;
+  selectedCareTargetEntry: CandyEntry | null;
+  onSelectCareTarget: (value: UserRole) => void;
   familyReaction: FamilyReaction;
+  familyReactionTarget: UserRole | null;
   setFamilyReaction: (value: FamilyReaction) => void;
+  setFamilyReactionTarget: (value: UserRole | null) => void;
   onParentInteraction: (interaction: ParentInteraction) => void;
   onCalendarDayClick: (day: number) => void;
   onCandyClick: (entry: CandyEntry) => void;
@@ -1219,13 +1265,20 @@ function MainJarView({
         </section>
       )}
 
-      <SharedStatusCard
-        daughterEntry={daughterLatestEntry}
-        familyReaction={familyReaction}
-        setFamilyReaction={setFamilyReaction}
-        currentUser={currentUser}
-        onParentInteraction={onParentInteraction}
-      />
+      {selectedCareTarget && (
+        <SharedStatusCard
+          targetUser={selectedCareTarget}
+          targetEntry={selectedCareTargetEntry}
+          careTargetUsers={careTargetUsers}
+          onSelectCareTarget={onSelectCareTarget}
+          familyReaction={familyReaction}
+          familyReactionTarget={familyReactionTarget}
+          setFamilyReaction={setFamilyReaction}
+          setFamilyReactionTarget={setFamilyReactionTarget}
+          currentUser={currentUser}
+          onParentInteraction={onParentInteraction}
+        />
+      )}
 
       {canRecordMood && (
         <>
@@ -1264,7 +1317,9 @@ export function JarPage() {
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
   const [shareMode, setShareMode] = useState<ShareMode>("full");
   const [allEntries, setAllEntries] = useState<CandyEntry[]>(sampleCandyEntries);
+  const [selectedCareTarget, setSelectedCareTarget] = useState<UserRole | null>(null);
   const [familyReaction, setFamilyReaction] = useState<FamilyReaction>(null);
+  const [familyReactionTarget, setFamilyReactionTarget] = useState<UserRole | null>(null);
   const [latestParentInteraction, setLatestParentInteraction] =
     useState<ParentInteraction | null>(null);
   const [isSavingMood, setIsSavingMood] = useState(false);
@@ -1363,6 +1418,7 @@ export function JarPage() {
 
   useEffect(() => {
     setFamilyReaction(null);
+    setFamilyReactionTarget(null);
   }, [currentUser]);
 
   const recordParentInteraction = (interaction: ParentInteraction) => {
@@ -1418,10 +1474,35 @@ export function JarPage() {
     );
   }, [allEntries, currentUser]);
 
-  const daughterLatestEntry = useMemo(
-    () => getLatestEntryForOwner(allEntries, "daughter"),
-    [allEntries]
+  const careTargetUsers = useMemo(
+    () => profileOrder.filter((user) => user !== currentUser),
+    [currentUser]
   );
+
+  useEffect(() => {
+    if (
+      !selectedCareTarget ||
+      selectedCareTarget === currentUser ||
+      !careTargetUsers.includes(selectedCareTarget)
+    ) {
+      setSelectedCareTarget(careTargetUsers[0] ?? null);
+    }
+  }, [careTargetUsers, currentUser, selectedCareTarget]);
+
+  const selectedCareTargetEntry = useMemo(
+    () =>
+      selectedCareTarget
+        ? getLatestEntryForOwner(allEntries, selectedCareTarget)
+        : null,
+    [allEntries, selectedCareTarget]
+  );
+
+  const handleSelectCareTarget = (targetUser: UserRole) => {
+    if (targetUser === currentUser) return;
+    setSelectedCareTarget(targetUser);
+    setFamilyReaction(null);
+    setFamilyReactionTarget(null);
+  };
 
   const visibleJarEntries = useMemo(
     () =>
@@ -1515,6 +1596,7 @@ export function JarPage() {
     };
 
     setFamilyReaction(null);
+    setFamilyReactionTarget(null);
 
     const addOrReplaceEntry = (prev: CandyEntry[]) => [
       ...prev.filter(
@@ -1659,9 +1741,14 @@ export function JarPage() {
           droppingMood={droppingMood}
           droppingTarget={droppingTarget}
           visibleJarEntries={visibleJarEntries}
-          daughterLatestEntry={daughterLatestEntry}
+          careTargetUsers={careTargetUsers}
+          selectedCareTarget={selectedCareTarget}
+          selectedCareTargetEntry={selectedCareTargetEntry}
+          onSelectCareTarget={handleSelectCareTarget}
           familyReaction={familyReaction}
+          familyReactionTarget={familyReactionTarget}
           setFamilyReaction={setFamilyReaction}
+          setFamilyReactionTarget={setFamilyReactionTarget}
           onParentInteraction={recordParentInteraction}
           onCalendarDayClick={handleCalendarDayClick}
           onCandyClick={(entry) => {
