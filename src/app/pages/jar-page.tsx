@@ -683,8 +683,20 @@ function SharedStatusCard({
 }) {
   const isStudent = false;
   const isGrandparent = false;
-  const currentProfile = profileMap[currentUser];
   const canSeeEntry = daughterEntry && daughterEntry.shareMode !== "private";
+  const { currentPet } = usePet();
+  const feedbackText =
+    familyReaction === "hug"
+      ? "I feel better now! 😊"
+      : familyReaction === "tea"
+        ? "Yummy! Thank you! 🐾"
+        : familyReaction === "pet"
+          ? "I feel so loved! ❤️"
+          : "";
+
+  const showMoodJarFeedback = (reaction: Exclude<FamilyReaction, null>) => {
+    setFamilyReaction(reaction);
+  };
 
   if (isGrandparent) {
     return (
@@ -724,33 +736,38 @@ function SharedStatusCard({
           <div className="mt-4 space-y-3">
             <button
               type="button"
-              onClick={() => setFamilyReaction("hug")}
+              onClick={() => showMoodJarFeedback("hug")}
               className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
             >
-              🤗 Send a hug
+              Hug
             </button>
             <button
               type="button"
-              onClick={() => setFamilyReaction("tea")}
+              onClick={() => showMoodJarFeedback("tea")}
               className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
             >
-              🍵 Send warm tea
+              Feed
             </button>
             <button
               type="button"
-              onClick={() => setFamilyReaction("pet")}
+              onClick={() => showMoodJarFeedback("pet")}
               className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
             >
-              Pet Grace's pet
+              Love
             </button>
           </div>
 
           {familyReaction && (
-            <p className="text-[14px] mt-4 text-[#7A7287] leading-[1.4]">
-              {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
-              {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-              {familyReaction === "pet" && `${currentProfile.name} gently petted Grace's pet.`}
-            </p>
+            <div className="mt-4 flex items-center gap-3 rounded-[18px] bg-[#FCFBFE] border border-[#EEE7F5] px-3 py-3 shadow-[0_6px_16px_rgba(52,16,86,0.06)]">
+              <img
+                src={currentPet.image}
+                alt={currentPet.name}
+                className="w-9 h-9 object-contain shrink-0"
+              />
+              <p className="text-[14px] leading-[1.4] text-[#5C5670]">
+                {feedbackText}
+              </p>
+            </div>
           )}
         </div>
       </section>
@@ -805,33 +822,38 @@ function SharedStatusCard({
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setFamilyReaction("hug")}
+                    onClick={() => showMoodJarFeedback("hug")}
                     className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
                   >
                     Hug
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFamilyReaction("tea")}
+                    onClick={() => showMoodJarFeedback("tea")}
                     className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
                   >
-                    Tea
+                    Feed
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFamilyReaction("pet")}
+                    onClick={() => showMoodJarFeedback("pet")}
                     className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
                   >
-                    Pet
+                    Love
                   </button>
                 </div>
 
                 {familyReaction && (
-                  <p className="text-[12px] mt-3 text-[#7A7287] leading-[1.4]">
-                    {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
-                    {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-                    {familyReaction === "pet" && `${currentProfile.name} gently petted Grace's pet.`}
-                  </p>
+                  <div className="mt-3 flex items-center gap-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-3 py-3 shadow-[0_6px_16px_rgba(52,16,86,0.06)]">
+                    <img
+                      src={currentPet.image}
+                      alt={currentPet.name}
+                      className="w-9 h-9 object-contain shrink-0"
+                    />
+                    <p className="text-[12px] leading-[1.45] text-[#5C5670]">
+                      {feedbackText}
+                    </p>
+                  </div>
                 )}
               </>
             )}
