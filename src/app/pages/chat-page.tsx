@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Bell, ChevronDown, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
@@ -60,6 +60,21 @@ type CurrentUser = {
   family_id?: number | string;
 };
 
+type VisualItem = {
+  name: string;
+  emoji: string;
+  image?: string;
+  sceneImage?: string;
+};
+
+type ScenePlacement = {
+  positionClassName: string;
+  sizeClassName: string;
+  imageClassName: string;
+  durationMs: number | null;
+  style?: CSSProperties;
+};
+
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
   { key: "petSelection", label: "Change your pet", title: "Pet Collection", emoji: "🐾" },
   { key: "food", label: "Food", title: "Food Storage", emoji: "🍖" },
@@ -72,6 +87,92 @@ const getStorageArea = (drop: DailyDrop): StorageArea => {
 
 const pickRandomDrop = (drops: DailyDrop[]) => {
   return drops[Math.floor(Math.random() * drops.length)] ?? dailyDrops[0];
+};
+
+const getScenePlacement = (item: DailyDrop): ScenePlacement => {
+  const base = {
+    imageClassName: "drop-shadow-[0_10px_16px_rgba(73,56,42,0.18)]",
+  };
+
+  switch (item.id) {
+    case "pet-water":
+      return {
+        ...base,
+        positionClassName: "absolute -left-16 bottom-1 z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-16 w-16",
+        durationMs: 25000,
+      };
+    case "pet-milk":
+      return {
+        ...base,
+        positionClassName: "absolute -left-16 bottom-[34px] z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-16 w-16",
+        durationMs: 25000,
+      };
+    case "canned-tuna":
+      return {
+        ...base,
+        positionClassName: "absolute -right-[51px] bottom-[60px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[53px] w-[53px]",
+        durationMs: 25000,
+      };
+    case "pet-food":
+      return {
+        ...base,
+        positionClassName: "absolute -left-16 bottom-[-26px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[70px] w-[70px]",
+        durationMs: 25000,
+      };
+    case "pet-biscuit":
+      return {
+        ...base,
+        positionClassName: "absolute left-1/2 bottom-[-8px] z-20 flex -translate-x-1/2 items-center justify-center text-4xl",
+        sizeClassName: "h-[45px] w-[45px]",
+        durationMs: 25000,
+      };
+    case "small-bone":
+      return {
+        ...base,
+        positionClassName: "absolute left-1/2 bottom-[-8px] z-20 flex -translate-x-[calc(50%+60px)] items-center justify-center text-4xl",
+        sizeClassName: "h-[38px] w-[38px]",
+        durationMs: 25000,
+      };
+    case "small-ball":
+      return {
+        ...base,
+        positionClassName: "absolute -left-[18px] bottom-[83px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[39px] w-[39px]",
+        durationMs: 50000,
+      };
+    case "chew-toy":
+      return {
+        ...base,
+        positionClassName: "absolute left-[calc(50%+55px)] bottom-[1px] z-20 flex -translate-x-1/2 items-center justify-center text-4xl scale-[1.5]",
+        sizeClassName: "h-[70px] w-[70px]",
+        durationMs: 50000,
+      };
+    case "plush-bear":
+      return {
+        ...base,
+        positionClassName: "absolute -right-16 bottom-[72px] z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[82px] w-[82px]",
+        durationMs: 50000,
+      };
+    case "fish-toy":
+      return {
+        ...base,
+        positionClassName: "absolute -right-[76px] bottom-[-23px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[51px] w-[51px]",
+        durationMs: 50000,
+      };
+    default:
+      return {
+        ...base,
+        positionClassName: "absolute -right-12 bottom-14 z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-20 w-20",
+        durationMs: item.category === "food" || item.category === "drink" ? 25000 : 50000,
+      };
+  }
 };
 
 const SELECTED_PET_STORAGE_KEY = "selectedPetId";
@@ -96,6 +197,75 @@ function PawIcon() {
       <span className="absolute right-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
       <span className="absolute right-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
       <span className="absolute left-1/2 bottom-0 -translate-x-1/2 w-[26px] h-[21px] bg-[#341056] rounded-[18px_18px_14px_14px]" />
+    </div>
+  );
+}
+
+function ItemIcon({
+  item,
+  source = "image",
+  sizeClass = "h-11 w-11",
+  imageClassName = "",
+  emojiClassName = "text-xl leading-none",
+  alt = "",
+}: {
+  item: VisualItem;
+  source?: "image" | "sceneImage";
+  sizeClass?: string;
+  imageClassName?: string;
+  emojiClassName?: string;
+  alt?: string;
+}) {
+  const src = item[source];
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  if (src && failedSrc !== src) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className={`${sizeClass} object-contain ${imageClassName}`}
+        onError={() => setFailedSrc(src)}
+      />
+    );
+  }
+
+  return (
+    <span className={emojiClassName} aria-hidden="true">
+      {item.emoji}
+    </span>
+  );
+}
+
+function PlacedDailyDropSceneItem({
+  drop,
+  onExpire,
+}: {
+  drop: DailyDrop;
+  onExpire: (dropId: string) => void;
+}) {
+  const placement = getScenePlacement(drop);
+
+  useEffect(() => {
+    if (placement.durationMs === null) return;
+
+    const timeoutId = window.setTimeout(() => {
+      onExpire(drop.id);
+    }, placement.durationMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [drop.id, onExpire, placement.durationMs]);
+
+  return (
+    <div className={placement.positionClassName} style={placement.style}>
+      <ItemIcon
+        item={drop}
+        source="sceneImage"
+        sizeClass={placement.sizeClassName}
+        imageClassName={placement.imageClassName}
+        emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
+        alt={drop.name}
+      />
     </div>
   );
 }
@@ -258,6 +428,8 @@ export function ChatPage({
     useDailyDropItem,
     getDailyDropCount,
     lastPlacedDailyDrop,
+    placedDailyDrops,
+    clearPlacedDailyDrop,
   } = usePet();
 
   const [selectedFamilyDog, setSelectedFamilyDog] = useState<FamilyMemberId | null>(null);
@@ -270,6 +442,8 @@ export function ChatPage({
     toy: false,
   });
   const [storagePulse, setStoragePulse] = useState<StorageArea | null>(null);
+  const [localDailyDropInventory, setLocalDailyDropInventory] = useState<Record<string, number>>({});
+  const [localPlacedDailyDrops, setLocalPlacedDailyDrops] = useState<DailyDrop[]>([]);
   const [petFeedback, setPetFeedback] = useState("Your companion is waiting for a small family moment.");
   const [posts, setPosts] = useState<DbPost[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
@@ -281,6 +455,8 @@ export function ChatPage({
   const [showMemberSwitcher, setShowMemberSwitcher] = useState(false);
   const [hasClaimedDailyDropToday, setHasClaimedDailyDropToday] = useState(false);
   const [homeOwnerUserId, setHomeOwnerUserId] = useState<string | null>(null);
+  const [debugDropToolsOpen, setDebugDropToolsOpen] = useState(false);
+  const [debugBypassDailyDropClaim, setDebugBypassDailyDropClaim] = useState(false);
 
   const loadPosts = useCallback(async () => {
     try {
@@ -310,6 +486,13 @@ export function ChatPage({
 
   function getDailyDropClaimKey(userId: string | number) {
     return `daily-drop-claimed-${userId}-${getTodayKey()}`;
+  }
+
+  function clearDailyDropClaimStorageForDebug() {
+    if (typeof window === "undefined") return;
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith("daily-drop-claimed-"))
+      .forEach((key) => window.localStorage.removeItem(key));
   }
 
   const isCurrentUserMember = (member: FamilyMember) => {
@@ -414,6 +597,60 @@ export function ChatPage({
     pickRandomDrop(getDailyDropsForPet(currentPet.species))
   );
 
+  const isDevDailyDropTools = import.meta.env.DEV;
+  const shouldBypassDailyDropClaim =
+    isDevDailyDropTools && debugBypassDailyDropClaim;
+
+  const canShowDailyDrop =
+    Boolean(todayDrop) &&
+    (dailyDropState === "available" ||
+      dailyDropState === "claiming" ||
+      shouldBypassDailyDropClaim) &&
+    (!hasClaimedDailyDropToday || shouldBypassDailyDropClaim);
+  const showDailyDropButton = Boolean(currentMember) && canShowDailyDrop;
+  const getDisplayedDailyDropCount = (dropId: string) =>
+    getDailyDropCount(dropId) + (localDailyDropInventory[dropId] ?? 0);
+
+  const makeDailyDropAvailableForDebug = (drop: DailyDrop, message: string) => {
+    if (!isDevDailyDropTools) return;
+    clearDailyDropClaimStorageForDebug();
+    setTodayDrop(drop);
+    setHasClaimedDailyDropToday(false);
+    setDailyDropState("available");
+    setCollectedMessage("");
+    setDebugBypassDailyDropClaim(true);
+    setPetFeedback(message);
+  };
+
+  const resetDailyDropForDebug = () => {
+    if (!isDevDailyDropTools) return;
+    const nextDrop =
+      availableDailyDrops.find((drop) => drop.id === todayDrop.id) ??
+      pickRandomDrop(availableDailyDrops);
+    makeDailyDropAvailableForDebug(
+      nextDrop,
+      "Daily Drop reset. You can claim again."
+    );
+  };
+
+  const randomizeDailyDropForDebug = () => {
+    if (!isDevDailyDropTools) return;
+    makeDailyDropAvailableForDebug(
+      pickRandomDrop(availableDailyDrops),
+      "Daily Drop randomized. You can claim again."
+    );
+  };
+
+  const selectDailyDropForDebug = (dropId: string) => {
+    if (!isDevDailyDropTools) return;
+    const selectedDrop = availableDailyDrops.find((drop) => drop.id === dropId);
+    if (!selectedDrop) return;
+    makeDailyDropAvailableForDebug(
+      selectedDrop,
+      `${selectedDrop.name} selected. You can claim again.`
+    );
+  };
+
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
@@ -476,15 +713,27 @@ export function ChatPage({
   }, [orderedHomeMembers, currentMember, selectedHomeMemberId]);
 
   useEffect(() => {
-    setTodayDrop(pickRandomDrop(availableDailyDrops));
+    setTodayDrop((current) =>
+      availableDailyDrops.some((drop) => drop.id === current.id)
+        ? current
+        : pickRandomDrop(availableDailyDrops)
+    );
     setDailyDropState(hasClaimedDailyDropToday ? "claimed" : "available");
-    setCollectedMessage("");
+    if (!hasClaimedDailyDropToday) {
+      setCollectedMessage("");
+    }
   }, [availableDailyDrops, hasClaimedDailyDropToday]);
 
   useEffect(() => {
     const checkDailyDropStatus = async () => {
       if (!currentUser?.id) {
         setHasClaimedDailyDropToday(false);
+        return;
+      }
+
+      if (shouldBypassDailyDropClaim) {
+        setHasClaimedDailyDropToday(false);
+        setDailyDropState("available");
         return;
       }
 
@@ -502,7 +751,7 @@ export function ChatPage({
     };
 
     void checkDailyDropStatus();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, shouldBypassDailyDropClaim]);
 
   useEffect(() => {
     const fetchLatestPost = async () => {
@@ -633,9 +882,9 @@ export function ChatPage({
       dailyDrops.filter(
         (drop) =>
           (drop.category === "food" || drop.category === "drink") &&
-          getDailyDropCount(drop.id) > 0
+          getDisplayedDailyDropCount(drop.id) > 0
       ),
-    [getDailyDropCount]
+    [getDailyDropCount, localDailyDropInventory]
   );
 
   const toyInventory = useMemo(
@@ -643,9 +892,9 @@ export function ChatPage({
       dailyDrops.filter(
         (drop) =>
           (drop.category === "basic-toy" || drop.category === "care") &&
-          getDailyDropCount(drop.id) > 0
+          getDisplayedDailyDropCount(drop.id) > 0
       ),
-    [getDailyDropCount]
+    [getDailyDropCount, localDailyDropInventory]
   );
 
   const activeInventoryTitle = inventoryTabs.find(
@@ -662,94 +911,118 @@ export function ChatPage({
   };
 
   const claimDailyDrop = async () => {
+    console.log("[DailyDrop] claim clicked", { todayDrop, dailyDropState });
     setShowMemberSwitcher(false);
-    if (!currentUser?.id || dailyDropState !== "available" || hasClaimedDailyDropToday) return;
+    if (
+      (dailyDropState !== "available" && !shouldBypassDailyDropClaim) ||
+      (hasClaimedDailyDropToday && !shouldBypassDailyDropClaim)
+    ) {
+      console.warn("[DailyDrop] claim blocked", {
+        dailyDropState,
+        hasClaimedDailyDropToday,
+        shouldBypassDailyDropClaim,
+      });
+      return;
+    }
 
     setDailyDropState("claiming");
+    console.log("[DailyDrop] set claiming");
+    const claimedDrop = todayDrop;
 
     window.setTimeout(async () => {
-      const storageArea = getStorageArea(todayDrop);
       try {
-        const itemsRes = await fetch("http://localhost:3001/api/items");
-        if (!itemsRes.ok) throw new Error("Failed to load items");
-        const items = await itemsRes.json();
-        const item = items.find((entry: { name: string }) => entry.name === todayDrop.name);
-        if (!item?.id) throw new Error("Drop item not found");
-
-        const claimRes = await fetch("http://localhost:3001/api/daily-drop/claim", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ item_id: item.id }),
-        });
-
-        if (claimRes.status === 409) {
-          setHasClaimedDailyDropToday(true);
-          setDailyDropState("claimed");
-          if (currentUser?.id) {
-            window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
-          }
-          return;
-        }
-
-        if (!claimRes.ok) throw new Error("Failed to claim daily drop");
-
-        const added = await addDailyDropToInventory(todayDrop.id, 1);
-        if (!added) {
+        console.log("[DailyDrop] finish claim timeout start", { todayDrop: claimedDrop });
+        if (!claimedDrop) {
+          console.warn("[DailyDrop] no todayDrop when finishing claim");
           setDailyDropState("available");
-          setPetFeedback("Collected but inventory refresh failed. Please reload.");
           return;
         }
-      } catch {
+
+        const storageArea = getStorageArea(claimedDrop);
+        console.log("[DailyDrop] storageArea", storageArea);
+        console.log("[DailyDrop] add inventory start", claimedDrop.id);
+        const added = await addDailyDropToInventory(claimedDrop.id, 1);
+        console.log("[DailyDrop] add inventory done", claimedDrop.id, { added });
+
+        if (!added) {
+          if (!isDevDailyDropTools && !shouldBypassDailyDropClaim) {
+            console.warn("[DailyDrop] backend inventory add failed outside dev bypass");
+            setDailyDropState("available");
+            setPetFeedback("Daily Drop could not be collected. Please try again.");
+            return;
+          }
+
+          console.warn("[DailyDrop] using local inventory fallback", claimedDrop.id);
+          setLocalDailyDropInventory((prev) => ({
+            ...prev,
+            [claimedDrop.id]: (prev[claimedDrop.id] ?? 0) + 1,
+          }));
+        }
+
+        setHasClaimedDailyDropToday(true);
+        if (currentUser?.id) {
+          window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+        }
+        setDailyDropState("claimed");
+        const message = `${claimedDrop.name} +1`;
+        setCollectedMessage(message);
+        console.log("[DailyDrop] collected message set", message);
+        window.setTimeout(() => {
+          setCollectedMessage("");
+        }, 2000);
+        setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
+        setStoragePulse(storageArea);
+        setPetFeedback(`Collected ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
+        setDebugBypassDailyDropClaim(false);
+        console.log("[DailyDrop] count after add", claimedDrop.id, getDisplayedDailyDropCount(claimedDrop.id));
+
+        window.setTimeout(() => {
+          setStoragePulse(null);
+        }, 1200);
+      } catch (error) {
+        console.error("[DailyDrop] claim failed", error);
         setDailyDropState("available");
-        setPetFeedback("Could not save this drop to inventory.");
-        return;
+        setPetFeedback("Daily Drop could not be collected. Please try again.");
       }
-
-      setHasClaimedDailyDropToday(true);
-      if (currentUser?.id) {
-        window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
-      }
-      setDailyDropState("claimed");
-      setCollectedMessage(`${todayDrop.name} +1`);
-      window.setTimeout(() => {
-        setCollectedMessage("");
-      }, 2000);
-      setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
-      setStoragePulse(storageArea);
-      setPetFeedback(`Collected ${todayDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
-
-      window.setTimeout(() => {
-        setStoragePulse(null);
-      }, 1200);
     }, 520);
   };
 
   const useDrop = async (drop: DailyDrop) => {
     setShowMemberSwitcher(false);
     const usedDrop = await useDailyDropItem(drop.id);
-    if (!usedDrop) return;
+    const localCount = localDailyDropInventory[drop.id] ?? 0;
+    if (!usedDrop && localCount <= 0) return;
 
-    setPetFeedback(getPetReaction(usedDrop.category));
+    if (!usedDrop) {
+      setLocalDailyDropInventory((prev) => ({
+        ...prev,
+        [drop.id]: Math.max((prev[drop.id] ?? 0) - 1, 0),
+      }));
+      setLocalPlacedDailyDrops((prev) =>
+        prev.some((item) => item.id === drop.id) ? prev : [...prev, drop]
+      );
+    }
+
+    setPetFeedback(getPetReaction((usedDrop ?? drop).category));
     setActiveInventory(null);
   };
 
   const renderDropIcon = (drop: DailyDrop, sizeClass = "h-11 w-11") => {
-    if (drop.image) {
-      return (
-        <img
-          src={drop.image}
-          alt=""
-          className={`${sizeClass} object-contain`}
-        />
-      );
-    }
-
-    return (
-      <span className="text-xl leading-none" aria-hidden="true">
-        {drop.emoji}
-      </span>
-    );
+    return <ItemIcon item={drop} sizeClass={sizeClass} />;
   };
+
+  const clearLocalPlacedDailyDrop = useCallback((dropId: string) => {
+    setLocalPlacedDailyDrops((prev) => prev.filter((item) => item.id !== dropId));
+  }, []);
+
+  const displayedPlacedDailyDrops = useMemo(() => {
+    const byId = new Map<string, DailyDrop>();
+    placedDailyDrops.forEach((drop) => byId.set(drop.id, drop));
+    localPlacedDailyDrops.forEach((drop) => byId.set(drop.id, drop));
+    return Array.from(byId.values());
+  }, [placedDailyDrops, localPlacedDailyDrops]);
+  const latestDisplayedPlacedDailyDrop =
+    displayedPlacedDailyDrops[displayedPlacedDailyDrops.length - 1] ?? lastPlacedDailyDrop;
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-[#f4ede4]">
@@ -905,6 +1178,75 @@ export function ChatPage({
               })}
             </div>
           )}
+
+          {isViewingOwnHome && isDevDailyDropTools && (
+            <div
+              className="absolute left-[28px] top-[230px] z-40 w-[210px] rounded-[20px] border border-[#f0d8ca] bg-white/90 p-2 shadow-[0_12px_26px_rgba(92,61,38,0.12)] backdrop-blur"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setDebugDropToolsOpen((current) => !current)}
+                className="flex w-full items-center justify-between rounded-[14px] px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-[#8d684d]"
+              >
+                <span>Drop Debug</span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition ${debugDropToolsOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {debugDropToolsOpen && (
+                <div className="mt-2 space-y-2 px-1 pb-1">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={resetDailyDropForDebug}
+                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={randomizeDailyDropForDebug}
+                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Random
+                    </button>
+                  </div>
+
+                  <select
+                    value={todayDrop.id}
+                    onChange={(event) => selectDailyDropForDebug(event.target.value)}
+                    className="w-full rounded-[14px] border border-[#ead7c8] bg-white px-2 py-1.5 text-[11px] font-semibold text-[#5d4838] outline-none"
+                  >
+                    {availableDailyDrops.map((drop) => (
+                      <option key={drop.id} value={drop.id}>
+                        {drop.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="rounded-[14px] bg-[#fff8f1] px-2 py-2 text-[10px] leading-4 text-[#8d684d]">
+                    <div>todayDrop.id: {todayDrop?.id ?? "none"}</div>
+                    <div>todayDrop.name: {todayDrop?.name ?? "none"}</div>
+                    <div>dailyDropState: {dailyDropState}</div>
+                    <div>storagePulse: {storagePulse ?? "none"}</div>
+                    <div>storageDot.food: {String(storageDot.food)}</div>
+                    <div>storageDot.toy: {String(storageDot.toy)}</div>
+                    <div>collectedMessage: {collectedMessage || "none"}</div>
+                    <div>claimedToday: {String(hasClaimedDailyDropToday)}</div>
+                    <div>debugBypass: {String(debugBypassDailyDropClaim)}</div>
+                    <div>shouldBypass: {String(shouldBypassDailyDropClaim)}</div>
+                    <div>canShowDailyDrop: {String(canShowDailyDrop)}</div>
+                  </div>
+
+                  <p className="text-[10px] leading-4 text-[#9a7a61]">
+                    Reset also bypasses today's claim lock for the next dev claim.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="relative flex flex-1 items-center justify-center">
@@ -940,16 +1282,21 @@ export function ChatPage({
             </div>
           </div>
 
-          {currentMember && !hasClaimedDailyDropToday && dailyDropState !== "claimed" && todayDrop && (
+          {showDailyDropButton && (
             <motion.button
               type="button"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 setShowMemberSwitcher(false);
                 void claimDailyDrop();
               }}
-              disabled={dailyDropState !== "available"}
-              whileTap={dailyDropState === "available" ? { scale: 0.95 } : undefined}
-              className="absolute right-[28px] top-[620px] z-30 flex flex-col items-center disabled:cursor-default"
+              disabled={dailyDropState !== "available" && !shouldBypassDailyDropClaim}
+              whileTap={
+                dailyDropState === "available" || shouldBypassDailyDropClaim
+                  ? { scale: 0.95 }
+                  : undefined
+              }
+              className="absolute right-[22px] bottom-[66px] z-40 flex flex-col items-center disabled:cursor-default"
             >
               <motion.div
                 animate={
@@ -964,15 +1311,12 @@ export function ChatPage({
                 }
                 className="flex h-[72px] w-[72px] items-center justify-center rounded-full border border-white/80 bg-white/60 text-3xl shadow-[0_14px_26px_rgba(97,74,56,0.14)] backdrop-blur-md"
               >
-                {todayDrop.image ? (
-                  <img
-                    src={todayDrop.image}
-                    alt={todayDrop.name}
-                    className="h-11 w-11 object-contain"
-                  />
-                ) : (
-                  <span>{todayDrop.emoji}</span>
-                )}
+                <ItemIcon
+                  item={todayDrop}
+                  sizeClass="h-11 w-11"
+                  emojiClassName="leading-none"
+                  alt={todayDrop.name}
+                />
               </motion.div>
               <span className="mt-1 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[#8d684d] shadow-sm">
                 Daily Drop
@@ -980,11 +1324,11 @@ export function ChatPage({
             </motion.button>
           )}
 
-          {collectedMessage && dailyDropState === "claimed" && (
+          {collectedMessage && (
             <motion.div
               initial={{ opacity: 0, y: 6, scale: 0.94 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="absolute right-[28px] top-[690px] z-30 rounded-full bg-white/88 px-3 py-2 text-xs font-bold text-[#8d684d] shadow-sm"
+              className="absolute right-[22px] bottom-[38px] z-40 rounded-full bg-white/88 px-3 py-2 text-xs font-bold text-[#8d684d] shadow-sm"
             >
               {collectedMessage}
             </motion.div>
@@ -1013,19 +1357,21 @@ export function ChatPage({
                 <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white" />
               </div>
 
-              {lastPlacedDailyDrop && (
-                <div className="absolute -right-11 bottom-16 z-10 flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 text-4xl shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm">
-                  {lastPlacedDailyDrop.sceneImage ? (
-                    <img
-                      src={lastPlacedDailyDrop.sceneImage}
-                      alt={lastPlacedDailyDrop.name}
-                      className="h-14 w-14 object-contain"
-                    />
-                  ) : (
-                    <span>{lastPlacedDailyDrop.emoji}</span>
-                  )}
-                </div>
-              )}
+              {displayedPlacedDailyDrops.map((drop) => {
+                const isLocalPlacedDrop = localPlacedDailyDrops.some(
+                  (item) => item.id === drop.id
+                );
+
+                return (
+                  <PlacedDailyDropSceneItem
+                    key={drop.id}
+                    drop={drop}
+                    onExpire={
+                      isLocalPlacedDrop ? clearLocalPlacedDailyDrop : clearPlacedDailyDrop
+                    }
+                  />
+                );
+              })}
 
               <button
                 type="button"
@@ -1051,7 +1397,7 @@ export function ChatPage({
 
             <p className="mt-1 text-[11px] text-[#8b705d]">
               {selectedHomePet.name +
-                ` - ${lastPlacedDailyDrop ? lastPlacedDailyDrop.name : "waiting for care"}`}
+                ` - ${latestDisplayedPlacedDailyDrop ? latestDisplayedPlacedDailyDrop.name : "waiting for care"}`}
             </p>
 
             {String(selectedHomeMemberId) !== String(me?.id) && (
@@ -1119,7 +1465,7 @@ export function ChatPage({
                 )}
 
                 {foodInventory.map((drop) => {
-                  const count = getDailyDropCount(drop.id);
+                  const count = getDisplayedDailyDropCount(drop.id);
 
                   return (
                     <button
@@ -1160,7 +1506,7 @@ export function ChatPage({
                 )}
 
                 {toyInventory.map((drop) => {
-                  const count = getDailyDropCount(drop.id);
+                  const count = getDisplayedDailyDropCount(drop.id);
 
                   return (
                     <button
@@ -1201,15 +1547,7 @@ export function ChatPage({
                     className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
                   >
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf] text-xl">
-                      {keepsake.image ? (
-                        <img
-                          src={keepsake.image}
-                          alt=""
-                          className="h-10 w-10 object-contain"
-                        />
-                      ) : (
-                        keepsake.emoji
-                      )}
+                      <ItemIcon item={keepsake} sizeClass="h-10 w-10" />
                     </span>
                     <span className="flex-1">
                       <span className="block text-sm font-semibold text-[#49372a]">

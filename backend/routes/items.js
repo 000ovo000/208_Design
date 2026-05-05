@@ -7,26 +7,15 @@ let inventorySchemaReadyPromise = null;
 
 const DAILY_DROP_SEEDS = [
   { name: "Pet Biscuit", category: "food", icon: "🍪" },
+  { name: "Pet Food", category: "food", icon: "🍖" },
   { name: "Pet Milk", category: "food", icon: "🥛" },
-  { name: "Water Bowl", category: "food", icon: "💧" },
+  { name: "Pet Water", category: "food", icon: "💧" },
   { name: "Small Ball", category: "toy", icon: "🟠" },
-  { name: "Crunchy Kibble", category: "food", icon: "🥣" },
-  { name: "Pet Brush", category: "toy", icon: "🪮" },
-  { name: "Pet Bandana", category: "toy", icon: "🧣" },
-  { name: "Fish Snack", category: "food", icon: "🐟" },
-  { name: "Yarn Ball", category: "toy", icon: "🧶" },
-  { name: "Feather Toy", category: "toy", icon: "🪶" },
-  { name: "Cat Kibble", category: "food", icon: "🥣" },
-  { name: "Tuna Bite", category: "food", icon: "🥫" },
-  { name: "Toy Mouse", category: "toy", icon: "🐭" },
-  { name: "Jingle Bell", category: "toy", icon: "🔔" },
-  { name: "Scratching Pad", category: "toy", icon: "🧩" },
-  { name: "Small Bone", category: "food", icon: "🦴" },
+  { name: "Canned Tuna", category: "food", icon: "🥫" },
+  { name: "Fish Toy", category: "toy", icon: "🐟" },
   { name: "Chew Toy", category: "toy", icon: "🪢" },
-  { name: "Tennis Ball", category: "toy", icon: "🎾" },
-  { name: "Puppy Kibble", category: "food", icon: "🥣" },
-  { name: "Chicken Bite", category: "food", icon: "🍗" },
-  { name: "Carrot Nibble", category: "food", icon: "🥕" },
+  { name: "Plush Bear", category: "toy", icon: "🧸" },
+  { name: "Small Bone", category: "food", icon: "🦴" },
 ];
 
 async function resolveCurrentUser() {
@@ -97,31 +86,6 @@ async function ensureInventorySchemaReady() {
         );
       }
 
-      const currentUser = await resolveCurrentUser();
-      const [carrotRows] = await db.query(`SELECT id FROM items WHERE name = ? LIMIT 1`, ["Carrot"]);
-      const [tennisRows] = await db.query(`SELECT id FROM items WHERE name = ? LIMIT 1`, ["Tennis Ball"]);
-
-      if (carrotRows[0]?.id) {
-        await db.query(
-          `
-          INSERT INTO member_items (family_member_id, item_id, quantity)
-          VALUES (?, ?, ?)
-          ON DUPLICATE KEY UPDATE quantity = GREATEST(member_items.quantity, VALUES(quantity))
-          `,
-          [Number(currentUser.id), Number(carrotRows[0].id), 2]
-        );
-      }
-
-      if (tennisRows[0]?.id) {
-        await db.query(
-          `
-          INSERT INTO member_items (family_member_id, item_id, quantity)
-          VALUES (?, ?, ?)
-          ON DUPLICATE KEY UPDATE quantity = GREATEST(member_items.quantity, VALUES(quantity))
-          `,
-          [Number(currentUser.id), Number(tennisRows[0].id), 1]
-        );
-      }
     })();
   }
 

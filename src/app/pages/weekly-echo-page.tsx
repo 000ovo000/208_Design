@@ -49,6 +49,35 @@ interface WeeklyEchoPageProps {
   addedKeepsakeIds: string[];
 }
 
+function RewardIcon({
+  reward,
+  sizeClass = "h-16 w-16",
+  emojiClassName = "text-4xl leading-none",
+}: {
+  reward: WeeklyReward;
+  sizeClass?: string;
+  emojiClassName?: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  if (reward.image && failedSrc !== reward.image) {
+    return (
+      <img
+        src={reward.image}
+        alt={reward.name}
+        className={`${sizeClass} object-contain`}
+        onError={() => setFailedSrc(reward.image ?? null)}
+      />
+    );
+  }
+
+  return (
+    <span className={emojiClassName} aria-hidden="true">
+      {reward.emoji}
+    </span>
+  );
+}
+
 export function WeeklyEchoPage({
   stats,
   weeklyAlbumEntries,
@@ -351,7 +380,7 @@ export function WeeklyEchoPage({
                 className="w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
               >
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#fff1d6] text-4xl">
-                  {weeklyKeepsake.emoji}
+                  <RewardIcon reward={weeklyKeepsake} />
                 </div>
 
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
