@@ -23,6 +23,7 @@ interface MoodCalendarProps {
   canPrev?: boolean;
   canNext?: boolean;
   onDayClick?: (day: number) => void;
+  insideModal?: boolean;
 }
 
 const moodColorMap: Record<Exclude<MoodType, null>, string> = {
@@ -123,14 +124,19 @@ export function MoodCalendar({
   canPrev = true,
   canNext = true,
   onDayClick,
+  insideModal = false,
 }: MoodCalendarProps) {
   const days = buildCalendarDays(year, month, moodMap);
   const title = `${monthNames[month - 1]} ${year}`;
 
   return (
-    <section className="w-full px-4 pt-4 pb-24 shrink-0">
-      <div className="rounded-[20px] bg-white/55 backdrop-blur-sm border border-white/60 shadow-[0_8px_24px_rgba(0,0,0,0.04)] px-4 py-4">
-        <div className="flex items-center justify-between mb-4">
+    <section className={`w-full ${insideModal ? "px-0 pt-2 pb-0" : "px-4 pt-4 pb-4"} shrink-0`}>
+      <div
+        className={`rounded-[20px] bg-white/55 backdrop-blur-sm border border-white/60 shadow-[0_8px_24px_rgba(0,0,0,0.04)] ${
+          insideModal ? "px-3 py-3" : "px-4 py-4"
+        }`}
+      >
+        <div className={`flex items-center justify-between ${insideModal ? "mb-2" : "mb-4"}`}>
           <button
             type="button"
             aria-label="Previous month"
@@ -143,7 +149,7 @@ export function MoodCalendar({
             <ChevronLeft size={22} strokeWidth={2.4} />
           </button>
 
-          <h3 className="text-[22px] font-semibold text-[#223A70]">{title}</h3>
+          <h3 className={`${insideModal ? "text-[18px]" : "text-[22px]"} font-semibold text-[#223A70]`}>{title}</h3>
 
           <button
             type="button"
@@ -158,19 +164,19 @@ export function MoodCalendar({
           </button>
         </div>
 
-        <div className="h-px bg-[#E5E5E5] mb-3" />
+        <div className={`h-px bg-[#E5E5E5] ${insideModal ? "mb-2" : "mb-3"}`} />
 
-        <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-[#1F1F1F] mb-2">
+        <div className={`grid grid-cols-7 text-center text-[11px] font-semibold text-[#1F1F1F] ${insideModal ? "mb-1" : "mb-2"}`}>
           {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((label) => (
             <span key={label}>{label}</span>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-y-3 justify-items-center">
+        <div className={`grid grid-cols-7 ${insideModal ? "gap-y-1" : "gap-y-3"} justify-items-center`}>
           {days.map((item, index) => (
             <div
               key={index}
-              className="w-full h-[54px] flex flex-col items-center"
+              className={`w-full ${insideModal ? "h-[48px]" : "h-[54px]"} flex flex-col items-center`}
             >
               {item.day !== null ? (
                 <button

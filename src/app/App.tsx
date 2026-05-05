@@ -7,7 +7,11 @@ import { ProfilePage } from "./pages/profile-page";
 import { WeeklyEchoPage } from "./pages/weekly-echo-page";
 import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
-import type { WeeklyReward, WeeklyRewardStats } from "./data/weekly-rewards";
+import {
+  weeklyRewards,
+  type WeeklyReward,
+  type WeeklyRewardStats,
+} from "./data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId, TabKey } from "./types";
 
 type CurrentUser = {
@@ -163,7 +167,18 @@ export default function App() {
     };
   }, [weeklyAlbumEntries]);
 
+  const definedWeeklyRewardIds = useMemo(
+    () => new Set(weeklyRewards.map((reward) => reward.id)),
+    []
+  );
+  const displayedWeeklyKeepsakes = useMemo(
+    () => weeklyKeepsakes.filter((reward) => definedWeeklyRewardIds.has(reward.id)),
+    [definedWeeklyRewardIds, weeklyKeepsakes]
+  );
+
   const handleWeeklyKeepsakeAdd = (reward: WeeklyReward) => {
+    if (!definedWeeklyRewardIds.has(reward.id)) return;
+
     setWeeklyKeepsakes((prev) =>
       prev.some((item) => item.id === reward.id) ? prev : [...prev, reward]
     );
@@ -203,7 +218,7 @@ export default function App() {
             familyMembers={dbFamilyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
-            weeklyKeepsakes={weeklyKeepsakes}
+            weeklyKeepsakes={displayedWeeklyKeepsakes}
           />
         );
 
@@ -226,9 +241,9 @@ export default function App() {
             stats={weeklyStats}
             weeklyAlbumEntries={weeklyAlbumEntries}
             familyMembers={dbFamilyMembers}
-            weeklyKeepsakes={weeklyKeepsakes}
+            weeklyKeepsakes={displayedWeeklyKeepsakes}
             onAddKeepsake={handleWeeklyKeepsakeAdd}
-            addedKeepsakeIds={weeklyKeepsakes.map((item) => item.id)}
+            addedKeepsakeIds={displayedWeeklyKeepsakes.map((item) => item.id)}
           />
         );
 
@@ -246,7 +261,7 @@ export default function App() {
             familyMembers={dbFamilyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
-            weeklyKeepsakes={weeklyKeepsakes}
+            weeklyKeepsakes={displayedWeeklyKeepsakes}
           />
         );
     }

@@ -18,18 +18,6 @@ export type WeeklyReward = {
 export const weeklyRewards: WeeklyReward[] = [
   // Common weekly rewards for both cats and dogs
   {
-    id: "pet-sofa",
-    kind: "premium-toy",
-    name: "Pet Sofa",
-    emoji: "🛋️",
-    image: "/images/weekly-reward/both/pet-sofa.png",
-    sceneImage: "/images/weekly-reward/both/pet-sofa.png",
-    petType: "both",
-    reason: "From a balanced week of family interaction.",
-    description: "A soft room reward for your pet to rest beside family memories.",
-    triggerType: "balanced",
-  },
-  {
     id: "pet-sofa1",
     kind: "premium-toy",
     name: "Pet Sofa 1",
@@ -115,19 +103,6 @@ export const weeklyRewards: WeeklyReward[] = [
     description: "A premium teaser toy for curious cat moments.",
     triggerType: "reaction",
   },
-  {
-    id: "cat-tree",
-    kind: "premium-toy",
-    name: "Cat Tree",
-    emoji: "🌳",
-    image: "/images/weekly-reward/cat/cat-tree.png",
-    sceneImage: "/images/weekly-reward/cat/cat-tree.png",
-    petType: "cat",
-    reason: "From a balanced week of family interaction.",
-    description: "A room item that gives your cat a playful place to climb.",
-    triggerType: "balanced",
-  },
-
   // Dog-specific weekly rewards
   {
     id: "carrot-toy",

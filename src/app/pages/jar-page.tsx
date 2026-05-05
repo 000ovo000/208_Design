@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, ChevronUp, Heart, Package, Plus, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Heart, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
 import { defaultPetId, getPetById, petItems, type PetId, type PetItem } from "../data/pets";
@@ -10,6 +10,14 @@ type ShareMode = "private" | "soft" | "full";
 type FamilyReaction = "hug" | "tea" | "pet" | null;
 type ParentInteraction = "love" | "hug" | "feed";
 type UserRole = "daughter" | "mum" | "dad" | "grandma" | "grandpa";
+
+type ParentInteractionRecord = {
+  id: string;
+  fromName: string;
+  interaction: ParentInteraction;
+  message: string;
+  createdAt: number;
+};
 
 type DbMoodEntry = {
   id: number;
@@ -64,6 +72,7 @@ const DEMO_TODAY_MONTH =
 const DEMO_TODAY_DAY =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getDate() : 1;
 const LATEST_PARENT_INTERACTION_KEY = "kinlight:latestParentInteraction";
+const PARENT_INTERACTIONS_KEY = "kinlight:parentInteractions";
 const SELECTED_PET_STORAGE_KEY = "selectedPetId";
 
 const profileOrder: UserRole[] = ["daughter", "mum", "dad", "grandma", "grandpa"];
@@ -251,8 +260,6 @@ const sampleCandyEntries: CandyEntry[] = [
   createCandyEntry({ id: "daughter-6", owner: "daughter", month: 4, day: 26, mood: "anxious", note: "Presentation week feels a bit heavy.", shareMode: "full", x: "43%", y: "21%" }),
   createCandyEntry({ id: "daughter-7", owner: "daughter", month: 4, day: 27, mood: "calm", note: "Nothing big happened, which was nice.", shareMode: "private", x: "61%", y: "22%" }),
   createCandyEntry({ id: "daughter-8", owner: "daughter", month: 4, day: 28, mood: "happy", note: "The weather made campus look pretty.", shareMode: "soft", x: "77%", y: "27%" }),
-  createCandyEntry({ id: "mum-1", owner: "mum", month: 4, day: 26, mood: "calm", note: "I am glad to hear small updates.", shareMode: "soft", x: "15%", y: "34%" }),
-  createCandyEntry({ id: "dad-1", owner: "dad", month: 4, day: 27, mood: "happy", note: "Dinner after work was nice today.", shareMode: "soft", x: "54%", y: "36%" }),
 ];
 
 function buildRecordMapForOwnerMonth(
@@ -275,44 +282,6 @@ function getMoodMapFromRecords(records: Record<number, CandyEntry>) {
     moodMap[Number(day)] = entry.mood;
   });
   return moodMap;
-}
-
-function getCurrentWeekMoods(
-  year: number,
-  month: number,
-  activeDay: number,
-  entries: CandyEntry[],
-  owner: UserRole
-) {
-  const activeDate = new Date(year, month - 1, activeDay);
-  const jsDay = activeDate.getDay();
-  const mondayBased = jsDay === 0 ? 6 : jsDay - 1;
-
-  const mondayDate = new Date(activeDate);
-  mondayDate.setDate(activeDate.getDate() - mondayBased);
-
-  const labels = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-
-  return labels.map((label, index) => {
-    const d = new Date(mondayDate);
-    d.setDate(mondayDate.getDate() + index);
-
-    const monthKey = getMonthKey(d.getFullYear(), d.getMonth() + 1);
-    const dayNum = d.getDate();
-    const entry = entries.find(
-      (item) =>
-        item.owner === owner &&
-        item.monthKey === monthKey &&
-        item.day === dayNum
-    );
-    const mood = entry?.mood ?? null;
-
-    return {
-      day: label,
-      filled: Boolean(mood),
-      color: mood ? moodColorMap[mood] : "#AAB0BB",
-    };
-  });
 }
 
 function getPetState(moodMap: Record<number, MoodKey>, currentUser: UserRole) {
@@ -385,10 +354,17 @@ function getRandomAvailableSlot(usedEntries: CandyEntry[]) {
   return validSlots[Math.floor(Math.random() * validSlots.length)];
 }
 
-function getLatestEntryForOwner(entries: CandyEntry[], owner: UserRole) {
-  const ownerEntries = entries.filter((entry) => entry.owner === owner);
-  if (ownerEntries.length === 0) return null;
-  return ownerEntries[ownerEntries.length - 1];
+function getTodaySharedEntryForOwner(entries: CandyEntry[], owner: UserRole) {
+  const todayMonthKey = getMonthKey(DEMO_YEAR, DEMO_TODAY_MONTH);
+  return (
+    entries.find(
+      (entry) =>
+        entry.owner === owner &&
+        entry.monthKey === todayMonthKey &&
+        entry.day === DEMO_TODAY_DAY &&
+        entry.shareMode !== "private"
+    ) ?? null
+  );
 }
 
 function isParentInteraction(value: string | null): value is ParentInteraction {
@@ -489,11 +465,52 @@ function getParentFeedbackText(reaction: FamilyReaction, targetName: string) {
   }
 }
 
-function getGraceParentInteractionBubble(interaction: ParentInteraction | null) {
-  if (interaction === "love") return "Mom sent you some love today \u{1F497}";
-  if (interaction === "hug") return "Mom sent you a warm hug today \u{1F917}";
-  if (interaction === "feed") return "Mom gave me a little treat today \u{1F43E}";
-  return "";
+function getParentInteractionMessage(fromName: string, interaction: ParentInteraction) {
+  if (interaction === "love") return `${fromName} sent you some love today \u{1F497}`;
+  if (interaction === "hug") return `${fromName} sent you a warm hug today \u{1F917}`;
+  return `${fromName} gave me a little treat today \u{1F43E}`;
+}
+
+function isParentInteractionRecord(value: unknown): value is ParentInteractionRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<ParentInteractionRecord>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.fromName === "string" &&
+    isParentInteraction(record.interaction ?? null) &&
+    typeof record.message === "string" &&
+    typeof record.createdAt === "number"
+  );
+}
+
+function readParentInteractionsFromStorage(): ParentInteractionRecord[] {
+  if (typeof window === "undefined") return [];
+
+  const savedRecords = window.localStorage.getItem(PARENT_INTERACTIONS_KEY);
+  if (savedRecords) {
+    try {
+      const parsed = JSON.parse(savedRecords);
+      if (Array.isArray(parsed)) {
+        const records = parsed.filter(isParentInteractionRecord);
+        if (records.length > 0) return records;
+      }
+    } catch {
+      // Fall through to the legacy single-interaction key.
+    }
+  }
+
+  const legacyInteraction = window.localStorage.getItem(LATEST_PARENT_INTERACTION_KEY);
+  if (!isParentInteraction(legacyInteraction)) return [];
+
+  return [
+    {
+      id: `legacy-${legacyInteraction}`,
+      fromName: "Mom",
+      interaction: legacyInteraction,
+      message: getParentInteractionMessage("Mom", legacyInteraction),
+      createdAt: 0,
+    },
+  ];
 }
 
 function isMoodKey(value: string): value is MoodKey {
@@ -589,12 +606,12 @@ function MoodReferenceItem({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full flex items-center gap-3 rounded-[16px] px-3 py-2 text-left transition-all ${
+      className={`w-full flex items-center gap-2 rounded-[16px] px-2.5 py-1.5 text-left transition-all ${
         selected ? "bg-[#F5EFFB] ring-1 ring-[#D8C8EA]" : "bg-[#FCFBFE]"
       }`}
     >
-      <MoodFace mood={mood} />
-      <span className="text-[14px] font-medium text-[#3B3551]">
+      <MoodFace mood={mood} size={27} />
+      <span className="text-[13px] font-medium leading-tight text-[#3B3551]">
         {moodLabelMap[mood]}
       </span>
     </button>
@@ -620,14 +637,14 @@ function ShareModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full text-left rounded-[18px] border px-4 py-3 transition-all ${
+      className={`w-full text-left rounded-[16px] border px-3 py-2 transition-all ${
         selected
           ? "bg-[#F4ECFF] border-[#BFA7E8] text-[#341056]"
           : "bg-white border-[#EEE7F5] text-[#5C5670]"
       }`}
     >
-      <p className="text-[14px] font-medium">{title}</p>
-      <p className="text-[12px] mt-1 leading-[1.35]">{description}</p>
+      <p className="text-[13px] font-medium">{title}</p>
+      <p className="text-[11px] mt-0.5 leading-[1.25]">{description}</p>
     </button>
   );
 }
@@ -646,7 +663,7 @@ function JarAnimation({ lidOpen }: { lidOpen: boolean }) {
       }}
     >
       <div
-        className="relative w-[246px] h-[44px] rounded-[28px_28px_18px_18px]"
+        className="relative w-[246px] h-[44px] rounded-[28px_28px_18px_18px] overflow-hidden"
         style={{
           background:
             "linear-gradient(180deg, #CC197C 0%, #B20D67 52%, #8A0D4A 100%)",
@@ -654,8 +671,8 @@ function JarAnimation({ lidOpen }: { lidOpen: boolean }) {
             "inset 0 6px 0 rgba(255,255,255,0.12), inset 0 -5px 0 rgba(83,0,39,0.16)",
         }}
       >
-        <span className="absolute left-0 right-0 top-[9px] h-[6px] rounded-full bg-[rgba(124,4,66,0.34)]" />
-        <span className="absolute left-0 right-0 bottom-[7px] h-[6px] rounded-full bg-[rgba(124,4,66,0.34)]" />
+        <span className="absolute left-[8px] right-[8px] top-[9px] h-[6px] rounded-full bg-[rgba(124,4,66,0.34)]" />
+        <span className="absolute left-[8px] right-[8px] bottom-[7px] h-[6px] rounded-full bg-[rgba(124,4,66,0.34)]" />
       </div>
     </div>
   );
@@ -895,6 +912,7 @@ function SharedStatusCard({
   currentUser,
   targetPet,
   onParentInteraction,
+  insideModal = false,
 }: {
   targetUser: UserRole;
   targetEntry: CandyEntry | null;
@@ -907,6 +925,7 @@ function SharedStatusCard({
   currentUser: UserRole;
   targetPet: PetItem;
   onParentInteraction: (interaction: ParentInteraction) => void;
+  insideModal?: boolean;
 }) {
   const targetProfile = profileMap[targetUser];
   const canSeeEntry = targetEntry && targetEntry.shareMode !== "private";
@@ -928,8 +947,8 @@ function SharedStatusCard({
   const badgeLabel = `Shared by ${targetProfile.name}`;
 
   return (
-    <section className="px-4 pt-2 pb-2 shrink-0">
-      <div className="rounded-[20px] bg-white/55 backdrop-blur-sm border border-white/60 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+    <section className={`${insideModal ? "px-0 pt-0 pb-0" : "px-4 pt-2 pb-2"} shrink-0`}>
+      <div className={`${insideModal ? "bg-transparent border-transparent px-0 py-0 shadow-none" : "bg-white/55 border-white/60 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.04)]"} rounded-[20px] backdrop-blur-sm border`}>
         <CareTargetSwitcher
           careTargetUsers={careTargetUsers}
           selectedCareTarget={targetUser}
@@ -965,11 +984,11 @@ function SharedStatusCard({
                       ? getSoftShareText(targetProfile.name, targetEntry.mood)
                       : `${targetProfile.name} added a ${moodLabelMap[
                           targetEntry.mood
-                        ].toLowerCase()} mood bead.`}
+                        ].toLowerCase()} mood candy.`}
                   </p>
                   {targetEntry.shareMode === "full" && (
                     <p className="text-[13px] text-[#5C5670] leading-[1.45] mt-2">
-                      {targetEntry.note.trim() || "No note was left for this mood bead."}
+                      {targetEntry.note.trim() || "No note was left for this mood candy."}
                     </p>
                   )}
                 </div>
@@ -1031,9 +1050,8 @@ function MainJarView({
   currentMonth,
   setCurrentMonth,
   ownMoodMap,
-  weekMoods,
   petLabel,
-  petBubble,
+  petBubbleMessages,
   lidOpen,
   droppingMood,
   droppingTarget,
@@ -1050,6 +1068,10 @@ function MainJarView({
   onParentInteraction,
   onCalendarDayClick,
   onCandyClick,
+  onOpenCarePopup,
+  onOpenCalendarPopup,
+  isCarePopupOpen,
+  isCalendarPopupOpen,
   currentPet,
 }: {
   onOpenTodayPlus: () => void;
@@ -1059,9 +1081,8 @@ function MainJarView({
   currentMonth: number;
   setCurrentMonth: (value: number) => void;
   ownMoodMap: Record<number, MoodKey>;
-  weekMoods: { day: string; filled: boolean; color: string }[];
   petLabel: string;
-  petBubble: string;
+  petBubbleMessages: string[];
   lidOpen: boolean;
   droppingMood: MoodKey | null;
   droppingTarget: { x: string; y: string } | null;
@@ -1078,119 +1099,122 @@ function MainJarView({
   onParentInteraction: (interaction: ParentInteraction) => void;
   onCalendarDayClick: (day: number) => void;
   onCandyClick: (entry: CandyEntry) => void;
+  onOpenCarePopup: () => void;
+  onOpenCalendarPopup: () => void;
+  isCarePopupOpen: boolean;
+  isCalendarPopupOpen: boolean;
   currentPet: PetItem;
 }) {
   const isDaughter = false;
   const isParent = true;
   const isGrandparent = false;
   const canRecordMood = true;
-  const currentProfile = profileMap[currentUser];
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const jarSectionRef = useRef<HTMLDivElement | null>(null);
-  const sharedStatusRef = useRef<HTMLDivElement | null>(null);
+  const [bubbleIndex, setBubbleIndex] = useState(0);
+  const bubbleTouchStartXRef = useRef<number | null>(null);
+  const currentBubble = petBubbleMessages[bubbleIndex] ?? petBubbleMessages[0] ?? "";
+  const hasMultipleBubbles = petBubbleMessages.length > 1;
 
-  const scrollToCalendar = () => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
+  useEffect(() => {
+    setBubbleIndex((current) =>
+      petBubbleMessages.length === 0
+        ? 0
+        : Math.min(current, petBubbleMessages.length - 1)
+    );
+  }, [petBubbleMessages.length]);
 
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: "smooth",
-    });
-  };
-
-  const scrollToSharedStatus = () => {
-    sharedStatusRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  };
-
-  const scrollToJar = () => {
-    const container = scrollContainerRef.current;
-    const target = jarSectionRef.current;
-    if (!container || !target) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    const centerTop =
-      targetRect.top -
-      containerRect.top +
-      container.scrollTop -
-      container.clientHeight / 2 +
-      target.clientHeight / 2;
-
-    container.scrollTo({
-      top: centerTop + 10,
-      behavior: "smooth",
-    });
+  const showNextBubble = () => {
+    if (!hasMultipleBubbles) return;
+    setBubbleIndex((current) => (current + 1) % petBubbleMessages.length);
   };
 
   return (
     <div
-      ref={scrollContainerRef}
-      className={`h-full overflow-y-auto transition-all duration-200 ${
+      className={`h-full overflow-hidden transition-all duration-200 ${
         isBlurred ? "blur-[6px] scale-[0.985]" : ""
       }`}
     >
       <section className="relative px-4 pt-1 shrink-0">
-        <div className="relative flex items-start justify-start mb-2 min-h-[64px]">
+        <div className="relative flex items-start justify-start mb-0 min-h-[52px]">
           <AccountSwitcher
             currentUser={currentUser}
             onSwitchUser={onSwitchUser}
           />
         </div>
 
-        <div className="relative -mt-[40px] mb-1 min-h-[86px]">
-          <div className="relative inline-flex max-w-[205px] px-[12px] py-[11px] rounded-[22px] bg-[#E3E3E3] text-[#161616] text-[16px] leading-[1.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] break-words">
-            <span className="block pr-[6px]">{petBubble}</span>
+        <div>
+        <div className="relative -mt-[34px] mb-0 min-h-[70px]">
+          <div
+            className="relative inline-flex max-w-[240px] min-h-[48px] items-center px-[12px] py-[9px] pr-[28px] rounded-[22px] bg-[#E3E3E3] text-[#161616] text-[14.5px] leading-[1.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] break-words transition-all duration-200"
+            style={{ maxWidth: "min(240px, calc(100% - 112px))" }}
+            onTouchStart={(event) => {
+              bubbleTouchStartXRef.current = event.touches[0]?.clientX ?? null;
+            }}
+            onTouchEnd={(event) => {
+              const startX = bubbleTouchStartXRef.current;
+              bubbleTouchStartXRef.current = null;
+              const endX = event.changedTouches[0]?.clientX ?? null;
+              if (startX === null || endX === null) return;
+              if (Math.abs(endX - startX) > 28) showNextBubble();
+            }}
+          >
+            <span key={currentBubble} className="block animate-[jarBubbleFade_180ms_ease-out]">
+              {currentBubble}
+            </span>
+            {hasMultipleBubbles && (
+              <button
+                type="button"
+                aria-label="Show next pet message"
+                onClick={showNextBubble}
+                className="absolute right-[5px] top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-[#7A7287] active:scale-95"
+              >
+                <ChevronRight size={18} strokeWidth={2.2} />
+              </button>
+            )}
             <span
               className="absolute right-5 -bottom-[8px] w-[14px] h-[14px] bg-[#E3E3E3] rotate-[-12deg]"
               style={{ clipPath: "polygon(0 0, 100% 0, 0 100%)" }}
             />
+            <style>{`
+              @keyframes jarBubbleFade {
+                0% { opacity: 0; transform: translateX(5px); }
+                100% { opacity: 1; transform: translateX(0); }
+              }
+            `}</style>
           </div>
 
-          <div className="absolute right-[8px] top-[40px] z-[10] flex flex-col items-end gap-2.5 shrink-0">
+          <div className="absolute right-[8px] top-[66px] z-[10] flex flex-col items-end gap-1.5 shrink-0">
             {canRecordMood && (
               <>
-                <div className="flex w-[82px] max-w-[24vw] flex-col items-center">
-                  <button
-                    type="button"
-                    aria-label="Go to jar"
-                    onClick={scrollToJar}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E4D2C3] bg-[#F8EFE7] text-[#4F3C2E] shadow-[0_8px_18px_rgba(97,74,56,0.12)] transition-all hover:bg-[#FFF7F0] active:scale-[0.95]"
-                  >
-                    <Package size={20} strokeWidth={2.3} />
-                  </button>
-                  <span className="mt-1 w-full text-center text-[10.5px] font-semibold leading-[1.12] text-[#4F3C2E]">
-                    Go to jar
-                  </span>
-                </div>
-
-                <div className="flex w-[82px] max-w-[24vw] flex-col items-center">
+                <div className="flex w-[78px] max-w-[23vw] flex-col items-center">
                   <button
                     type="button"
                     aria-label="Care for someone"
-                    onClick={scrollToSharedStatus}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#D8C6F2] bg-[#F4ECFF] text-[#341056] shadow-[0_8px_18px_rgba(52,16,86,0.12)] transition-all hover:bg-[#FAF5FF] active:scale-[0.95]"
+                    aria-haspopup="dialog"
+                    aria-expanded={isCarePopupOpen}
+                    aria-controls="jar-care-popup"
+                    onClick={onOpenCarePopup}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-[#D8C6F2] bg-[#F4ECFF] text-[#341056] shadow-[0_8px_18px_rgba(52,16,86,0.12)] transition-all hover:bg-[#FAF5FF] active:scale-[0.95]"
                   >
                     <Heart size={20} strokeWidth={2.3} />
                   </button>
-                  <span className="mt-1 w-full text-center text-[10.5px] font-semibold leading-[1.12] text-[#4F3C2E]">
+                  <span className="mt-0.5 w-full text-center text-[10px] font-semibold leading-[1.08] text-[#4F3C2E]">
                     Care for someone
                   </span>
                 </div>
 
-                <div className="flex w-[82px] max-w-[24vw] flex-col items-center">
+                <div className="flex w-[78px] max-w-[23vw] flex-col items-center">
                   <button
                     type="button"
-                    aria-label="Jump to mood calendar"
-                    onClick={scrollToCalendar}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E4D2C3] bg-[#F8EFE7] text-[#4F3C2E] shadow-[0_8px_18px_rgba(97,74,56,0.12)] transition-all hover:bg-[#FFF7F0] active:scale-[0.95]"
+                    aria-label="See mood calendar"
+                    aria-haspopup="dialog"
+                    aria-expanded={isCalendarPopupOpen}
+                    aria-controls="jar-calendar-popup"
+                    onClick={onOpenCalendarPopup}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-[#E4D2C3] bg-[#F8EFE7] text-[#4F3C2E] shadow-[0_8px_18px_rgba(97,74,56,0.12)] transition-all hover:bg-[#FFF7F0] active:scale-[0.95]"
                   >
                     <CalendarDays size={20} strokeWidth={2.3} />
                   </button>
-                  <span className="mt-1 w-full text-center text-[10.5px] font-semibold leading-[1.12] text-[#4F3C2E]">
+                  <span className="mt-0.5 w-full text-center text-[10px] font-semibold leading-[1.08] text-[#4F3C2E]">
                     See calendar
                   </span>
                 </div>
@@ -1199,136 +1223,87 @@ function MainJarView({
           </div>
         </div>
 
-        <div className="h-[132px] flex items-end justify-center">
+        <div className="h-[112px] flex items-end justify-center -mt-1">
           <img
             src={currentPet.image}
             alt={currentPet.name}
-            className="max-h-[128px] max-w-[220px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+            className="max-h-[112px] max-w-[205px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
           />
         </div>
 
-        <div className="flex justify-center mb-2">
-          <span className="px-3 py-1 rounded-full bg-[#F3EAFE] text-[#5A2A86] text-[12px] font-semibold">
-            {petLabel}
-          </span>
-        </div>
-
-        <p className="text-center text-[13px] leading-[1.45] text-[#6D647C] px-3 mb-4">
-          {isGrandparent
-            ? "This view is simplified for care. You do not need to manage a mood calendar."
-            : "The jar is shared, but each person's mood calendar is private to themselves."}
-        </p>
-      </section>
-
-      {canRecordMood && (
-        <section className="px-4 pb-2 shrink-0">
-          <div className="rounded-[20px] bg-white/45 backdrop-blur-sm border border-white/50 px-4 py-3">
-            <p className="text-[13px] font-semibold text-[#6D647C] mb-2">
-              My recent mood drops
-            </p>
-
-            <div className="grid grid-cols-7 text-center text-[12px] text-[#1F1F1F] mb-[6px]">
-              {weekMoods.map((item) => (
-                <span key={item.day}>{item.day}</span>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-7 gap-[6px] items-center justify-items-center">
-              {weekMoods.map((item) => (
-                <span
-                  key={item.day}
-                  className="w-[30px] h-[30px] rounded-full box-border"
-                  style={
-                    item.filled
-                      ? {
-                          backgroundColor: item.color,
-                          border: "2px solid #111111",
-                        }
-                      : {
-                          backgroundColor: "transparent",
-                          border: "2px solid #AAB0BB",
-                        }
-                  }
-                />
-              ))}
-            </div>
+        {petLabel !== "Private by default" && (
+          <div className="flex justify-center mb-1">
+            <span className="px-3 py-1 rounded-full bg-[#F3EAFE] text-[#5A2A86] text-[12px] font-semibold">
+              {petLabel}
+            </span>
           </div>
-        </section>
-      )}
+        )}
+      <div className="mt-[20px]">
+        {canRecordMood && (
+          <section className="px-4 pt-1 pb-1 text-center shrink-0">
+            <div className="relative flex min-h-9 items-center justify-center">
+              <button
+                type="button"
+                aria-label="Add today's mood candy"
+                onClick={onOpenTodayPlus}
+                className="absolute left-0 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white text-[#111111] flex items-center justify-center shrink-0 shadow-[0_5px_12px_rgba(0,0,0,0.12)]"
+              >
+                <Plus size={21} strokeWidth={2.2} />
+              </button>
 
-      {canRecordMood && (
-        <section className="flex items-center gap-3 px-3 pt-2 pb-1 shrink-0">
-          <button
-            type="button"
-            aria-label="Add today's mood bead"
-            onClick={onOpenTodayPlus}
-            className="w-[42px] h-[42px] rounded-full bg-white text-[#111111] flex items-center justify-center shrink-0 shadow-[0_5px_12px_rgba(0,0,0,0.12)]"
-          >
-            <Plus size={24} strokeWidth={2.2} />
-          </button>
-
-          <div>
-            <p className="text-[17px] text-[#1F1F1F] leading-[1.2]">
-              {isDaughter ? "Drop a mood bead for today?" : "Add your own mood bead?"}
-            </p>
-            {isParent && (
-              <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.35]">
-                Your own calendar stays private to your account.
+              <p className="mx-auto w-full max-w-[260px] text-[15px] font-medium text-[#1F1F1F] leading-[1.15]">
+                {isDaughter ? "Drop a mood candy for today?" : "Add your own mood candy?"}
               </p>
-            )}
-          </div>
-        </section>
-      )}
+            </div>
+          </section>
+        )}
 
-      {!isGrandparent && (
-        <section className="px-4 pt-1 pb-2 shrink-0">
-          <p className="text-center text-[13px] leading-[1.45] text-[#6D647C] px-4">
-            Shared beads support gentle awareness. Private beads remain visible only to their owner.
-          </p>
-        </section>
-      )}
-
-      {!isGrandparent && (
-        <section className="flex flex-col items-center justify-start pt-[5px] pb-6 shrink-0">
-          <div ref={jarSectionRef} className="relative w-[208px] h-[256px]">
-            <JarAnimation lidOpen={lidOpen} />
-
+        <div className="translate-y-[30px]">
+          {!isGrandparent && (
+            <section className="flex flex-col items-center justify-start pt-[15px] pb-1 shrink-0">
+          <div className="relative mx-auto flex w-[178px] h-[214px] justify-center">
             <div
-              className="absolute left-1/2 -translate-x-1/2 top-[38px] w-[208px] h-[212px] rounded-[16px_16px_30px_30px] overflow-hidden"
-              style={{
-                background:
-                  "linear-gradient(180deg, rgba(234,241,248,0.95) 0%, rgba(212,220,230,0.95) 100%)",
-              }}
+              className="relative w-[208px] h-[256px] shrink-0"
+              style={{ transform: "scale(0.84)", transformOrigin: "top center" }}
             >
-              {droppingMood && droppingTarget && (
-                <div
-                  className="absolute z-[6] pointer-events-none"
-                  style={{
-                    left: `calc(${droppingTarget.x} - ${BALL_RADIUS}px)`,
-                    bottom: droppingTarget.y,
-                    width: BALL_SIZE,
-                    height: BALL_SIZE,
-                    animation:
-                      "jarDropCandyToSlot 920ms cubic-bezier(0.2, 0.78, 0.22, 1) forwards",
-                  }}
-                >
-                  <span
-                    className="absolute inset-0 rounded-full"
+              <JarAnimation lidOpen={lidOpen} />
+
+              <div
+                className="absolute left-1/2 -translate-x-1/2 top-[38px] w-[208px] h-[212px] rounded-[16px_16px_30px_30px] overflow-hidden"
+                style={{
+                  background:
+                    "linear-gradient(180deg, rgba(234,241,248,0.95) 0%, rgba(212,220,230,0.95) 100%)",
+                }}
+              >
+                {droppingMood && droppingTarget && (
+                  <div
+                    className="absolute z-[6] pointer-events-none"
                     style={{
-                      backgroundColor: moodColorMap[droppingMood],
-                      boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.08)",
+                      left: `calc(${droppingTarget.x} - ${BALL_RADIUS}px)`,
+                      bottom: droppingTarget.y,
+                      width: BALL_SIZE,
+                      height: BALL_SIZE,
+                      animation:
+                        "jarDropCandyToSlot 920ms cubic-bezier(0.2, 0.78, 0.22, 1) forwards",
                     }}
                   >
                     <span
                       className="absolute inset-0 rounded-full"
                       style={{
-                        background:
-                          "radial-gradient(circle at center, transparent 45%, rgba(255,255,255,0.35) 46%, rgba(255,255,255,0.35) 58%, transparent 59%)",
+                        backgroundColor: moodColorMap[droppingMood],
+                        boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.08)",
                       }}
-                    />
-                  </span>
-                </div>
-              )}
+                    >
+                      <span
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          background:
+                            "radial-gradient(circle at center, transparent 45%, rgba(255,255,255,0.35) 46%, rgba(255,255,255,0.35) 58%, transparent 59%)",
+                        }}
+                      />
+                    </span>
+                  </div>
+                )}
 
               <style>{`
                 @keyframes jarDropCandyToSlot {
@@ -1393,70 +1368,30 @@ function MainJarView({
                   />
                 </button>
               ))}
+              </div>
             </div>
           </div>
 
-          <p className="mt-1 text-[12px] text-[#7A7287] leading-[1.4] px-8 text-center">
-            Family jar: shared beads are visible here. Your private beads are visible only to you.
-          </p>
-        </section>
-      )}
+            </section>
+          )}
 
-      {canRecordMood && (
-        <section className="px-4 pt-2 pb-1 shrink-0">
-          <div className="rounded-[18px] bg-white/35 backdrop-blur-sm border border-white/40 px-4 py-3">
-            <p className="text-[14px] font-semibold text-[#5A2A86]">
+          {canRecordMood && (
+            <section className="px-4 pt-[25px] pb-1 shrink-0">
+          <div className="rounded-[16px] bg-white/35 backdrop-blur-sm border border-white/40 px-3 py-2">
+            <p className="text-[12.5px] font-semibold text-[#5A2A86]">
               Mood sharing control
             </p>
-            <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.4]">
+            <p className="text-[10.5px] text-[#7A7287] mt-0.5 leading-[1.2]">
               Full Share by default. You can switch to Soft Share or Private before saving.
             </p>
           </div>
-        </section>
-      )}
-
-      <div ref={sharedStatusRef}>
-        {selectedCareTarget && (
-          <SharedStatusCard
-            targetUser={selectedCareTarget}
-            targetEntry={selectedCareTargetEntry}
-            careTargetUsers={careTargetUsers}
-            onSelectCareTarget={onSelectCareTarget}
-            familyReaction={familyReaction}
-            familyReactionTarget={familyReactionTarget}
-            setFamilyReaction={setFamilyReaction}
-            setFamilyReactionTarget={setFamilyReactionTarget}
-            currentUser={currentUser}
-            targetPet={selectedCareTargetPet ?? currentPet}
-            onParentInteraction={onParentInteraction}
-          />
-        )}
+            </section>
+          )}
+        </div>
       </div>
+      </div>
+      </section>
 
-      {canRecordMood && (
-        <>
-          <section className="px-4 pt-2 pb-1 shrink-0">
-            <div className="rounded-[18px] bg-white/35 backdrop-blur-sm border border-white/40 px-4 py-3">
-              <p className="text-[14px] font-semibold text-[#5A2A86]">
-                My private mood calendar
-              </p>
-              <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.4]">
-                Only {currentProfile.name} can see this calendar. Other family members cannot access it.
-              </p>
-            </div>
-          </section>
-          <MoodCalendar
-            year={DEMO_YEAR}
-            month={currentMonth}
-            moodMap={ownMoodMap}
-            onPrev={() => setCurrentMonth(Math.max(1, currentMonth - 1))}
-            onNext={() => setCurrentMonth(Math.min(12, currentMonth + 1))}
-            canPrev={currentMonth > 1}
-            canNext={currentMonth < 12}
-            onDayClick={onCalendarDayClick}
-          />
-        </>
-      )}
     </div>
   );
 }
@@ -1477,8 +1412,9 @@ export function JarPage({
   const [selectedCareTarget, setSelectedCareTarget] = useState<UserRole | null>(null);
   const [familyReaction, setFamilyReaction] = useState<FamilyReaction>(null);
   const [familyReactionTarget, setFamilyReactionTarget] = useState<UserRole | null>(null);
-  const [latestParentInteraction, setLatestParentInteraction] =
-    useState<ParentInteraction | null>(null);
+  const [parentInteractions, setParentInteractions] = useState<
+    ParentInteractionRecord[]
+  >([]);
   const [isSavingMood, setIsSavingMood] = useState(false);
   const [lidOpen, setLidOpen] = useState(false);
   const [droppingMood, setDroppingMood] = useState<MoodKey | null>(null);
@@ -1505,6 +1441,9 @@ export function JarPage({
       open: false,
       candy: null,
     });
+  const [activeJarPopup, setActiveJarPopup] = useState<"care" | "calendar" | null>(
+    null
+  );
 
   const timersRef = useRef<number[]>([]);
 
@@ -1541,11 +1480,7 @@ export function JarPage({
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedInteraction = window.localStorage.getItem(LATEST_PARENT_INTERACTION_KEY);
-    setLatestParentInteraction(
-      isParentInteraction(savedInteraction) ? savedInteraction : null
-    );
+    setParentInteractions(readParentInteractionsFromStorage());
   }, []);
 
   useEffect(() => {
@@ -1579,13 +1514,27 @@ export function JarPage({
   }, [currentUser]);
 
   const recordParentInteraction = (interaction: ParentInteraction) => {
-    setLatestParentInteraction(interaction);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(LATEST_PARENT_INTERACTION_KEY, interaction);
-    }
+    const fromName = currentUser === "mum" ? "Mom" : profileMap[currentUser].name;
+    const nextInteraction: ParentInteractionRecord = {
+      id: `${currentUser}-${interaction}-${Date.now()}-${Math.random()}`,
+      fromName,
+      interaction,
+      message: getParentInteractionMessage(fromName, interaction),
+      createdAt: Date.now(),
+    };
+
+    setParentInteractions((prev) => {
+      const next = [...prev, nextInteraction].slice(-12);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(PARENT_INTERACTIONS_KEY, JSON.stringify(next));
+        window.localStorage.setItem(LATEST_PARENT_INTERACTION_KEY, interaction);
+      }
+      return next;
+    });
   };
 
   const currentMonthKey = getMonthKey(DEMO_YEAR, currentMonth);
+  const currentProfile = profileMap[currentUser];
   const ownRecordMap = useMemo(
     () => buildRecordMapForOwnerMonth(allEntries, currentUser, currentMonthKey),
     [allEntries, currentUser, currentMonthKey]
@@ -1615,21 +1564,12 @@ export function JarPage({
     () => getPetState(ownMoodMap, currentUser),
     [ownMoodMap, currentUser]
   );
-  const graceParentInteractionBubble =
-    currentUser === "daughter"
-      ? getGraceParentInteractionBubble(latestParentInteraction)
-      : "";
-  const displayedPetBubble = graceParentInteractionBubble || petState.bubble;
-
-  const weekMoods = useMemo(() => {
-    return getCurrentWeekMoods(
-      DEMO_YEAR,
-      DEMO_TODAY_MONTH,
-      DEMO_TODAY_DAY,
-      allEntries,
-      currentUser
-    );
-  }, [allEntries, currentUser]);
+  const petBubbleMessages = useMemo(() => {
+    if (currentUser !== "daughter" || parentInteractions.length === 0) {
+      return [petState.bubble];
+    }
+    return parentInteractions.map((interaction) => interaction.message);
+  }, [currentUser, parentInteractions, petState.bubble]);
 
   const careTargetUsers = useMemo(
     () => profileOrder.filter((user) => user !== currentUser),
@@ -1649,7 +1589,7 @@ export function JarPage({
   const selectedCareTargetEntry = useMemo(
     () =>
       selectedCareTarget
-        ? getLatestEntryForOwner(allEntries, selectedCareTarget)
+        ? getTodaySharedEntryForOwner(allEntries, selectedCareTarget)
         : null,
     [allEntries, selectedCareTarget]
   );
@@ -1694,7 +1634,10 @@ export function JarPage({
   );
 
   const isAnyOverlayOpen =
-    editor.open || existingDayDialog.open || candyMessageDialog.open;
+    editor.open ||
+    existingDayDialog.open ||
+    candyMessageDialog.open ||
+    activeJarPopup !== null;
 
   const candyMessageLabel = candyMessageDialog.candy
     ? `${monthNames[Number(candyMessageDialog.candy.monthKey.split("-")[1]) - 1]} ${
@@ -1887,6 +1830,11 @@ export function JarPage({
     });
   };
 
+  const handleModalCalendarDayClick = (day: number) => {
+    setActiveJarPopup(null);
+    handleCalendarDayClick(day);
+  };
+
   const handleTodayPlusClick = () => {
     const todayMonthKey = getMonthKey(DEMO_YEAR, DEMO_TODAY_MONTH);
     const todayOwnMap = buildRecordMapForOwnerMonth(allEntries, currentUser, todayMonthKey);
@@ -1915,9 +1863,8 @@ export function JarPage({
           currentMonth={currentMonth}
           setCurrentMonth={setCurrentMonth}
           ownMoodMap={ownMoodMap}
-          weekMoods={weekMoods}
           petLabel={petState.label}
-          petBubble={displayedPetBubble}
+          petBubbleMessages={petBubbleMessages}
           lidOpen={lidOpen}
           droppingMood={droppingMood}
           droppingTarget={droppingTarget}
@@ -1933,6 +1880,10 @@ export function JarPage({
           setFamilyReactionTarget={setFamilyReactionTarget}
           onParentInteraction={recordParentInteraction}
           onCalendarDayClick={handleCalendarDayClick}
+          onOpenCarePopup={() => setActiveJarPopup("care")}
+          onOpenCalendarPopup={() => setActiveJarPopup("calendar")}
+          isCarePopupOpen={activeJarPopup === "care"}
+          isCalendarPopupOpen={activeJarPopup === "calendar"}
           onCandyClick={(entry) => {
             const isOwnEntry = entry.owner === currentUser;
             const canOpenSharedDetail =
@@ -1946,6 +1897,109 @@ export function JarPage({
           }}
           currentPet={currentRolePet}
         />
+
+        {activeJarPopup && (
+          <div
+            className={`absolute inset-0 z-[999] bg-black/10 px-5 pt-[72px] ${
+              activeJarPopup === "calendar"
+                ? "pb-[96px] overflow-hidden"
+                : "pb-[132px] overflow-y-auto overscroll-contain"
+            }`}
+            onClick={() => setActiveJarPopup(null)}
+          >
+            <div
+              id={
+                activeJarPopup === "care"
+                  ? "jar-care-popup"
+                  : "jar-calendar-popup"
+              }
+              role="dialog"
+              aria-modal="true"
+              aria-label={
+                activeJarPopup === "care"
+                  ? "Care for someone"
+                  : "Private mood calendar"
+              }
+              className="mx-auto w-full max-w-[340px] rounded-[28px] bg-white/88 backdrop-blur-xl border border-white/70 shadow-[0_20px_50px_rgba(0,0,0,0.16)] overflow-hidden"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div
+                className={
+                  activeJarPopup === "calendar"
+                    ? "px-4 pt-4 pb-3"
+                    : "px-5 pt-5 pb-5"
+                }
+              >
+                <div
+                  className={`flex items-start justify-between gap-3 ${
+                    activeJarPopup === "calendar" ? "mb-2" : "mb-4"
+                  }`}
+                >
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8B82A0]">
+                      Mood Jar
+                    </p>
+                    <h2 className="mt-1 text-[16px] leading-[1.35] text-[#3B3551] font-medium pr-2">
+                      {activeJarPopup === "care"
+                        ? "Care for Someone"
+                        : "My private mood calendar"}
+                    </h2>
+                  </div>
+
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={() => setActiveJarPopup(null)}
+                    className="w-8 h-8 rounded-full bg-[#F4F1F8] text-[#5A5470] flex items-center justify-center shrink-0"
+                  >
+                    <X size={16} strokeWidth={2.2} />
+                  </button>
+                </div>
+
+                {activeJarPopup === "care" && selectedCareTarget && (
+                  <SharedStatusCard
+                    targetUser={selectedCareTarget}
+                    targetEntry={selectedCareTargetEntry}
+                    careTargetUsers={careTargetUsers}
+                    onSelectCareTarget={handleSelectCareTarget}
+                    familyReaction={familyReaction}
+                    familyReactionTarget={familyReactionTarget}
+                    setFamilyReaction={setFamilyReaction}
+                    setFamilyReactionTarget={setFamilyReactionTarget}
+                    currentUser={currentUser}
+                    targetPet={selectedCareTargetPet ?? currentRolePet}
+                    onParentInteraction={recordParentInteraction}
+                    insideModal
+                  />
+                )}
+
+                {activeJarPopup === "calendar" && (
+                  <>
+                    <div className="rounded-[18px] bg-[#FCFBFE] border border-[#EEE7F5] px-3 py-2">
+                      <p className="text-[14px] font-semibold text-[#5A2A86]">
+                        My private mood calendar
+                      </p>
+                      <p className="text-[11px] text-[#7A7287] mt-0.5 leading-[1.25]">
+                        Only {currentProfile.name} can see this calendar. Other family members cannot access it.
+                      </p>
+                    </div>
+                    <MoodCalendar
+                      year={DEMO_YEAR}
+                      month={currentMonth}
+                      moodMap={ownMoodMap}
+                      onPrev={() => setCurrentMonth(Math.max(1, currentMonth - 1))}
+                      onNext={() => setCurrentMonth(Math.min(12, currentMonth + 1))}
+                      canPrev={currentMonth > 1}
+                      canNext={currentMonth < 12}
+                      onDayClick={handleModalCalendarDayClick}
+                      insideModal
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {existingDayDialog.open && existingDayDialog.day !== null && (
           <div className="absolute inset-0 z-[999] flex items-start justify-center px-5 pt-[72px] pb-5 bg-black/10 overflow-y-auto">
@@ -1968,7 +2022,7 @@ export function JarPage({
 
                 <div className="rounded-[18px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4 mb-4">
                   <p className="text-[15px] leading-[1.5] text-[#4A4360]">
-                    This day already has one mood bead in your private calendar. You can keep it private or choose how much to share.
+                    This day already has one mood candy in your private calendar. You can keep it private or choose how much to share.
                   </p>
                 </div>
 
@@ -1988,7 +2042,7 @@ export function JarPage({
 
                     <p className="text-[13px] text-[#7A7287] mb-2">Note</p>
                     <div className="min-h-[88px] rounded-[16px] bg-white border border-[#EAE3F0] px-4 py-3 text-[15px] leading-[1.5] text-[#2C2740]">
-                      {existingDayEntry.note.trim() || "No note was left for this mood bead."}
+                      {existingDayEntry.note.trim() || "No note was left for this mood candy."}
                     </div>
                   </div>
                 )}
@@ -1998,10 +2052,10 @@ export function JarPage({
         )}
 
         {editor.open && editor.day !== null && (
-            <div className="absolute inset-0 z-[999] bg-black/10 overflow-y-auto overscroll-contain px-5 pt-[72px] pb-[132px]">
+            <div className="absolute inset-0 z-[999] bg-black/10 overflow-hidden px-5 pt-[44px] pb-[96px]">
               <div className="mx-auto w-full max-w-[340px] rounded-[28px] bg-white/88 backdrop-blur-xl border border-white/70 shadow-[0_20px_50px_rgba(0,0,0,0.16)] overflow-hidden">
-                <div className="px-5 pt-5 pb-5">
-                    <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="px-5 pt-4 pb-4">
+                    <div className="flex items-start justify-between gap-3 mb-2">
                       <p className="text-[16px] leading-[1.35] text-[#3B3551] font-medium pr-2">
                         How are you feeling today?
                       </p>
@@ -2016,11 +2070,11 @@ export function JarPage({
                       </button>
                     </div>
 
-                    <p className="text-[13px] leading-[1.5] text-[#7A7287] mb-3">
+                    <p className="text-[12px] leading-[1.3] text-[#7A7287] mb-2">
                       {editorDayLabel}
                     </p>
 
-                    <div className="space-y-2 mb-4">
+                    <div className="grid grid-cols-2 gap-1.5 mb-3">
                       <MoodReferenceItem mood="calm" selected={selectedMood === "calm"} onClick={() => setSelectedMood("calm")} />
                       <MoodReferenceItem mood="tired" selected={selectedMood === "tired"} onClick={() => setSelectedMood("tired")} />
                       <MoodReferenceItem mood="happy" selected={selectedMood === "happy"} onClick={() => setSelectedMood("happy")} />
@@ -2033,15 +2087,15 @@ export function JarPage({
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                       placeholder="Write one sentence..."
-                      className="w-full h-[96px] resize-none rounded-[20px] border border-[#E7E1EE] bg-[#FCFBFE] px-4 py-3 text-[15px] text-[#2C2740] outline-none placeholder:text-[#A29AB5]"
+                      className="w-full h-[76px] resize-none rounded-[18px] border border-[#E7E1EE] bg-[#FCFBFE] px-4 py-2.5 text-[14px] text-[#2C2740] outline-none placeholder:text-[#A29AB5]"
                     />
 
-                    <div className="mt-4">
-                      <p className="text-[13px] text-[#7A7287] mb-2">
+                    <div className="mt-3">
+                      <p className="text-[12px] text-[#7A7287] mb-1.5">
                         Who can see this mood?
                       </p>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <ShareModeButton
                           mode="private"
                           current={shareMode}
@@ -2060,12 +2114,12 @@ export function JarPage({
                           mode="full"
                           current={shareMode}
                           title="Full Share"
-                          description="Family can see the mood bead and note, but not my calendar."
+                          description="Family can see the mood candy and note, but not my calendar."
                           onClick={() => setShareMode("full")}
                         />
                       </div>
                     </div>
-                  <div className="mt-5 pt-4 border-t border-[#EEE7F5]">
+                  <div className="mt-3 pt-3 border-t border-[#EEE7F5]">
                     <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
@@ -2136,7 +2190,7 @@ export function JarPage({
                     <>
                       <p className="text-[13px] text-[#7A7287] mb-2">Note</p>
                       <div className="min-h-[88px] rounded-[16px] bg-white border border-[#EAE3F0] px-4 py-3 text-[15px] leading-[1.5] text-[#2C2740]">
-                        {candyMessageDialog.candy.note.trim() || "No note was left for this mood bead."}
+                        {candyMessageDialog.candy.note.trim() || "No note was left for this mood candy."}
                       </div>
                     </>
                   ) : (
