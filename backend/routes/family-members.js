@@ -1,8 +1,8 @@
 const express = require("express");
 const db = require("../db");
-const { getCurrentUserId } = require("../current-user");
 
 const router = express.Router();
+const CURRENT_USER_ID = Number(process.env.CURRENT_USER_ID || 1);
 
 async function resolveCurrentUser() {
   try {
@@ -18,7 +18,7 @@ async function resolveCurrentUser() {
       WHERE fm.user_id = ?
       LIMIT 1
       `,
-      [getCurrentUserId()]
+      [CURRENT_USER_ID]
     );
 
     if (rows.length > 0) return rows[0];
@@ -27,9 +27,9 @@ async function resolveCurrentUser() {
   }
 
   return {
-    id: getCurrentUserId(),
-    name: `User ${getCurrentUserId()}`,
-    email: `user${getCurrentUserId()}@example.com`,
+    id: CURRENT_USER_ID,
+    name: `User ${CURRENT_USER_ID}`,
+    email: `user${CURRENT_USER_ID}@example.com`,
     family_id: 1,
   };
 }

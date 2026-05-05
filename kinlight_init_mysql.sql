@@ -115,6 +115,7 @@ CREATE TABLE moods (
   user_id BIGINT NOT NULL,
   mood VARCHAR(100) NOT NULL,
   comment TEXT,
+  visibility VARCHAR(20) NOT NULL DEFAULT 'private',
   mood_date DATE NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uk_moods_user_date (user_id, mood_date),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CalendarDays, Check, Plus, X } from "lucide-react";
+import { ArrowLeft, CalendarDays, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
 import type { PetId, PetItem, PetSpecies } from "../data/pets";
@@ -7,14 +7,15 @@ import type { PetId, PetItem, PetSpecies } from "../data/pets";
 type JarView = "main" | "petSelection";
 type MoodKey = "calm" | "tired" | "happy" | "anxious" | "homesick" | "needQuiet";
 type ShareMode = "private" | "soft" | "full";
-type FamilyReaction = "hug" | "tea" | "pet" | null;
-type UserRole = "daughter" | "mum" | "dad" | "grandma" | "grandpa";
 
 type DbMoodEntry = {
   id: number;
+  user_id: number | string;
+  family_id?: number | string;
   user_name: string;
   mood: string;
   comment: string | null;
+  visibility?: ShareMode;
   entry_date: string;
   created_at: string;
 };
@@ -28,7 +29,8 @@ type CurrentUser = {
 
 type CandyEntry = {
   id: string;
-  owner: UserRole;
+  owner: string;
+  ownerName: string;
   monthKey: string;
   day: number;
   mood: MoodKey;
@@ -62,44 +64,6 @@ const DEMO_TODAY_MONTH =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getMonth() + 1 : 5;
 const DEMO_TODAY_DAY =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getDate() : 1;
-
-const profileOrder: UserRole[] = ["daughter", "mum", "dad", "grandma", "grandpa"];
-
-const profileMap: Record<
-  UserRole,
-  { name: string; roleLabel: string; avatar: string; bg: string }
-> = {
-  daughter: {
-    name: "Grace",
-    roleLabel: "Student account",
-    avatar: "👩‍🎓",
-    bg: "#FFE4EF",
-  },
-  mum: {
-    name: "Mum",
-    roleLabel: "Family account",
-    avatar: "👩",
-    bg: "#E9E2FF",
-  },
-  dad: {
-    name: "Dad",
-    roleLabel: "Family account",
-    avatar: "👨",
-    bg: "#DFF1FF",
-  },
-  grandma: {
-    name: "Grandma",
-    roleLabel: "Care account",
-    avatar: "👵",
-    bg: "#FFF0CC",
-  },
-  grandpa: {
-    name: "Grandpa",
-    roleLabel: "Care account",
-    avatar: "👴",
-    bg: "#DDEFE8",
-  },
-};
 
 const BALL_SIZE = 22;
 const BALL_RADIUS = BALL_SIZE / 2;
@@ -182,6 +146,7 @@ function getMonthKey(year: number, month: number) {
 function createCandyEntry({
   id,
   owner,
+  ownerName,
   month,
   day,
   mood,
@@ -191,7 +156,8 @@ function createCandyEntry({
   y,
 }: {
   id: string;
-  owner: UserRole;
+  owner: string;
+  ownerName: string;
   month: number;
   day: number;
   mood: MoodKey;
@@ -203,6 +169,7 @@ function createCandyEntry({
   return {
     id,
     owner,
+    ownerName,
     monthKey: getMonthKey(DEMO_YEAR, month),
     day,
     mood,
@@ -214,22 +181,31 @@ function createCandyEntry({
   };
 }
 
-const sampleCandyEntries: CandyEntry[] = [
-  createCandyEntry({ id: "daughter-1", owner: "daughter", month: 4, day: 21, mood: "calm", note: "Today was soft and manageable.", shareMode: "soft", x: "18%", y: "8%" }),
-  createCandyEntry({ id: "daughter-2", owner: "daughter", month: 4, day: 22, mood: "tired", note: "A lot of deadlines today, but I am okay.", shareMode: "soft", x: "34%", y: "7%" }),
-  createCandyEntry({ id: "daughter-3", owner: "daughter", month: 4, day: 23, mood: "happy", note: "A small good thing happened after class.", shareMode: "full", x: "50%", y: "9%" }),
-  createCandyEntry({ id: "daughter-4", owner: "daughter", month: 4, day: 24, mood: "needQuiet", note: "I needed a quiet evening.", shareMode: "private", x: "67%", y: "8%" }),
-  createCandyEntry({ id: "daughter-5", owner: "daughter", month: 4, day: 25, mood: "homesick", note: "I missed home a little after dinner.", shareMode: "soft", x: "25%", y: "20%" }),
-  createCandyEntry({ id: "daughter-6", owner: "daughter", month: 4, day: 26, mood: "anxious", note: "Presentation week feels a bit heavy.", shareMode: "full", x: "43%", y: "21%" }),
-  createCandyEntry({ id: "daughter-7", owner: "daughter", month: 4, day: 27, mood: "calm", note: "Nothing big happened, which was nice.", shareMode: "private", x: "61%", y: "22%" }),
-  createCandyEntry({ id: "daughter-8", owner: "daughter", month: 4, day: 28, mood: "happy", note: "The weather made campus look pretty.", shareMode: "soft", x: "77%", y: "27%" }),
-  createCandyEntry({ id: "mum-1", owner: "mum", month: 4, day: 26, mood: "calm", note: "I am glad to hear small updates.", shareMode: "soft", x: "15%", y: "34%" }),
-  createCandyEntry({ id: "dad-1", owner: "dad", month: 4, day: 27, mood: "happy", note: "Dinner after work was nice today.", shareMode: "soft", x: "54%", y: "36%" }),
-];
+const sampleCandyEntries: CandyEntry[] = [];
+
+function getCapsulePosition(index: number, total: number) {
+  const columns = Math.max(5, Math.min(8, Math.ceil(Math.sqrt(Math.max(total, 1)))));
+  const row = Math.floor(index / columns);
+  const col = index % columns;
+
+  const leftMin = 14;
+  const leftMax = 78;
+  const rowHeight = 8.2;
+  const bottomBase = 6;
+  const horizontalStep = columns > 1 ? (leftMax - leftMin) / (columns - 1) : 0;
+  const left = leftMin + col * horizontalStep + (row % 2 === 1 ? horizontalStep * 0.45 : 0);
+  const clampedLeft = Math.max(leftMin, Math.min(leftMax, left));
+  const bottom = Math.min(72, bottomBase + row * rowHeight);
+
+  return {
+    left: `${clampedLeft}%`,
+    bottom: `${bottom}%`,
+  };
+}
 
 function buildRecordMapForOwnerMonth(
   entries: CandyEntry[],
-  owner: UserRole,
+  owner: string,
   monthKey: string
 ): Record<number, CandyEntry> {
   const result: Record<number, CandyEntry> = {};
@@ -254,7 +230,7 @@ function getCurrentWeekMoods(
   month: number,
   activeDay: number,
   entries: CandyEntry[],
-  owner: UserRole
+  owner: string
 ) {
   const activeDate = new Date(year, month - 1, activeDay);
   const jsDay = activeDate.getDay();
@@ -287,14 +263,7 @@ function getCurrentWeekMoods(
   });
 }
 
-function getPetState(moodMap: Record<number, MoodKey>, currentUser: UserRole) {
-  if (currentUser === "grandma" || currentUser === "grandpa") {
-    return {
-      label: "Care mode",
-      bubble: "You can simply send a small care to Grace.",
-    };
-  }
-
+function getPetState(moodMap: Record<number, MoodKey>) {
   const values = Object.values(moodMap);
 
   if (values.length === 0) {
@@ -364,7 +333,7 @@ function getRandomAvailableSlot(usedEntries: CandyEntry[]) {
   return validSlots[Math.floor(Math.random() * validSlots.length)];
 }
 
-function getLatestEntryForOwner(entries: CandyEntry[], owner: UserRole) {
+function getLatestEntryForOwner(entries: CandyEntry[], owner: string) {
   const ownerEntries = entries.filter((entry) => entry.owner === owner);
   if (ownerEntries.length === 0) return null;
   return ownerEntries[ownerEntries.length - 1];
@@ -374,15 +343,19 @@ function isMoodKey(value: string): value is MoodKey {
   return value in moodColorMap;
 }
 
-function getOwnerFromDbUserName(userName: string): UserRole {
-  const normalizedName = userName.trim().toLowerCase();
-
-  if (normalizedName === "mom" || normalizedName === "mum") return "mum";
-  if (normalizedName === "dad") return "dad";
-  if (normalizedName === "grandma") return "grandma";
-  if (normalizedName === "grandpa") return "grandpa";
-
-  return "daughter";
+function normalizeMoodKey(value: string): MoodKey {
+  if (isMoodKey(value)) return value;
+  const normalized = value.trim().toLowerCase();
+  const aliasMap: Record<string, MoodKey> = {
+    sad: "homesick",
+    stressed: "anxious",
+    stress: "anxious",
+    worried: "anxious",
+    quiet: "needQuiet",
+    neutral: "calm",
+    okay: "calm",
+  };
+  return aliasMap[normalized] ?? "calm";
 }
 
 function getMonthDayFromDbDate(dateValue: string) {
@@ -397,21 +370,21 @@ function getMonthDayFromDbDate(dateValue: string) {
 
 function convertDbMoodEntriesToCandyEntries(dbEntries: DbMoodEntry[]): CandyEntry[] {
   return dbEntries
-    .filter((entry) => isMoodKey(entry.mood))
     .map((entry, index) => {
       const { month, day } = getMonthDayFromDbDate(entry.entry_date);
       const slot = extraCandySlots[index % extraCandySlots.length];
-      const mood = entry.mood as MoodKey;
-      const owner = getOwnerFromDbUserName(entry.user_name);
+      const mood = normalizeMoodKey(entry.mood);
+      const owner = String(entry.user_id);
 
       return createCandyEntry({
         id: `db-${entry.id}`,
         owner,
+        ownerName: entry.user_name ?? `User ${entry.user_id}`,
         month,
         day,
         mood,
         note: entry.comment ?? "",
-        shareMode: "private",
+        shareMode: entry.visibility === "soft" || entry.visibility === "full" ? entry.visibility : "private",
         x: slot.x,
         y: slot.y,
       });
@@ -689,300 +662,50 @@ function JarAnimation({ lidOpen }: { lidOpen: boolean }) {
   );
 }
 
-function AccountSwitcher({
-  currentUser,
-  onSwitchUser,
-}: {
-  currentUser: UserRole;
-  onSwitchUser: (value: UserRole) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const pressTimerRef = useRef<number | null>(null);
-  const currentProfile = profileMap[currentUser];
-
-  const openSwitcher = () => setOpen(true);
-
-  const startLongPress = () => {
-    if (pressTimerRef.current) {
-      window.clearTimeout(pressTimerRef.current);
-    }
-    pressTimerRef.current = window.setTimeout(openSwitcher, 420);
-  };
-
-  const cancelLongPress = () => {
-    if (pressTimerRef.current) {
-      window.clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    }
-  };
-
-  return (
-    <>
-      <div className="absolute right-0 top-0 z-[30] flex flex-col items-center">
-        <button
-          type="button"
-          aria-label="Switch account"
-          onPointerDown={startLongPress}
-          onPointerUp={cancelLongPress}
-          onPointerLeave={cancelLongPress}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            openSwitcher();
-          }}
-          onClick={openSwitcher}
-          className="flex flex-col items-center gap-1 active:scale-95 transition-transform"
-        >
-          <span
-            className="w-[43px] h-[43px] rounded-full border border-white/80 shadow-[0_5px_14px_rgba(0,0,0,0.12)] flex items-center justify-center text-[23px]"
-            style={{ backgroundColor: currentProfile.bg }}
-          >
-            {currentProfile.avatar}
-          </span>
-          <span className="max-w-[66px] truncate rounded-full bg-white/72 px-2 py-[2px] text-[10px] font-semibold text-[#341056] shadow-sm">
-            {currentProfile.name}
-          </span>
-        </button>
-      </div>
-
-      {open && (
-        <div className="absolute inset-0 z-[998] bg-black/10" onClick={() => setOpen(false)}>
-          <div
-            className="absolute right-4 top-[76px] w-[270px] rounded-[26px] bg-white/92 backdrop-blur-xl border border-white/80 shadow-[0_18px_44px_rgba(34,16,56,0.18)] px-4 py-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <p className="text-[15px] font-semibold text-[#341056]">
-                  Switch account
-                </p>
-                <p className="text-[11px] text-[#7A7287] mt-1 leading-[1.35]">
-                  Demo profile switcher for different family accounts.
-                </p>
-              </div>
-              <button
-                type="button"
-                aria-label="Close account switcher"
-                onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-full bg-[#F4F1F8] text-[#5A5470] flex items-center justify-center shrink-0"
-              >
-                <X size={14} strokeWidth={2.2} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {profileOrder.map((profileKey) => {
-                const profile = profileMap[profileKey];
-                const active = profileKey === currentUser;
-
-                return (
-                  <button
-                    key={profileKey}
-                    type="button"
-                    onClick={() => {
-                      onSwitchUser(profileKey);
-                      setOpen(false);
-                    }}
-                    className={`w-full grid grid-cols-[42px_1fr_26px] items-center gap-3 rounded-[18px] px-3 py-2.5 text-left transition-colors ${
-                      active
-                        ? "bg-[#F4ECFF] border border-[#D8C6F2]"
-                        : "bg-[#FCFBFE] border border-[#EEE7F5]"
-                    }`}
-                  >
-                    <span
-                      className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-[21px] border border-white/80"
-                      style={{ backgroundColor: profile.bg }}
-                    >
-                      {profile.avatar}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-[14px] font-semibold text-[#3B3551]">
-                        {profile.name}
-                      </span>
-                      <span className="block text-[11px] text-[#7A7287] mt-0.5">
-                        {profile.roleLabel}
-                      </span>
-                    </span>
-                    <span className="flex justify-end text-[#341056]">
-                      {active && <Check size={18} strokeWidth={2.5} />}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
 function SharedStatusCard({
-  daughterEntry,
-  familyReaction,
-  setFamilyReaction,
-  currentUser,
+  latestEntry,
+  currentUserName,
 }: {
-  daughterEntry: CandyEntry | null;
-  familyReaction: FamilyReaction;
-  setFamilyReaction: (value: FamilyReaction) => void;
-  currentUser: UserRole;
+  latestEntry: CandyEntry | null;
+  currentUserName: string;
 }) {
-  const isStudent = currentUser === "daughter";
-  const isGrandparent = currentUser === "grandma" || currentUser === "grandpa";
-  const currentProfile = profileMap[currentUser];
-
-  const canSeeEntry = daughterEntry && daughterEntry.shareMode !== "private";
-
-  if (isGrandparent) {
-    return (
-      <section className="px-4 pt-2 pb-4 shrink-0">
-        <div className="rounded-[26px] bg-white/62 backdrop-blur-sm border border-white/70 px-5 py-5 shadow-[0_10px_26px_rgba(0,0,0,0.05)]">
-          <p className="text-[21px] font-semibold text-[#5A2A86] mb-2">
-            Grace today
-          </p>
-          <p className="text-[15px] leading-[1.5] text-[#6D647C] mb-4">
-            Only the mood Grace chooses to share is shown here. A small response is enough.
-          </p>
-
-          {!canSeeEntry ? (
-            <div className="rounded-[20px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4 text-[17px] leading-[1.45] text-[#3B3551]">
-              Grace has not shared a mood today.
-            </div>
-          ) : (
-            <div className="rounded-[20px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-4">
-              <div className="flex items-start gap-3">
-                <MoodFace mood={daughterEntry.mood} size={44} />
-                <div>
-                  <p className="text-[17px] font-semibold text-[#3B3551] leading-[1.4]">
-                    {daughterEntry.shareMode === "soft"
-                      ? softShareTextMap[daughterEntry.mood]
-                      : `Grace feels ${moodLabelMap[daughterEntry.mood].toLowerCase()} today.`}
-                  </p>
-                  {daughterEntry.shareMode === "full" && (
-                    <p className="text-[15px] text-[#5C5670] leading-[1.5] mt-2">
-                      “{daughterEntry.note.trim() || "No note was left."}”
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 space-y-3">
-            <button
-              type="button"
-              onClick={() => setFamilyReaction("hug")}
-              className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
-            >
-              🤗 Send a hug
-            </button>
-            <button
-              type="button"
-              onClick={() => setFamilyReaction("tea")}
-              className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
-            >
-              🍵 Send warm tea
-            </button>
-            <button
-              type="button"
-              onClick={() => setFamilyReaction("pet")}
-              className="w-full rounded-[20px] bg-[#F4ECFF] text-[#341056] px-4 py-3.5 text-[16px] font-semibold text-left"
-            >
-              🐶 Pet Grace’s pet
-            </button>
-          </div>
-
-          {familyReaction && (
-            <p className="text-[14px] mt-4 text-[#7A7287] leading-[1.4]">
-              {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
-              {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-              {familyReaction === "pet" && `${currentProfile.name} gently petted Grace’s pet.`}
-            </p>
-          )}
-        </div>
-      </section>
-    );
-  }
-
-  const title = isStudent ? "Family view preview" : "Grace’s shared status";
-  const subtitle = isStudent
-    ? "Your calendar is private. Family only sees the status you choose to share."
-    : "You cannot see Grace’s private calendar. Only her shared status appears here.";
-  const badgeLabel = isStudent ? "User controlled" : "Shared by Grace";
-
   return (
     <section className="px-4 pt-2 pb-2 shrink-0">
       <div className="rounded-[20px] bg-white/55 backdrop-blur-sm border border-white/60 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
         <div className="flex items-start justify-between gap-3 mb-2">
           <div>
-            <p className="text-[14px] font-semibold text-[#5A2A86]">{title}</p>
-            <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.4]">{subtitle}</p>
+            <p className="text-[14px] font-semibold text-[#5A2A86]">My latest shared status</p>
+            <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.4]">
+              This section reflects what your family can see from your current account.
+            </p>
           </div>
           <span className="px-2.5 py-1 rounded-full bg-[#F4ECFF] text-[#341056] text-[11px] font-semibold whitespace-nowrap">
-            {badgeLabel}
+            {currentUserName}
           </span>
         </div>
 
-        {!daughterEntry || daughterEntry.shareMode === "private" ? (
+        {!latestEntry || latestEntry.shareMode === "private" ? (
           <div className="mt-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-3 text-[13px] leading-[1.45] text-[#5C5670]">
-            Grace has not shared a mood today.
+            You have not shared a mood status today.
           </div>
         ) : (
-          <>
-            <div className="mt-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-3">
-              <div className="flex items-start gap-3">
-                <MoodFace mood={daughterEntry.mood} size={34} />
-                <div className="min-w-0">
-                  <p className="text-[14px] font-medium text-[#3B3551] leading-[1.35]">
-                    {daughterEntry.shareMode === "soft"
-                      ? softShareTextMap[daughterEntry.mood]
-                      : `Grace added a ${moodLabelMap[daughterEntry.mood].toLowerCase()} mood bead.`}
-                  </p>
-                  {daughterEntry.shareMode === "full" && (
-                    <p className="text-[13px] text-[#5C5670] leading-[1.45] mt-2">
-                      “{daughterEntry.note.trim() || "No note was left for this mood bead."}”
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {!isStudent && (
-              <>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFamilyReaction("hug")}
-                    className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
-                  >
-                    🤗 Hug
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFamilyReaction("tea")}
-                    className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
-                  >
-                    🍵 Tea
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFamilyReaction("pet")}
-                    className="rounded-full bg-[#F4ECFF] text-[#341056] px-2 py-2 text-[12px] font-medium"
-                  >
-                    🐶 Pet
-                  </button>
-                </div>
-
-                {familyReaction && (
-                  <p className="text-[12px] mt-3 text-[#7A7287] leading-[1.4]">
-                    {familyReaction === "hug" && `${currentProfile.name} sent a gentle hug.`}
-                    {familyReaction === "tea" && `${currentProfile.name} sent warm tea.`}
-                    {familyReaction === "pet" && `${currentProfile.name} gently petted Grace’s pet.`}
+          <div className="mt-3 rounded-[16px] bg-[#FCFBFE] border border-[#EEE7F5] px-4 py-3">
+            <div className="flex items-start gap-3">
+              <MoodFace mood={latestEntry.mood} size={34} />
+              <div className="min-w-0">
+                <p className="text-[14px] font-medium text-[#3B3551] leading-[1.35]">
+                  {latestEntry.shareMode === "soft"
+                    ? softShareTextMap[latestEntry.mood]
+                    : `Shared as ${moodLabelMap[latestEntry.mood].toLowerCase()}.`}
+                </p>
+                {latestEntry.shareMode === "full" && (
+                  <p className="text-[13px] text-[#5C5670] leading-[1.45] mt-2">
+                    “{latestEntry.note.trim() || "No note was left for this mood bead."}”
                   </p>
                 )}
-              </>
-            )}
-          </>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </section>
@@ -992,8 +715,7 @@ function SharedStatusCard({
 function MainJarView({
   onOpenTodayPlus,
   onOpenPetSelection,
-  currentUser,
-  onSwitchUser,
+  currentUserName,
   isBlurred,
   currentMonth,
   setCurrentMonth,
@@ -1005,17 +727,14 @@ function MainJarView({
   droppingMood,
   droppingTarget,
   visibleJarEntries,
-  daughterLatestEntry,
-  familyReaction,
-  setFamilyReaction,
+  latestOwnEntry,
   onCalendarDayClick,
   onCandyClick,
   currentPet,
 }: {
   onOpenTodayPlus: () => void;
   onOpenPetSelection: () => void;
-  currentUser: UserRole;
-  onSwitchUser: (value: UserRole) => void;
+  currentUserName: string;
   isBlurred: boolean;
   currentMonth: number;
   setCurrentMonth: (value: number) => void;
@@ -1027,18 +746,12 @@ function MainJarView({
   droppingMood: MoodKey | null;
   droppingTarget: { x: string; y: string } | null;
   visibleJarEntries: CandyEntry[];
-  daughterLatestEntry: CandyEntry | null;
-  familyReaction: FamilyReaction;
-  setFamilyReaction: (value: FamilyReaction) => void;
+  latestOwnEntry: CandyEntry | null;
   onCalendarDayClick: (day: number) => void;
   onCandyClick: (entry: CandyEntry) => void;
   currentPet: PetItem;
 }) {
-  const isDaughter = currentUser === "daughter";
-  const isParent = currentUser === "mum" || currentUser === "dad";
-  const isGrandparent = currentUser === "grandma" || currentUser === "grandpa";
-  const canRecordMood = isDaughter || isParent;
-  const currentProfile = profileMap[currentUser];
+  const canRecordMood = true;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToCalendar = () => {
@@ -1059,13 +772,6 @@ function MainJarView({
       }`}
     >
       <section className="relative px-4 pt-1 shrink-0">
-        <div className="relative flex items-start justify-start mb-2 min-h-[64px]">
-          <AccountSwitcher
-            currentUser={currentUser}
-            onSwitchUser={onSwitchUser}
-          />
-        </div>
-
         <div className="relative mb-1 min-h-[86px]">
           <div className="relative inline-flex max-w-[205px] px-[12px] py-[11px] rounded-[22px] bg-[#E3E3E3] text-[#161616] text-[16px] leading-[1.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] break-words">
             <span className="block pr-[6px]">{petBubble}</span>
@@ -1139,9 +845,7 @@ function MainJarView({
         </div>
 
         <p className="text-center text-[13px] leading-[1.45] text-[#6D647C] px-3 mb-4">
-          {isGrandparent
-            ? "This view is simplified for care. You do not need to manage a mood calendar."
-            : "The jar is shared, but each person’s mood calendar is private to themselves."}
+          The jar is shared, but each person’s mood calendar is private to themselves.
         </p>
       </section>
 
@@ -1194,27 +898,22 @@ function MainJarView({
 
           <div>
             <p className="text-[17px] text-[#1F1F1F] leading-[1.2]">
-              {isDaughter ? "Drop a mood bead for today?" : "Add your own mood bead?"}
+              Drop a mood bead for today?
             </p>
-            {isParent && (
-              <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.35]">
-                Your own calendar stays private to your account.
-              </p>
-            )}
+            <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.35]">
+              Your own calendar stays private to your account.
+            </p>
           </div>
         </section>
       )}
 
-      {!isGrandparent && (
-        <section className="px-4 pt-1 pb-2 shrink-0">
-          <p className="text-center text-[13px] leading-[1.45] text-[#6D647C] px-4">
-            Shared beads support gentle awareness. Private beads remain visible only to their owner.
-          </p>
-        </section>
-      )}
+      <section className="px-4 pt-1 pb-2 shrink-0">
+        <p className="text-center text-[13px] leading-[1.45] text-[#6D647C] px-4">
+          Shared beads support gentle awareness. Private beads remain visible only to their owner.
+        </p>
+      </section>
 
-      {!isGrandparent && (
-        <section className="flex flex-col items-center justify-start pt-8 pb-6 shrink-0">
+      <section className="flex flex-col items-center justify-start pt-8 pb-6 shrink-0">
           <div className="relative w-[208px] h-[256px]">
             <JarAnimation lidOpen={lidOpen} />
 
@@ -1291,18 +990,19 @@ function MainJarView({
                 }}
               />
 
-              {visibleJarEntries.map((entry) => (
+              {visibleJarEntries.map((entry, index) => {
+                const pos = getCapsulePosition(index, visibleJarEntries.length);
+                return (
                 <button
                   key={entry.id}
                   type="button"
                   onClick={() => onCandyClick(entry)}
-                  title={`${profileMap[entry.owner].name}: ${moodLabelMap[entry.mood]}`}
+                  title={`${entry.ownerName}: ${moodLabelMap[entry.mood]}`}
                   className="absolute rounded-full"
+                  data-capsule-index={index}
                   style={{
-                    left: entry.x.startsWith("calc")
-                      ? entry.x
-                      : `calc(${entry.x} - ${BALL_RADIUS}px)`,
-                    bottom: entry.y,
+                    left: `calc(${pos.left} - ${BALL_RADIUS}px)`,
+                    bottom: pos.bottom,
                     width: BALL_SIZE,
                     height: BALL_SIZE,
                     backgroundColor: entry.color,
@@ -1317,7 +1017,8 @@ function MainJarView({
                     }}
                   />
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1325,7 +1026,6 @@ function MainJarView({
             Family jar: shared beads are visible here. Your private beads are visible only to you.
           </p>
         </section>
-      )}
 
       {canRecordMood && (
         <section className="px-4 pt-2 pb-1 shrink-0">
@@ -1341,10 +1041,8 @@ function MainJarView({
       )}
 
       <SharedStatusCard
-        daughterEntry={daughterLatestEntry}
-        familyReaction={familyReaction}
-        setFamilyReaction={setFamilyReaction}
-        currentUser={currentUser}
+        latestEntry={latestOwnEntry}
+        currentUserName={currentUserName}
       />
 
       {canRecordMood && (
@@ -1355,7 +1053,7 @@ function MainJarView({
                 My private mood calendar
               </p>
               <p className="text-[12px] text-[#7A7287] mt-1 leading-[1.4]">
-                Only {currentProfile.name} can see this calendar. Other family members cannot access it.
+                Only {currentUserName} can see this calendar. Other family members cannot access it.
               </p>
             </div>
           </section>
@@ -1379,13 +1077,11 @@ export function JarPage() {
   const { selectedPetId, setSelectedPetId, unlockedPetIds, currentPet, petItems } = usePet();
   const [note, setNote] = useState("");
   const [view, setView] = useState<JarView>("main");
-  const [currentUser, setCurrentUser] = useState<UserRole>("daughter");
   const [realCurrentUser, setRealCurrentUser] = useState<CurrentUser | null>(null);
   const [currentMonth, setCurrentMonth] = useState(DEMO_TODAY_MONTH);
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
   const [shareMode, setShareMode] = useState<ShareMode>("private");
   const [allEntries, setAllEntries] = useState<CandyEntry[]>(sampleCandyEntries);
-  const [familyReaction, setFamilyReaction] = useState<FamilyReaction>(null);
   const [isSavingMood, setIsSavingMood] = useState(false);
   const [lidOpen, setLidOpen] = useState(false);
   const [droppingMood, setDroppingMood] = useState<MoodKey | null>(null);
@@ -1422,9 +1118,6 @@ export function JarPage() {
         if (!response.ok) throw new Error("Failed to fetch current user");
         const user = await response.json();
         setRealCurrentUser(user);
-        if (typeof user?.name === "string") {
-          setCurrentUser(getOwnerFromDbUserName(user.name));
-        }
       } catch (error) {
         console.warn("Failed to load current user:", error);
         setRealCurrentUser(null);
@@ -1457,8 +1150,10 @@ export function JarPage() {
           console.error("Failed to load moods:", data);
           return;
         }
+        console.log("Mood entries returned:", Array.isArray(data) ? data.length : 0);
 
         const loadedEntries = convertDbMoodEntriesToCandyEntries(data as DbMoodEntry[]);
+        console.log("Mood entries converted:", loadedEntries.length);
 
         setAllEntries((prev) => [
           ...prev.filter((entry) => !entry.id.startsWith("db-")),
@@ -1472,10 +1167,16 @@ export function JarPage() {
     void loadMoodEntries();
   }, [realCurrentUser?.id]);
 
+  const currentUserId = realCurrentUser?.id != null ? String(realCurrentUser.id) : "guest";
+  const currentUserName =
+    typeof realCurrentUser?.name === "string" && realCurrentUser.name.trim()
+      ? realCurrentUser.name
+      : "Me";
+
   const currentMonthKey = getMonthKey(DEMO_YEAR, currentMonth);
   const ownRecordMap = useMemo(
-    () => buildRecordMapForOwnerMonth(allEntries, currentUser, currentMonthKey),
-    [allEntries, currentUser, currentMonthKey]
+    () => buildRecordMapForOwnerMonth(allEntries, currentUserId, currentMonthKey),
+    [allEntries, currentUserId, currentMonthKey]
   );
   const ownMoodMap = useMemo(() => getMoodMapFromRecords(ownRecordMap), [ownRecordMap]);
 
@@ -1493,15 +1194,12 @@ export function JarPage() {
     existingDayDialog.day !== null
       ? buildRecordMapForOwnerMonth(
           allEntries,
-          currentUser,
+          currentUserId,
           getMonthKey(DEMO_YEAR, existingDayDialog.month)
         )[existingDayDialog.day] ?? null
       : null;
 
-  const petState = useMemo(
-    () => getPetState(ownMoodMap, currentUser),
-    [ownMoodMap, currentUser]
-  );
+  const petState = useMemo(() => getPetState(ownMoodMap), [ownMoodMap]);
 
   const weekMoods = useMemo(() => {
     return getCurrentWeekMoods(
@@ -1509,21 +1207,19 @@ export function JarPage() {
       DEMO_TODAY_MONTH,
       DEMO_TODAY_DAY,
       allEntries,
-      currentUser
+      currentUserId
     );
-  }, [allEntries, currentUser]);
+  }, [allEntries, currentUserId]);
 
-  const daughterLatestEntry = useMemo(
-    () => getLatestEntryForOwner(allEntries, "daughter"),
-    [allEntries]
+  const latestOwnEntry = useMemo(
+    () => getLatestEntryForOwner(allEntries, currentUserId),
+    [allEntries, currentUserId]
   );
 
-  const visibleJarEntries = useMemo(() => {
-    if (currentUser === "grandma" || currentUser === "grandpa") return [];
-    return allEntries.filter(
-      (entry) => entry.owner === currentUser || entry.shareMode !== "private"
-    );
-  }, [allEntries, currentUser]);
+  const visibleJarEntries = useMemo(() => allEntries, [allEntries]);
+  useEffect(() => {
+    console.log("Capsules rendered:", visibleJarEntries.length);
+  }, [visibleJarEntries]);
 
   const isAnyOverlayOpen =
     editor.open || existingDayDialog.open || candyMessageDialog.open;
@@ -1540,7 +1236,6 @@ export function JarPage() {
   };
 
   function openNewRecordEditor(day: number, month: number) {
-    if (currentUser === "grandma" || currentUser === "grandpa") return;
     setSelectedMood(null);
     setShareMode("private");
     setNote("");
@@ -1589,8 +1284,7 @@ export function JarPage() {
     shareMode: ShareMode;
     withDrop: boolean;
   }) {
-    const owner = currentUser;
-    if (owner === "grandma" || owner === "grandpa") return;
+    const owner = currentUserId;
 
     const monthKey = getMonthKey(DEMO_YEAR, month);
     const nextSlot = getRandomAvailableSlot(allEntries);
@@ -1599,6 +1293,7 @@ export function JarPage() {
     const newEntry: CandyEntry = {
       id: `${owner}-${monthKey}-${day}-${Date.now()}-${Math.random()}`,
       owner,
+      ownerName: currentUserName,
       monthKey,
       day,
       mood,
@@ -1608,8 +1303,6 @@ export function JarPage() {
       note,
       shareMode,
     };
-
-    setFamilyReaction(null);
 
     const addOrReplaceEntry = (prev: CandyEntry[]) => [
       ...prev.filter(
@@ -1655,8 +1348,6 @@ export function JarPage() {
       return;
     }
 
-    const familyId = realCurrentUser?.family_id ?? 1;
-
     const entryDate = `${DEMO_YEAR}-${String(editor.month).padStart(2, "0")}-${String(
       editor.day
     ).padStart(2, "0")}`;
@@ -1670,11 +1361,10 @@ export function JarPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          user_id: Number(realCurrentUser.id),
-          family_id: familyId,
           mood: selectedMood,
           comment: note,
           entry_date: entryDate,
+          visibility: shareMode,
         }),
       });
 
@@ -1721,7 +1411,7 @@ export function JarPage() {
 
   const handleTodayPlusClick = () => {
     const todayMonthKey = getMonthKey(DEMO_YEAR, DEMO_TODAY_MONTH);
-    const todayOwnMap = buildRecordMapForOwnerMonth(allEntries, currentUser, todayMonthKey);
+    const todayOwnMap = buildRecordMapForOwnerMonth(allEntries, currentUserId, todayMonthKey);
     const hasTodayRecord = Boolean(todayOwnMap[DEMO_TODAY_DAY]);
 
     if (!hasTodayRecord) {
@@ -1743,8 +1433,7 @@ export function JarPage() {
           <MainJarView
             onOpenTodayPlus={handleTodayPlusClick}
             onOpenPetSelection={() => setView("petSelection")}
-            currentUser={currentUser}
-            onSwitchUser={setCurrentUser}
+            currentUserName={currentUserName}
             isBlurred={isAnyOverlayOpen}
             currentMonth={currentMonth}
             setCurrentMonth={setCurrentMonth}
@@ -1756,15 +1445,9 @@ export function JarPage() {
             droppingMood={droppingMood}
             droppingTarget={droppingTarget}
             visibleJarEntries={visibleJarEntries}
-            daughterLatestEntry={daughterLatestEntry}
-            familyReaction={familyReaction}
-            setFamilyReaction={setFamilyReaction}
+            latestOwnEntry={latestOwnEntry}
             onCalendarDayClick={handleCalendarDayClick}
             onCandyClick={(entry) => {
-              const isOwnEntry = entry.owner === currentUser;
-              const canOpenSharedDetail = entry.shareMode === "full";
-              if (!isOwnEntry && !canOpenSharedDetail) return;
-
               setCandyMessageDialog({
                 open: true,
                 candy: entry,
@@ -1871,22 +1554,22 @@ export function JarPage() {
                         <ShareModeButton
                           mode="private"
                           current={shareMode}
-                          title="Private"
-                          description="Only visible in my private calendar. It will not appear to family."
+                          title="Private: Only me"
+                          description="Only visible to me. Family cannot see this capsule."
                           onClick={() => setShareMode("private")}
                         />
                         <ShareModeButton
                           mode="soft"
                           current={shareMode}
-                          title="Soft Share"
-                          description="Family sees only a gentle general status in the shared jar."
+                          title="Soft: Mood only"
+                          description="Family can see mood type and sender, but not note."
                           onClick={() => setShareMode("soft")}
                         />
                         <ShareModeButton
                           mode="full"
                           current={shareMode}
-                          title="Full Share"
-                          description="Family can see the mood bead and note, but not my calendar."
+                          title="Full: Mood + note"
+                          description="Family can see mood type, sender, and note."
                           onClick={() => setShareMode("full")}
                         />
                       </div>
@@ -1930,7 +1613,7 @@ export function JarPage() {
                         {candyMessageLabel}
                       </p>
                       <p className="text-[12px] text-[#7A7287] mt-1">
-                        From {profileMap[candyMessageDialog.candy.owner].name}
+                        From {candyMessageDialog.candy.ownerName}
                       </p>
                     </div>
 
@@ -1959,7 +1642,10 @@ export function JarPage() {
 
                     <p className="text-[13px] text-[#7A7287] mb-2">Note</p>
                     <div className="min-h-[88px] rounded-[16px] bg-white border border-[#EAE3F0] px-4 py-3 text-[15px] leading-[1.5] text-[#2C2740]">
-                      {candyMessageDialog.candy.note.trim() || "No note was left for this mood bead."}
+                      {candyMessageDialog.candy.owner !== currentUserId &&
+                      candyMessageDialog.candy.shareMode === "soft"
+                        ? "This capsule is Soft visibility. Family can see mood only."
+                        : candyMessageDialog.candy.note.trim() || "No note was left for this mood bead."}
                     </div>
                   </div>
                 </div>
