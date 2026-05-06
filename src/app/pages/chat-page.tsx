@@ -374,14 +374,14 @@ function PetSelectionCard({
       className={`flex flex-col items-center justify-end rounded-[22px] transition-all ${
         active ? "bg-[#B98A54] shadow-md" : "bg-white/55 border border-white/70"
       } ${!unlocked ? "opacity-50" : "active:scale-[0.98]"}`}
-      style={{ width: 118, height: 136, paddingBottom: 10 }}
+      style={{ width: 112, height: 126, paddingBottom: 8 }}
     >
-      <div className="relative w-[96px] h-[82px] mb-2 flex items-end justify-center">
-        <div className="absolute inset-x-0 bottom-0 mx-auto w-[84px] h-[44px] rounded-full bg-[#E8B85E]/80" />
+      <div className="relative mb-1.5 flex h-[76px] w-[92px] items-end justify-center">
+        <div className="absolute inset-x-0 bottom-0 mx-auto h-[40px] w-[80px] rounded-full bg-[#E8B85E]/80" />
         <img
           src={pet.image}
           alt={pet.name}
-          className="relative z-[2] max-h-[78px] max-w-[94px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
+          className="relative z-[2] max-h-[74px] max-w-[90px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
         />
       </div>
 
@@ -415,8 +415,8 @@ function PetSelectionView({
   const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
 
   return (
-    <div className="h-full overflow-y-auto px-5 pt-2 pb-8">
-      <div className="flex items-center justify-start mb-6">
+    <div className="h-full overflow-y-auto px-4 pb-4 pt-1">
+      <div className="mb-3 flex items-center justify-start">
         <button
           type="button"
           aria-label="Back"
@@ -427,8 +427,8 @@ function PetSelectionView({
         </button>
       </div>
 
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-5">
+      <div className="mb-5">
+        <div className="mb-3 flex items-center justify-between">
           <div>
             <h2 className="text-[26px] font-medium text-[#171717]">Pet Collection</h2>
             <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
@@ -437,11 +437,11 @@ function PetSelectionView({
           </div>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 rounded-[22px] bg-white/55 p-2 border border-white/70">
+        <div className="mb-3 grid grid-cols-2 gap-2 rounded-[22px] border border-white/70 bg-white/55 p-1.5">
           <button
             type="button"
             onClick={() => setActiveSpecies("dog")}
-            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+            className={`rounded-[18px] py-1.5 text-[14px] font-semibold ${
               activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
             }`}
           >
@@ -450,7 +450,7 @@ function PetSelectionView({
           <button
             type="button"
             onClick={() => setActiveSpecies("cat")}
-            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+            className={`rounded-[18px] py-1.5 text-[14px] font-semibold ${
               activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
             }`}
           >
@@ -458,7 +458,7 @@ function PetSelectionView({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 justify-items-center gap-4">
+        <div className="grid grid-cols-2 justify-items-center gap-3">
           {visiblePets.map((pet) => {
             const unlocked = unlockedPetIds.includes(pet.id);
             return (
@@ -475,17 +475,17 @@ function PetSelectionView({
       </div>
 
       <div>
-        <h3 className="text-[22px] font-medium text-[#171717] mb-5">
+        <h3 className="mb-3 text-[22px] font-medium text-[#171717]">
           Your selection:
         </h3>
 
-        <div className="flex flex-col items-center rounded-[28px] bg-white/55 border border-white/70 px-4 py-5">
+        <div className="flex flex-col items-center rounded-[28px] border border-white/70 bg-white/55 px-4 py-3">
           <img
             src={currentPet.image}
             alt={currentPet.name}
-            className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+            className="max-h-[124px] max-w-[220px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
           />
-          <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
+          <p className="mt-2 text-[15px] font-semibold text-[#5A2A86]">
             {currentPet.name}
           </p>
           <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
@@ -1745,11 +1745,15 @@ export function ChatPage({
 
       {activeInventory && (
         <div
-          className="absolute inset-0 z-50 flex items-end bg-[#3d2d22]/28 px-3 pb-5 backdrop-blur-sm"
+          className={`absolute inset-0 z-50 flex items-end bg-[#3d2d22]/28 px-3 backdrop-blur-sm ${
+            activeInventory === "petSelection" ? "pb-3" : "pb-5"
+          }`}
           onClick={() => setShowMemberSwitcher(false)}
         >
           <div
-            className="max-h-[76vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
+            className={`w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)] ${
+              activeInventory === "petSelection" ? "max-h-[88vh]" : "max-h-[76vh]"
+            }`}
             onClick={(event) => event.stopPropagation()}
           >
             {activeInventory === "petSelection" ? (
