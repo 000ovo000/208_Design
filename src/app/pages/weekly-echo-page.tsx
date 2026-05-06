@@ -9,12 +9,13 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
-import { weeklyCollectedDrops } from "../data/daily-drops";
+import { weeklyCollectedDrops, type DailyDropCategory } from "../data/daily-drops";
 import {
-  selectWeeklyReward,
+  getWeeklyRewardsForPet,
   type WeeklyReward,
   type WeeklyRewardStats,
 } from "../data/weekly-rewards";
+import type { PetItem } from "../data/pets";
 import type { AlbumEntry, FamilyMember } from "../types";
 
 type EchoPageKey = "summary" | "moments" | "keepsakes";
@@ -30,6 +31,26 @@ type AiEchoSummary = {
   body: string;
 };
 
+type DropSummaryCategory = "food" | "drink" | "basic-toy";
+
+type WeeklyDropCategorySummary = {
+  key: DropSummaryCategory;
+  label: string;
+  count: number;
+  itemNames: string[];
+  preview: string;
+};
+
+type WeeklyRewardCandidate =
+  | {
+      type: "item";
+      reward: WeeklyReward;
+    }
+  | {
+      type: "pet";
+      pet: PetItem;
+    };
+
 const chalkFontStyle: CSSProperties = {
   fontFamily: '"Segoe Print", "Comic Sans MS", "Bradley Hand", cursive',
 };
@@ -38,6 +59,31 @@ const petReplies: Record<PetReplyKey, string> = {
   gentle: "I kept the small moments safe for your family.",
   details: "This week felt warm: more reactions, a few photos, and gentle mood sharing.",
   thanks: "I can help you send a small thank-you back to your family.",
+};
+
+const dropCategoryLabels: Record<DropSummaryCategory, string> = {
+  food: "Food",
+  drink: "Drink",
+  "basic-toy": "Basic toy",
+};
+
+const getWeeklyDropSummaryKey = (
+  category: DailyDropCategory
+): DropSummaryCategory | null => {
+  if (category === "food" || category === "drink") return category;
+  if (category === "basic-toy" || category === "care") return "basic-toy";
+  return null;
+};
+
+const formatDropNamePreview = (itemNames: string[]) => {
+  if (itemNames.length > 3) {
+    return `${itemNames.slice(0, 2).join(", ")}, ...`;
+  }
+  return itemNames.join(", ");
+};
+
+const pickRandomCandidate = (candidates: WeeklyRewardCandidate[]) => {
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? candidates[0];
 };
 
 interface WeeklyEchoPageProps {
@@ -54,7 +100,7 @@ function RewardIcon({
   sizeClass = "h-16 w-16",
   emojiClassName = "text-4xl leading-none",
 }: {
-  reward: WeeklyReward;
+  reward: Pick<WeeklyReward | PetItem, "image" | "name"> & { emoji?: string };
   sizeClass?: string;
   emojiClassName?: string;
 }) {
@@ -73,7 +119,7 @@ function RewardIcon({
 
   return (
     <span className={emojiClassName} aria-hidden="true">
-      {reward.emoji}
+      {reward.emoji ?? "🎁"}
     </span>
   );
 }
@@ -86,7 +132,7 @@ export function WeeklyEchoPage({
   onAddKeepsake,
   addedKeepsakeIds,
 }: WeeklyEchoPageProps) {
-  const { currentPet } = usePet();
+  const { currentPet, petItems, unlockedPetIds, unlockPet } = usePet();
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   const [activePage, setActivePage] = useState(0);
@@ -97,19 +143,77 @@ export function WeeklyEchoPage({
 
   const [scene, setScene] = useState<WeeklyEchoScene>("boards");
   const [giftRevealStage, setGiftRevealStage] = useState<GiftRevealStage>("closed");
-  const weeklyKeepsake = selectWeeklyReward(stats, currentPet.species);
-  const addedToToyBox = addedKeepsakeIds.includes(weeklyKeepsake.id);
+  const weeklyRewardCandidates = useMemo<WeeklyRewardCandidate[]>(() => {
+    const itemCandidates = getWeeklyRewardsForPet(currentPet.species).map((reward) => ({
+      type: "item" as const,
+      reward,
+    }));
+    const petCandidates = petItems
+      .filter((pet) => !unlockedPetIds.includes(pet.id))
+      .map((pet) => ({
+        type: "pet" as const,
+        pet,
+      }));
+
+    return [...itemCandidates, ...petCandidates];
+  }, [currentPet.species, petItems, unlockedPetIds]);
+  const [selectedWeeklyRewardCandidate, setSelectedWeeklyRewardCandidate] =
+    useState<WeeklyRewardCandidate | null>(null);
+  const selectedWeeklyReward =
+    selectedWeeklyRewardCandidate?.type === "item"
+      ? selectedWeeklyRewardCandidate.reward
+      : null;
+  const selectedPetReward =
+    selectedWeeklyRewardCandidate?.type === "pet"
+      ? selectedWeeklyRewardCandidate.pet
+      : null;
+  const addedToToyBox = selectedWeeklyReward
+    ? addedKeepsakeIds.includes(selectedWeeklyReward.id)
+    : false;
+  const addedToPetCollection = selectedPetReward
+    ? unlockedPetIds.includes(selectedPetReward.id)
+    : false;
   const weeklyStats = [
     { label: "Pet messages", value: stats.petMessages, icon: "🐾" },
     { label: "Photo shares", value: stats.photoShares, icon: "🖼️" },
-    { label: "Gentle reactions", value: stats.gentleReactions, icon: "💗" },
     { label: "Mood check-ins", value: stats.moodCheckIns, icon: "🫧" },
+    { label: "Gentle reactions", value: stats.gentleReactions, icon: "💗" },
   ];
   const weeklyMoments = [
     `Your family shared ${stats.photoShares} photos this week.`,
     `${stats.petMessages} pet messages helped small moments travel home.`,
     `${stats.gentleReactions} gentle reactions and ${stats.moodCheckIns} mood check-ins kept the week warm.`,
   ];
+  const weeklyDropCategorySummaries = useMemo<WeeklyDropCategorySummary[]>(() => {
+    const summaryMap = new Map<DropSummaryCategory, { count: number; itemNames: string[] }>();
+
+    weeklyCollectedDrops.forEach((drop) => {
+      const key = getWeeklyDropSummaryKey(drop.category);
+      if (!key || drop.count <= 0) return;
+
+      const summary = summaryMap.get(key) ?? { count: 0, itemNames: [] };
+      summary.count += drop.count;
+      if (!summary.itemNames.includes(drop.name)) {
+        summary.itemNames.push(drop.name);
+      }
+      summaryMap.set(key, summary);
+    });
+
+    return (["food", "drink", "basic-toy"] as DropSummaryCategory[])
+      .map((key) => {
+        const summary = summaryMap.get(key);
+        if (!summary || summary.count <= 0) return null;
+
+        return {
+          key,
+          label: dropCategoryLabels[key],
+          count: summary.count,
+          itemNames: summary.itemNames,
+          preview: formatDropNamePreview(summary.itemNames),
+        };
+      })
+      .filter((summary): summary is WeeklyDropCategorySummary => Boolean(summary));
+  }, []);
   const weeklyStorySignals = useMemo(
     () => ({
       photos: weeklyAlbumEntries.map((entry) => {
@@ -135,7 +239,6 @@ export function WeeklyEchoPage({
         })),
       unlockedDecorations: [
         ...weeklyKeepsakes.map((keepsake) => keepsake.name),
-        addedToToyBox ? weeklyKeepsake.name : null,
       ].filter(Boolean),
       currentPet: {
         name: currentPet.name,
@@ -143,13 +246,11 @@ export function WeeklyEchoPage({
       },
     }),
     [
-      addedToToyBox,
       currentPet.name,
       currentPet.species,
       familyMembers,
       stats.moodCheckIns,
       weeklyAlbumEntries,
-      weeklyKeepsake.name,
       weeklyKeepsakes,
     ]
   );
@@ -252,8 +353,8 @@ export function WeeklyEchoPage({
       {
         key: "keepsakes" as EchoPageKey,
         title: "Shared Keepsakes",
-        subtitle: "Daily drops collected this week",
-        body: "Food drops can be used every day. Longer-lasting keepsakes are saved here as family memories.",
+        subtitle: "Small surprises found this week",
+        body: "Your pet found little surprises through the week.\nSome small items fade, while keepsakes stay as family memories.",
       },
     ],
     [aiSummary?.body, aiSummary?.subtitle, stats.connectedDays, stats.photoShares]
@@ -315,7 +416,7 @@ export function WeeklyEchoPage({
             <img
               src={currentPet.image}
               alt={currentPet.name}
-              className="h-28 w-28 shrink-0 object-contain drop-shadow-[0_8px_12px_rgba(93,62,37,0.18)]"
+              className="relative z-[70] h-28 w-28 shrink-0 object-contain drop-shadow-[0_8px_12px_rgba(93,62,37,0.18)]"
             />
 
             <div className="mt-2 max-w-[160px] rounded-2xl bg-white px-3 py-2 text-left text-xs leading-4 text-[#7b604f] shadow-sm">
@@ -330,7 +431,11 @@ export function WeeklyEchoPage({
                 onClick={handleOpenGift}
                 disabled={giftRevealStage !== "closed"}
                 whileTap={giftRevealStage === "closed" ? { scale: 0.96 } : undefined}
-                className="mt-16 flex flex-col items-center disabled:cursor-default"
+                className={`mt-16 flex flex-col items-center disabled:cursor-default ${
+                  giftRevealStage === "closed" || giftRevealStage === "shaking"
+                    ? "translate-y-[48px]"
+                    : ""
+                }`}
               >
                 <motion.img
                   key={giftRevealStage === "open" ? "open-box" : "closed-box"}
@@ -346,6 +451,7 @@ export function WeeklyEchoPage({
                   }
                   className={`object-contain drop-shadow-[0_14px_20px_rgba(128,93,63,0.2)] ${
                     giftRevealStage === "open" ? "w-52" : "w-44"
+                  } ${giftRevealStage === "open" ? "-translate-y-[24px]" : ""
                   }`}
                   animate={
                     giftRevealStage === "shaking"
@@ -364,7 +470,11 @@ export function WeeklyEchoPage({
                   }
                 />
 
-                <p className="mt-4 rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-[#8b6042] shadow-sm">
+                <p
+                  className={`mt-4 rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-[#8b6042] shadow-sm ${
+                    giftRevealStage === "open" ? "translate-y-[48px]" : ""
+                  }`}
+                >
                   {giftRevealStage === "closed"
                     ? "Tap to open"
                     : giftRevealStage === "shaking"
@@ -380,35 +490,58 @@ export function WeeklyEchoPage({
                 className="w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
               >
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#fff1d6] text-4xl">
-                  <RewardIcon reward={weeklyKeepsake} />
+                  {selectedWeeklyReward ? (
+                    <RewardIcon reward={selectedWeeklyReward} />
+                  ) : selectedPetReward ? (
+                    <RewardIcon reward={selectedPetReward} />
+                  ) : (
+                    <Gift className="h-10 w-10 text-[#c58b58]" />
+                  )}
                 </div>
 
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
-                  You unlocked
+                  {selectedPetReward ? "New pet unlocked" : "You unlocked"}
                 </p>
 
                 <h2 className="mt-1 text-2xl font-bold text-[#3d2b22]">
-                  {weeklyKeepsake.name}
+                  {selectedWeeklyReward?.name ?? selectedPetReward?.name ?? "Weekly Gift"}
                 </h2>
 
                 <p className="mt-2 text-sm font-semibold text-[#8b6042]">
-                  {weeklyKeepsake.reason}
+                  {selectedWeeklyReward?.reason ??
+                    "A new companion has joined your pet collection."}
                 </p>
 
                 <p className="mt-2 text-sm leading-6 text-[#8a6e5a]">
-                  {weeklyKeepsake.description}
+                  {selectedWeeklyReward?.description ??
+                    selectedPetReward?.description ??
+                    "A gentle weekly surprise for your family pet."}
                 </p>
 
                 <button
                   type="button"
-                  onClick={() => onAddKeepsake(weeklyKeepsake)}
+                  onClick={() => {
+                    if (selectedWeeklyReward) {
+                      onAddKeepsake(selectedWeeklyReward);
+                      return;
+                    }
+                    if (selectedPetReward) {
+                      unlockPet(selectedPetReward.id);
+                    }
+                  }}
                   className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-bold shadow-sm transition ${
-                    addedToToyBox
+                    addedToToyBox || addedToPetCollection
                       ? "bg-[#ead8c8] text-[#8b6042]"
                       : "bg-[#b98559] text-white"
                   }`}
                 >
-                  {addedToToyBox ? "Added to Toy Box" : "Add to Toy Box"}
+                  {selectedPetReward
+                    ? addedToPetCollection
+                      ? "Added to Pet Collection"
+                      : "Add to Pet Collection"
+                    : addedToToyBox
+                      ? "Added to Toy Box"
+                      : "Add to Toy Box"}
                 </button>
               </motion.div>
             )}
@@ -463,14 +596,20 @@ export function WeeklyEchoPage({
                 </p>
 
                 <h2
-                  className="mt-2 text-lg font-bold leading-tight text-white"
+                  className={`text-lg font-bold leading-tight text-white ${
+                    page.key === "keepsakes" ? "mt-1" : "mt-2"
+                  }`}
                   style={chalkFontStyle}
                 >
                   {page.subtitle}
                 </h2>
 
                 <p
-                  className="mt-2 whitespace-pre-line text-sm leading-5 text-[#f7efd9]"
+                  className={`whitespace-pre-line text-[#f7efd9] ${
+                    page.key === "keepsakes"
+                      ? "mt-2 text-[13px] leading-4"
+                      : "mt-2 text-sm leading-5"
+                  }`}
                   style={chalkFontStyle}
                 >
                   {page.body}
@@ -482,17 +621,19 @@ export function WeeklyEchoPage({
                       {weeklyStats.map((stat) => (
                         <div
                           key={stat.label}
-                          className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2"
+                          className="min-h-[58px] rounded-2xl border border-white/15 bg-white/10 px-2.5 py-2"
                         >
-                          <div className="text-base">{stat.icon}</div>
-                          <div
-                            className="text-base font-bold text-white"
-                            style={chalkFontStyle}
-                          >
-                            {stat.value}
+                          <div className="flex items-center gap-2">
+                            <span className="text-base leading-none">{stat.icon}</span>
+                            <span
+                              className="text-base font-bold leading-none text-white"
+                              style={chalkFontStyle}
+                            >
+                              {stat.value}
+                            </span>
                           </div>
                           <div
-                            className="text-xs text-[#e7dcc0]"
+                            className="mt-2 text-[11px] leading-tight text-[#e7dcc0]"
                             style={chalkFontStyle}
                           >
                             {stat.label}
@@ -546,31 +687,45 @@ export function WeeklyEchoPage({
 
                 {page.key === "keepsakes" && (
                   <div className="mt-3 space-y-2">
-                    {weeklyCollectedDrops.map((drop) => (
+                    {weeklyDropCategorySummaries.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-2">
+                        {weeklyDropCategorySummaries.map((summary) => (
+                          <div
+                            key={summary.key}
+                            className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2"
+                            style={chalkFontStyle}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-base font-bold leading-tight text-white">
+                                {summary.label} × {summary.count}
+                              </div>
+                              <Gift className="h-5 w-5 shrink-0 self-center translate-y-[8px] text-[#f9d98f]" />
+                            </div>
+                            <div className="mt-0.5 truncate text-[11px] leading-tight text-[#e7dcc0]">
+                              {summary.preview}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
                       <div
-                        key={drop.name}
-                        className="flex items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-3 py-1.5"
+                        className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs leading-4 text-[#e7dcc0]"
                         style={chalkFontStyle}
                       >
-                        <div>
-                          <div className="text-sm font-bold text-white">
-                            {drop.name} × {drop.count}
-                          </div>
-                          <div className="text-xs text-[#e7dcc0]">
-                            {drop.category}
-                          </div>
-                        </div>
-                        <Gift className="h-5 w-5 text-[#f9d98f]" />
+                        No small surprises were collected this week yet.
                       </div>
-                    ))}
+                    )}
 
                     <button
                       type="button"
                       onClick={() => {
+                        setSelectedWeeklyRewardCandidate(
+                          pickRandomCandidate(weeklyRewardCandidates)
+                        );
                         setScene("gift");
                         setGiftRevealStage("closed");
                       }}
-                      className="mt-4 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm"
+                      className="mt-2 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm"
                     >
                       Reveal This Week's Keepsake
                     </button>

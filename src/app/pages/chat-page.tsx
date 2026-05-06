@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Bell, ChevronDown, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
@@ -17,7 +17,11 @@ import {
   type PetSpecies,
 } from "../data/pets";
 import { getPetReaction } from "../data/pet-reactions";
-import type { WeeklyReward } from "../data/weekly-rewards";
+import {
+  getWeeklyRewardsForPet,
+  weeklyRewards,
+  type WeeklyReward,
+} from "../data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
 
 interface ChatPageProps {
@@ -30,6 +34,11 @@ interface ChatPageProps {
 type InventoryTab = "petSelection" | "food" | "toy";
 type DailyDropState = "available" | "claiming" | "claimed";
 type StorageArea = "food" | "toy";
+type DailyDropClaimRecord = {
+  date: string;
+  count: number;
+  claimedIds: string[];
+};
 type DbPost = {
   id: number | string;
   user_id: number | string;
@@ -62,7 +71,7 @@ type CurrentUser = {
 
 type VisualItem = {
   name: string;
-  emoji: string;
+  emoji?: string;
   image?: string;
   sceneImage?: string;
 };
@@ -73,6 +82,13 @@ type ScenePlacement = {
   imageClassName: string;
   durationMs: number | null;
   style?: CSSProperties;
+  scaleClassName?: string;
+};
+
+type DebugWeeklySceneItem = {
+  instanceId: string;
+  reward: WeeklyReward;
+  placedAt: number;
 };
 
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
@@ -80,6 +96,10 @@ const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: s
   { key: "food", label: "Food", title: "Food Storage", emoji: "🍖" },
   { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
 ];
+
+const DAILY_DROP_MAX_PER_DAY = 6;
+const DAILY_DROP_DEV_DELAY_MS = { min: 5000, max: 10000 };
+const DAILY_DROP_PROD_DELAY_MS = { min: 2 * 60 * 1000, max: 5 * 60 * 1000 };
 
 const getStorageArea = (drop: DailyDrop): StorageArea => {
   return drop.category === "food" || drop.category === "drink" ? "food" : "toy";
@@ -161,7 +181,7 @@ const getScenePlacement = (item: DailyDrop): ScenePlacement => {
     case "fish-toy":
       return {
         ...base,
-        positionClassName: "absolute -right-[76px] bottom-[-23px] z-20 flex items-center justify-center text-4xl",
+        positionClassName: "absolute -right-[76px] bottom-[-33px] z-20 flex items-center justify-center text-4xl",
         sizeClassName: "h-[51px] w-[51px]",
         durationMs: 50000,
       };
@@ -171,6 +191,52 @@ const getScenePlacement = (item: DailyDrop): ScenePlacement => {
         positionClassName: "absolute -right-12 bottom-14 z-10 flex items-center justify-center text-4xl",
         sizeClassName: "h-20 w-20",
         durationMs: item.category === "food" || item.category === "drink" ? 25000 : 50000,
+      };
+  }
+};
+
+const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => {
+  const base = {
+    imageClassName: "drop-shadow-[0_12px_18px_rgba(73,56,42,0.18)]",
+    durationMs: null,
+  };
+
+  if (reward.id.startsWith("pet-sofa")) {
+    return {
+      ...base,
+      positionClassName: "absolute left-1/2 bottom-[-10px] z-[5] flex -translate-x-1/2 items-center justify-center",
+      sizeClassName: "h-[122px] w-[230px]",
+      scaleClassName: "scale-[2] origin-center",
+    };
+  }
+
+  switch (reward.id) {
+    case "cat-climber":
+      return {
+        ...base,
+        positionClassName: "absolute left-[calc(50%-117px)] bottom-[88px] z-[1] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[150px] w-[112px]",
+        scaleClassName: "scale-[1.5] origin-center",
+      };
+    case "cat-teaser":
+      return {
+        ...base,
+        positionClassName: "absolute left-[calc(50%+85px)] bottom-[70px] z-20 flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[78px] w-[78px]",
+        scaleClassName: "scale-[10] origin-center",
+      };
+    case "carrot-toy":
+      return {
+        ...base,
+        positionClassName: "absolute left-[calc(50%+95px)] bottom-[70px] z-[25] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[72px] w-[72px]",
+        scaleClassName: "scale-[2] origin-center",
+      };
+    default:
+      return {
+        ...base,
+        positionClassName: "absolute left-[calc(50%+80px)] bottom-[8px] z-20 flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-20 w-20",
       };
   }
 };
@@ -206,17 +272,15 @@ function ItemIcon({
   source = "image",
   sizeClass = "h-11 w-11",
   imageClassName = "",
-  emojiClassName = "text-xl leading-none",
   alt = "",
 }: {
   item: VisualItem;
   source?: "image" | "sceneImage";
   sizeClass?: string;
   imageClassName?: string;
-  emojiClassName?: string;
   alt?: string;
 }) {
-  const src = item[source];
+  const src = source === "sceneImage" ? item.sceneImage ?? item.image : item.image ?? item.sceneImage;
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
   if (src && failedSrc !== src) {
@@ -231,40 +295,61 @@ function ItemIcon({
   }
 
   return (
-    <span className={emojiClassName} aria-hidden="true">
-      {item.emoji}
-    </span>
+    <span className={`${sizeClass} inline-block`} aria-hidden="true" />
   );
 }
 
 function PlacedDailyDropSceneItem({
   drop,
   onExpire,
+  disableExpire = false,
 }: {
   drop: DailyDrop;
   onExpire: (dropId: string) => void;
+  disableExpire?: boolean;
 }) {
   const placement = getScenePlacement(drop);
 
   useEffect(() => {
-    if (placement.durationMs === null) return;
+    if (disableExpire || placement.durationMs === null) return;
 
     const timeoutId = window.setTimeout(() => {
       onExpire(drop.id);
     }, placement.durationMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [drop.id, onExpire, placement.durationMs]);
+  }, [disableExpire, drop.id, onExpire, placement.durationMs]);
 
   return (
-    <div className={placement.positionClassName} style={placement.style}>
+    <div
+      className={`${placement.positionClassName} ${placement.scaleClassName ?? ""}`}
+      style={placement.style}
+    >
       <ItemIcon
         item={drop}
         source="sceneImage"
         sizeClass={placement.sizeClassName}
         imageClassName={placement.imageClassName}
-        emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
         alt={drop.name}
+      />
+    </div>
+  );
+}
+
+function PlacedWeeklyRewardSceneItem({ item }: { item: DebugWeeklySceneItem }) {
+  const placement = getWeeklyRewardScenePlacement(item.reward);
+
+  return (
+    <div
+      className={`${placement.positionClassName} ${placement.scaleClassName ?? ""}`}
+      style={placement.style}
+    >
+      <ItemIcon
+        item={item.reward}
+        source="sceneImage"
+        sizeClass={placement.sizeClassName}
+        imageClassName={placement.imageClassName}
+        alt={item.reward.name}
       />
     </div>
   );
@@ -453,10 +538,17 @@ export function ChatPage({
   const [latestAlbumPost, setLatestAlbumPost] = useState<Post | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [showMemberSwitcher, setShowMemberSwitcher] = useState(false);
-  const [hasClaimedDailyDropToday, setHasClaimedDailyDropToday] = useState(false);
+  const [dailyDropClaimsToday, setDailyDropClaimsToday] = useState<DailyDropClaimRecord>(() => ({
+    date: getTodayKey(),
+    count: 0,
+    claimedIds: [],
+  }));
   const [homeOwnerUserId, setHomeOwnerUserId] = useState<string | null>(null);
   const [debugDropToolsOpen, setDebugDropToolsOpen] = useState(false);
-  const [debugBypassDailyDropClaim, setDebugBypassDailyDropClaim] = useState(false);
+  const nextDailyDropTimerRef = useRef<number | null>(null);
+  const [debugWeeklyToolsOpen, setDebugWeeklyToolsOpen] = useState(false);
+  const [selectedDebugWeeklyRewardId, setSelectedDebugWeeklyRewardId] = useState("");
+  const [debugWeeklySceneItems, setDebugWeeklySceneItems] = useState<DebugWeeklySceneItem[]>([]);
 
   const loadPosts = useCallback(async () => {
     try {
@@ -488,10 +580,74 @@ export function ChatPage({
     return `daily-drop-claimed-${userId}-${getTodayKey()}`;
   }
 
+  function getDailyDropClaimsKey(userId: string | number, date = getTodayKey()) {
+    return `kinlight:daily-drop-claims:${userId}:${date}`;
+  }
+
+  function createEmptyDailyDropClaims(date = getTodayKey()): DailyDropClaimRecord {
+    return { date, count: 0, claimedIds: [] };
+  }
+
+  function readDailyDropClaims(userId: string | number): DailyDropClaimRecord {
+    const date = getTodayKey();
+    if (typeof window === "undefined") return createEmptyDailyDropClaims(date);
+
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(getDailyDropClaimsKey(userId, date)) || "null"
+      );
+      if (saved?.date === date) {
+        return {
+          date,
+          count: Math.min(
+            Math.max(Number(saved.count) || 0, 0),
+            DAILY_DROP_MAX_PER_DAY
+          ),
+          claimedIds: Array.isArray(saved.claimedIds)
+            ? saved.claimedIds.filter((id): id is string => typeof id === "string")
+            : [],
+        };
+      }
+    } catch {
+      // Fall through to legacy compatibility.
+    }
+
+    const legacyClaimed =
+      window.localStorage.getItem(getDailyDropClaimKey(userId)) === "true";
+    return legacyClaimed
+      ? { date, count: 1, claimedIds: ["legacy-daily-drop"] }
+      : createEmptyDailyDropClaims(date);
+  }
+
+  function writeDailyDropClaims(userId: string | number, record: DailyDropClaimRecord) {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      getDailyDropClaimsKey(userId, record.date),
+      JSON.stringify(record)
+    );
+  }
+
+  function clearNextDailyDropTimer() {
+    if (nextDailyDropTimerRef.current == null) return;
+    window.clearTimeout(nextDailyDropTimerRef.current);
+    nextDailyDropTimerRef.current = null;
+  }
+
+  function getNextDailyDropDelay() {
+    const range = import.meta.env.DEV
+      ? DAILY_DROP_DEV_DELAY_MS
+      : DAILY_DROP_PROD_DELAY_MS;
+    return Math.floor(range.min + Math.random() * (range.max - range.min));
+  }
+
   function clearDailyDropClaimStorageForDebug() {
     if (typeof window === "undefined") return;
     Object.keys(window.localStorage)
-      .filter((key) => key.startsWith("daily-drop-claimed-"))
+      .filter(
+        (key) =>
+          key.startsWith("daily-drop-claimed-") ||
+          key.startsWith("kinlight:daily-drop-claims:")
+      )
       .forEach((key) => window.localStorage.removeItem(key));
   }
 
@@ -598,27 +754,74 @@ export function ChatPage({
   );
 
   const isDevDailyDropTools = import.meta.env.DEV;
-  const shouldBypassDailyDropClaim =
-    isDevDailyDropTools && debugBypassDailyDropClaim;
+  const availableWeeklyDebugRewards = useMemo(
+    () => {
+      const currentPetRewards = getWeeklyRewardsForPet(currentPet.species);
+      const currentIds = new Set(currentPetRewards.map((reward) => reward.id));
+      return [
+        ...currentPetRewards,
+        ...weeklyRewards.filter((reward) => !currentIds.has(reward.id)),
+      ];
+    },
+    [currentPet.species]
+  );
+  const selectedDebugWeeklyReward =
+    availableWeeklyDebugRewards.find((reward) => reward.id === selectedDebugWeeklyRewardId) ??
+    availableWeeklyDebugRewards[0] ??
+    null;
+  const dailyDropClaimsRemaining = Math.max(
+    DAILY_DROP_MAX_PER_DAY - dailyDropClaimsToday.count,
+    0
+  );
+  const hasDailyDropClaimsRemaining = dailyDropClaimsRemaining > 0;
 
   const canShowDailyDrop =
     Boolean(todayDrop) &&
     (dailyDropState === "available" ||
-      dailyDropState === "claiming" ||
-      shouldBypassDailyDropClaim) &&
-    (!hasClaimedDailyDropToday || shouldBypassDailyDropClaim);
+      dailyDropState === "claiming") &&
+    hasDailyDropClaimsRemaining;
   const showDailyDropButton = Boolean(currentMember) && canShowDailyDrop;
   const getDisplayedDailyDropCount = (dropId: string) =>
     getDailyDropCount(dropId) + (localDailyDropInventory[dropId] ?? 0);
 
-  const makeDailyDropAvailableForDebug = (drop: DailyDrop, message: string) => {
-    if (!isDevDailyDropTools) return;
-    clearDailyDropClaimStorageForDebug();
+  const showNextDailyDrop = (drop = pickRandomDrop(availableDailyDrops)) => {
+    if (!hasDailyDropClaimsRemaining) return;
+    clearNextDailyDropTimer();
     setTodayDrop(drop);
-    setHasClaimedDailyDropToday(false);
     setDailyDropState("available");
     setCollectedMessage("");
-    setDebugBypassDailyDropClaim(true);
+  };
+
+  const scheduleNextDailyDrop = (claimRecord: DailyDropClaimRecord) => {
+    clearNextDailyDropTimer();
+    if (claimRecord.count >= DAILY_DROP_MAX_PER_DAY) return;
+    nextDailyDropTimerRef.current = window.setTimeout(() => {
+      nextDailyDropTimerRef.current = null;
+      setTodayDrop(pickRandomDrop(availableDailyDrops));
+      setDailyDropState("available");
+      setCollectedMessage("");
+      setPetFeedback("Your pet found something small.");
+    }, getNextDailyDropDelay());
+  };
+
+  const makeDailyDropAvailableForDebug = (
+    drop: DailyDrop,
+    message: string,
+    resetClaims = false
+  ) => {
+    if (!isDevDailyDropTools) return;
+    clearNextDailyDropTimer();
+    if (resetClaims) {
+      clearDailyDropClaimStorageForDebug();
+      const emptyClaims = createEmptyDailyDropClaims();
+      setDailyDropClaimsToday(emptyClaims);
+      if (currentUser?.id) {
+        writeDailyDropClaims(currentUser.id, emptyClaims);
+      }
+    }
+    setTodayDrop(drop);
+    setDailyDropState("available");
+    setCollectedMessage("");
     setPetFeedback(message);
   };
 
@@ -627,9 +830,11 @@ export function ChatPage({
     const nextDrop =
       availableDailyDrops.find((drop) => drop.id === todayDrop.id) ??
       pickRandomDrop(availableDailyDrops);
+    setLocalPlacedDailyDrops([]);
     makeDailyDropAvailableForDebug(
       nextDrop,
-      "Daily Drop reset. You can claim again."
+      "Daily Drop reset. Your pet can find something again.",
+      true
     );
   };
 
@@ -637,7 +842,7 @@ export function ChatPage({
     if (!isDevDailyDropTools) return;
     makeDailyDropAvailableForDebug(
       pickRandomDrop(availableDailyDrops),
-      "Daily Drop randomized. You can claim again."
+      "Daily Drop randomized. A little surprise is ready."
     );
   };
 
@@ -647,8 +852,34 @@ export function ChatPage({
     if (!selectedDrop) return;
     makeDailyDropAvailableForDebug(
       selectedDrop,
-      `${selectedDrop.name} selected. You can claim again.`
+      `${selectedDrop.name} selected as your pet's next find.`
     );
+  };
+
+  const showNextDailyDropForDebug = () => {
+    if (!isDevDailyDropTools) return;
+    showNextDailyDrop(pickRandomDrop(availableDailyDrops));
+    setPetFeedback("Your pet found something small.");
+  };
+
+  const showWeeklyRewardForDebug = () => {
+    if (!isDevDailyDropTools || !selectedDebugWeeklyReward) return;
+    const nextItem: DebugWeeklySceneItem = {
+      instanceId: `${selectedDebugWeeklyReward.id}-${Date.now()}`,
+      reward: selectedDebugWeeklyReward,
+      placedAt: Date.now(),
+    };
+    setDebugWeeklySceneItems((prev) => [
+      ...prev.filter((item) => item.reward.id !== selectedDebugWeeklyReward.id),
+      nextItem,
+    ]);
+    setPetFeedback(`${selectedDebugWeeklyReward.name} shown for weekly placement debug.`);
+  };
+
+  const resetWeeklyRewardForDebug = () => {
+    if (!isDevDailyDropTools) return;
+    setDebugWeeklySceneItems([]);
+    setPetFeedback("Weekly debug item reset.");
   };
 
   useEffect(() => {
@@ -718,40 +949,64 @@ export function ChatPage({
         ? current
         : pickRandomDrop(availableDailyDrops)
     );
-    setDailyDropState(hasClaimedDailyDropToday ? "claimed" : "available");
-    if (!hasClaimedDailyDropToday) {
+    setDailyDropState(hasDailyDropClaimsRemaining ? "available" : "claimed");
+    if (hasDailyDropClaimsRemaining) {
       setCollectedMessage("");
     }
-  }, [availableDailyDrops, hasClaimedDailyDropToday]);
+  }, [availableDailyDrops, hasDailyDropClaimsRemaining]);
 
   useEffect(() => {
     const checkDailyDropStatus = async () => {
       if (!currentUser?.id) {
-        setHasClaimedDailyDropToday(false);
+        setDailyDropClaimsToday(createEmptyDailyDropClaims());
         return;
       }
 
-      if (shouldBypassDailyDropClaim) {
-        setHasClaimedDailyDropToday(false);
-        setDailyDropState("available");
-        return;
-      }
+      const localClaims = readDailyDropClaims(currentUser.id);
+      setDailyDropClaimsToday(localClaims);
 
       try {
         const response = await fetch("http://localhost:3001/api/daily-drop/status");
         if (!response.ok) throw new Error("Failed to fetch daily drop status");
         const result = await response.json();
-        setHasClaimedDailyDropToday(Boolean(result?.claimed));
+        const backendCount = Number(result?.count);
+        if (Number.isFinite(backendCount)) {
+          const nextClaims = {
+            ...localClaims,
+            count: Math.max(localClaims.count, Math.min(backendCount, DAILY_DROP_MAX_PER_DAY)),
+          };
+          setDailyDropClaimsToday(nextClaims);
+          writeDailyDropClaims(currentUser.id, nextClaims);
+        } else if (result?.claimed && localClaims.count === 0) {
+          const nextClaims = { ...localClaims, count: 1, claimedIds: ["backend-daily-drop"] };
+          setDailyDropClaimsToday(nextClaims);
+          writeDailyDropClaims(currentUser.id, nextClaims);
+        }
         return;
       } catch {
-        setHasClaimedDailyDropToday(
-          window.localStorage.getItem(getDailyDropClaimKey(currentUser.id)) === "true"
-        );
+        setDailyDropClaimsToday(readDailyDropClaims(currentUser.id));
       }
     };
 
     void checkDailyDropStatus();
-  }, [currentUser?.id, shouldBypassDailyDropClaim]);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    return () => {
+      clearNextDailyDropTimer();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!availableWeeklyDebugRewards.length) {
+      setSelectedDebugWeeklyRewardId("");
+      return;
+    }
+
+    if (!availableWeeklyDebugRewards.some((reward) => reward.id === selectedDebugWeeklyRewardId)) {
+      setSelectedDebugWeeklyRewardId(availableWeeklyDebugRewards[0].id);
+    }
+  }, [availableWeeklyDebugRewards, selectedDebugWeeklyRewardId]);
 
   useEffect(() => {
     const fetchLatestPost = async () => {
@@ -914,13 +1169,13 @@ export function ChatPage({
     console.log("[DailyDrop] claim clicked", { todayDrop, dailyDropState });
     setShowMemberSwitcher(false);
     if (
-      (dailyDropState !== "available" && !shouldBypassDailyDropClaim) ||
-      (hasClaimedDailyDropToday && !shouldBypassDailyDropClaim)
+      dailyDropState !== "available" ||
+      !hasDailyDropClaimsRemaining
     ) {
       console.warn("[DailyDrop] claim blocked", {
         dailyDropState,
-        hasClaimedDailyDropToday,
-        shouldBypassDailyDropClaim,
+        claimsToday: dailyDropClaimsToday.count,
+        maxClaims: DAILY_DROP_MAX_PER_DAY,
       });
       return;
     }
@@ -945,7 +1200,7 @@ export function ChatPage({
         console.log("[DailyDrop] add inventory done", claimedDrop.id, { added });
 
         if (!added) {
-          if (!isDevDailyDropTools && !shouldBypassDailyDropClaim) {
+          if (!isDevDailyDropTools) {
             console.warn("[DailyDrop] backend inventory add failed outside dev bypass");
             setDailyDropState("available");
             setPetFeedback("Daily Drop could not be collected. Please try again.");
@@ -959,8 +1214,14 @@ export function ChatPage({
           }));
         }
 
-        setHasClaimedDailyDropToday(true);
+        const nextClaims: DailyDropClaimRecord = {
+          date: getTodayKey(),
+          count: Math.min(dailyDropClaimsToday.count + 1, DAILY_DROP_MAX_PER_DAY),
+          claimedIds: [...dailyDropClaimsToday.claimedIds, claimedDrop.id],
+        };
+        setDailyDropClaimsToday(nextClaims);
         if (currentUser?.id) {
+          writeDailyDropClaims(currentUser.id, nextClaims);
           window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
         }
         setDailyDropState("claimed");
@@ -972,8 +1233,8 @@ export function ChatPage({
         }, 2000);
         setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
         setStoragePulse(storageArea);
-        setPetFeedback(`Collected ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
-        setDebugBypassDailyDropClaim(false);
+        setPetFeedback(`Your pet found ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
+        scheduleNextDailyDrop(nextClaims);
         console.log("[DailyDrop] count after add", claimedDrop.id, getDisplayedDailyDropCount(claimedDrop.id));
 
         window.setTimeout(() => {
@@ -1136,7 +1397,7 @@ export function ChatPage({
           )}
 
           {isViewingOwnHome && (
-            <div className="absolute right-[15px] top-[100px] z-30 flex flex-col items-center gap-4">
+            <div className="absolute right-[15px] top-[65px] z-30 flex flex-col items-center gap-[6px]">
               {inventoryTabs.map((item) => {
                 const hasDot = item.key === "food" || item.key === "toy" ? storageDot[item.key] : false;
                 const isPulsing = item.key === storagePulse;
@@ -1149,7 +1410,7 @@ export function ChatPage({
                     className="relative text-center transition active:scale-95"
                   >
                     <div
-                      className={`mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-[#fbf6f1] shadow-[0_8px_18px_rgba(97,74,56,0.1)] transition ${
+                      className={`mx-auto mb-0.5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-[#fbf6f1] shadow-[0_8px_18px_rgba(97,74,56,0.1)] transition ${
                         isPulsing ? "scale-110 ring-2 ring-[#f0a35f]/50" : ""
                       }`}
                     >
@@ -1212,6 +1473,13 @@ export function ChatPage({
                     >
                       Random
                     </button>
+                    <button
+                      type="button"
+                      onClick={showNextDailyDropForDebug}
+                      className="col-span-2 rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Show next drop
+                    </button>
                   </div>
 
                   <select
@@ -1234,15 +1502,72 @@ export function ChatPage({
                     <div>storageDot.food: {String(storageDot.food)}</div>
                     <div>storageDot.toy: {String(storageDot.toy)}</div>
                     <div>collectedMessage: {collectedMessage || "none"}</div>
-                    <div>claimedToday: {String(hasClaimedDailyDropToday)}</div>
-                    <div>debugBypass: {String(debugBypassDailyDropClaim)}</div>
-                    <div>shouldBypass: {String(shouldBypassDailyDropClaim)}</div>
+                    <div>Claims today: {dailyDropClaimsToday.count} / {DAILY_DROP_MAX_PER_DAY}</div>
+                    <div>claimedIds: {dailyDropClaimsToday.claimedIds.join(", ") || "none"}</div>
                     <div>canShowDailyDrop: {String(canShowDailyDrop)}</div>
                   </div>
 
                   <p className="text-[10px] leading-4 text-[#9a7a61]">
-                    Reset also bypasses today's claim lock for the next dev claim.
+                    Reset clears today's Daily Drop count. Show next drop brings back a little surprise immediately.
                   </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isViewingOwnHome && isDevDailyDropTools && (
+            <div
+              className="absolute left-[28px] top-[405px] z-40 w-[210px] rounded-[20px] border border-[#f0d8ca] bg-white/90 p-2 shadow-[0_12px_26px_rgba(92,61,38,0.12)] backdrop-blur"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setDebugWeeklyToolsOpen((current) => !current)}
+                className="flex w-full items-center justify-between rounded-[14px] px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-[#8d684d]"
+              >
+                <span>Weekly Debug</span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition ${debugWeeklyToolsOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {debugWeeklyToolsOpen && (
+                <div className="mt-2 space-y-2 px-1 pb-1">
+                  <select
+                    value={selectedDebugWeeklyReward?.id ?? ""}
+                    onChange={(event) => setSelectedDebugWeeklyRewardId(event.target.value)}
+                    className="w-full rounded-[14px] border border-[#ead7c8] bg-white px-2 py-1.5 text-[11px] font-semibold text-[#5d4838] outline-none"
+                  >
+                    {availableWeeklyDebugRewards.map((reward) => (
+                      <option key={reward.id} value={reward.id}>
+                        {reward.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={showWeeklyRewardForDebug}
+                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Show weekly item
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetWeeklyRewardForDebug}
+                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Reset weekly item
+                    </button>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#fff8f1] px-2 py-2 text-[10px] leading-4 text-[#8d684d]">
+                    <div>weekly.id: {selectedDebugWeeklyReward?.id ?? "none"}</div>
+                    <div>weekly.name: {selectedDebugWeeklyReward?.name ?? "none"}</div>
+                    <div>scene.items: {debugWeeklySceneItems.length}</div>
+                    <div>scene.ids: {debugWeeklySceneItems.map((item) => item.reward.id).join(", ") || "none"}</div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1290,9 +1615,9 @@ export function ChatPage({
                 setShowMemberSwitcher(false);
                 void claimDailyDrop();
               }}
-              disabled={dailyDropState !== "available" && !shouldBypassDailyDropClaim}
+              disabled={dailyDropState !== "available"}
               whileTap={
-                dailyDropState === "available" || shouldBypassDailyDropClaim
+                dailyDropState === "available"
                   ? { scale: 0.95 }
                   : undefined
               }
@@ -1314,7 +1639,6 @@ export function ChatPage({
                 <ItemIcon
                   item={todayDrop}
                   sizeClass="h-11 w-11"
-                  emojiClassName="leading-none"
                   alt={todayDrop.name}
                 />
               </motion.div>
@@ -1338,7 +1662,7 @@ export function ChatPage({
 
           <div className="relative mt-[275px] flex flex-col items-center">
             <div className="relative flex items-center justify-center">
-              <div className="absolute bottom-[calc(100%-25px)] left-1/2 z-10 w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white px-5 py-4 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]">
+              <div className="absolute bottom-[calc(100%-25px)] left-1/2 z-10 w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white/80 px-5 py-4 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]">
                 <div className="mb-1 flex items-center justify-center gap-1.5">
                   <span
                     className="h-2 w-2 rounded-full"
@@ -1354,7 +1678,7 @@ export function ChatPage({
                   {selectedBubble}
                 </p>
 
-                <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white" />
+                <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white/80" />
               </div>
 
               {displayedPlacedDailyDrops.map((drop) => {
@@ -1369,16 +1693,24 @@ export function ChatPage({
                     onExpire={
                       isLocalPlacedDrop ? clearLocalPlacedDailyDrop : clearPlacedDailyDrop
                     }
+                    disableExpire={isDevDailyDropTools && isLocalPlacedDrop}
                   />
                 );
               })}
+
+              {debugWeeklySceneItems.map((item) => (
+                <PlacedWeeklyRewardSceneItem
+                  key={item.instanceId}
+                  item={item}
+                />
+              ))}
 
               <button
                 type="button"
                 onClick={() => {
                   setShowMemberSwitcher(false);
                 }}
-                className="rounded-2xl"
+                className="relative z-20 rounded-2xl"
               >
                 <img
                   key={`${String(selectedHomeMember?.id ?? "unknown")}-${selectedHomePet.id}`}

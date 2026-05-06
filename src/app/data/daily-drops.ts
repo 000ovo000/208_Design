@@ -5,7 +5,6 @@ export type DailyDropPetType = "cat" | "dog" | "both";
 export type DailyDrop = {
   id: string;
   name: string;
-  emoji: string;
   image?: string;
   sceneImage?: string;
   category: DailyDropCategory;
@@ -22,7 +21,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "pet-biscuit",
     name: "Pet Biscuit",
-    emoji: "🍪",
     image: "/images/daily-drop/both/pet-biscuit.png",
     sceneImage: "/images/daily-drop/both/pet-biscuit.png",
     category: "food",
@@ -32,7 +30,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "pet-food",
     name: "Pet Food",
-    emoji: "🍖",
     image: "/images/daily-drop/both/pet-food.png",
     sceneImage: "/images/daily-drop/both/pet-food.png",
     category: "food",
@@ -42,7 +39,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "pet-milk",
     name: "Pet Milk",
-    emoji: "🥛",
     image: "/images/daily-drop/both/pet-milk.png",
     sceneImage: "/images/daily-drop/both/pet-milk.png",
     category: "drink",
@@ -52,7 +48,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "pet-water",
     name: "Pet Water",
-    emoji: "💧",
     image: "/images/daily-drop/both/pet-water.png",
     sceneImage: "/images/daily-drop/both/pet-water.png",
     category: "drink",
@@ -62,7 +57,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "small-ball",
     name: "Small Ball",
-    emoji: "🟠",
     image: "/images/daily-drop/both/small-ball.png",
     sceneImage: "/images/daily-drop/both/small-ball.png",
     category: "basic-toy",
@@ -74,7 +68,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "canned-tuna",
     name: "Canned Tuna",
-    emoji: "🥫",
     image: "/images/daily-drop/cat/canned-tuna.png",
     sceneImage: "/images/daily-drop/cat/canned-tuna.png",
     category: "food",
@@ -84,7 +77,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "fish-toy",
     name: "Fish Toy",
-    emoji: "🐟",
     image: "/images/daily-drop/cat/fish-toy.png",
     sceneImage: "/images/daily-drop/cat/fish-toy.png",
     category: "basic-toy",
@@ -96,7 +88,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "chew-toy",
     name: "Chew Toy",
-    emoji: "🪢",
     image: "/images/daily-drop/dog/chew-toy.png",
     sceneImage: "/images/daily-drop/dog/chew-toy.png",
     category: "basic-toy",
@@ -106,7 +97,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "plush-bear",
     name: "Plush Bear",
-    emoji: "🧸",
     image: "/images/daily-drop/dog/plush-bear.png",
     sceneImage: "/images/daily-drop/dog/plush-bear.png",
     category: "basic-toy",
@@ -116,7 +106,6 @@ export const dailyDrops: DailyDrop[] = [
   {
     id: "small-bone",
     name: "Small Bone",
-    emoji: "🦴",
     image: "/images/daily-drop/dog/small-bone.png",
     sceneImage: "/images/daily-drop/dog/small-bone.png",
     category: "food",
