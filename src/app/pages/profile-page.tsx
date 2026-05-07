@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, Dog, Plus, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
 import { FamilyMember } from "../types";
 import { usePet } from "../context/pet-context";
+import { apiUrl } from "../lib/api";
 
 interface ProfilePageProps {
   familyMembers: FamilyMember[];
@@ -51,7 +52,7 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/me");
+        const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
         const user = await response.json();
         setCurrentUser(user);
@@ -80,9 +81,7 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
     const loadFamilyMembers = async () => {
       try {
         const familyId = currentUser?.family_id ?? currentMember?.family_id ?? 1;
-        const response = await fetch(
-          `http://localhost:3001/api/family-members?family_id=${familyId}`
-        );
+        const response = await fetch(apiUrl(`/api/family-members?family_id=${familyId}`));
         const data = await response.json();
 
         if (!response.ok) {
@@ -108,7 +107,7 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
     try {
       setIsAddingMember(true);
 
-      const response = await fetch("http://localhost:3001/api/family-members", {
+      const response = await fetch(apiUrl("/api/family-members"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -149,12 +148,9 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
     if (!confirmed) return;
 
     try {
-      const response = await fetch(
-        `http://localhost:3001/api/family-members/${memberId}`,
-        {
-          method: "DELETE",
-        }
-      );
+      const response = await fetch(apiUrl(`/api/family-members/${memberId}`), {
+        method: "DELETE",
+      });
 
       const result = await response.json().catch(() => null);
 
@@ -185,7 +181,7 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
 
     try {
       setIsSwitchingAccount(true);
-      const response = await fetch("http://localhost:3001/api/me/switch", {
+      const response = await fetch(apiUrl("/api/me/switch"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

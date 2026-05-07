@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { dailyDrops, type DailyDrop } from "../data/daily-drops";
 import { defaultPetId, getPetById, petItems, PetId } from "../data/pets";
+import { apiUrl } from "../lib/api";
 
 const SELECTED_PET_STORAGE_KEY = "selectedPetId";
 const UNLOCKED_PETS_STORAGE_KEY = "unlockedPetIds";
@@ -21,6 +22,8 @@ type PetContextValue = {
   useDailyDropItem: (dropId: string) => Promise<DailyDrop | null>;
   getDailyDropCount: (dropId: string) => number;
   lastPlacedDailyDrop: DailyDrop | null;
+  placedDailyDrops: DailyDrop[];
+  clearPlacedDailyDrop: (dropId: string) => void;
   clearLastPlacedDailyDrop: () => void;
 };
 
@@ -77,12 +80,12 @@ export function PetProvider({
   const [unlockedPetIds, setUnlockedPetIds] = useState<PetId[]>(defaultUnlocked);
 
   const [dailyDropInventory, setDailyDropInventory] = useState<DailyDropInventory>({});
-  const [lastPlacedDailyDropId, setLastPlacedDailyDropId] = useState<string | null>(null);
+  const [placedDailyDropIds, setPlacedDailyDropIds] = useState<string[]>([]);
 
   useEffect(() => {
     setSelectedPetIdState(readSelectedPetId(userScope));
     setUnlockedPetIds(readUnlockedPetIds(userScope));
-    setLastPlacedDailyDropId(null);
+    setPlacedDailyDropIds([]);
   }, [userScope]);
 
   useEffect(() => {
@@ -114,8 +117,8 @@ export function PetProvider({
     const syncInventory = async () => {
       try {
         const [itemsRes, myItemsRes] = await Promise.all([
-          fetch("http://localhost:3001/api/items"),
-          fetch("http://localhost:3001/api/my-items"),
+          fetch(apiUrl("/api/items")),
+          fetch(apiUrl("/api/my-items")),
         ]);
         if (!itemsRes.ok || !myItemsRes.ok) return;
         const items = await itemsRes.json();
@@ -146,13 +149,13 @@ export function PetProvider({
     if (!drop) return false;
 
     try {
-      const itemsRes = await fetch("http://localhost:3001/api/items");
+      const itemsRes = await fetch(apiUrl("/api/items"));
       if (!itemsRes.ok) return false;
       const items = await itemsRes.json();
       const item = items.find((entry: { name: string }) => entry.name === drop.name);
       if (!item?.id) return false;
 
-      const addRes = await fetch("http://localhost:3001/api/my-items", {
+      const addRes = await fetch(apiUrl("/api/my-items"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ item_id: item.id, quantity: amount }),
@@ -174,13 +177,13 @@ export function PetProvider({
     if (!drop || (dailyDropInventory[dropId] ?? 0) <= 0) return null;
 
     try {
-      const itemsRes = await fetch("http://localhost:3001/api/items");
+      const itemsRes = await fetch(apiUrl("/api/items"));
       if (!itemsRes.ok) return null;
       const items = await itemsRes.json();
       const item = items.find((entry: { name: string }) => entry.name === drop.name);
       if (!item?.id) return null;
 
-      const useRes = await fetch("http://localhost:3001/api/my-items/use", {
+      const useRes = await fetch(apiUrl("/api/my-items/use"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ item_id: item.id, quantity: 1 }),
@@ -194,15 +197,25 @@ export function PetProvider({
       ...prev,
       [dropId]: Math.max((prev[dropId] ?? 0) - 1, 0),
     }));
-    setLastPlacedDailyDropId(dropId);
+    setPlacedDailyDropIds((prev) => (prev.includes(dropId) ? prev : [...prev, dropId]));
     return drop;
   };
 
   const getDailyDropCount = (dropId: string) => dailyDropInventory[dropId] ?? 0;
 
   const currentPet = getPetById(selectedPetId);
+  const placedDailyDrops = useMemo(
+    () =>
+      placedDailyDropIds
+        .map((dropId) => dailyDrops.find((drop) => drop.id === dropId) ?? null)
+        .filter((drop): drop is DailyDrop => Boolean(drop)),
+    [placedDailyDropIds]
+  );
   const lastPlacedDailyDrop =
-    dailyDrops.find((drop) => drop.id === lastPlacedDailyDropId) ?? null;
+    placedDailyDrops[placedDailyDrops.length - 1] ?? null;
+  const clearPlacedDailyDrop = useCallback((dropId: string) => {
+    setPlacedDailyDropIds((prev) => prev.filter((id) => id !== dropId));
+  }, []);
 
   const value = useMemo<PetContextValue>(
     () => ({
@@ -217,9 +230,11 @@ export function PetProvider({
       useDailyDropItem,
       getDailyDropCount,
       lastPlacedDailyDrop,
-      clearLastPlacedDailyDrop: () => setLastPlacedDailyDropId(null),
+      placedDailyDrops,
+      clearPlacedDailyDrop,
+      clearLastPlacedDailyDrop: () => setPlacedDailyDropIds([]),
     }),
-    [selectedPetId, unlockedPetIds, currentPet, dailyDropInventory, lastPlacedDailyDrop]
+    [selectedPetId, unlockedPetIds, currentPet, dailyDropInventory, lastPlacedDailyDrop, placedDailyDrops]
   );
 
   return <PetContext.Provider value={value}>{children}</PetContext.Provider>;

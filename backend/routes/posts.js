@@ -44,15 +44,46 @@ async function ensurePostsSchemaReady() {
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'posts'
-          AND COLUMN_NAME = 'family_member_id'
         `
       );
 
-      if (!Array.isArray(columns) || columns.length === 0) {
+      const columnNames = new Set(
+        Array.isArray(columns) ? columns.map((column) => column.COLUMN_NAME) : []
+      );
+
+      if (!columnNames.has("family_member_id")) {
         await db.query(
           `
           ALTER TABLE posts
           ADD COLUMN family_member_id INT NULL AFTER user_id
+          `
+        );
+      }
+
+      if (!columnNames.has("media_url")) {
+        await db.query(
+          `
+          ALTER TABLE posts
+          ADD COLUMN media_url VARCHAR(500) NULL AFTER content
+          `
+        );
+      }
+
+      if (!columnNames.has("media_type")) {
+        await db.query(
+          `
+          ALTER TABLE posts
+          ADD COLUMN media_type VARCHAR(50) NULL DEFAULT 'text' AFTER media_url
+          `
+        );
+      }
+
+      if (columnNames.has("image_url")) {
+        await db.query(
+          `
+          UPDATE posts
+          SET media_url = COALESCE(media_url, image_url)
+          WHERE image_url IS NOT NULL AND image_url <> ''
           `
         );
       }
@@ -62,6 +93,14 @@ async function ensurePostsSchemaReady() {
         UPDATE posts
         SET family_member_id = user_id
         WHERE family_member_id IS NULL
+        `
+      );
+
+      await db.query(
+        `
+        UPDATE posts
+        SET media_type = COALESCE(NULLIF(media_type, ''), 'text')
+        WHERE media_type IS NULL OR media_type = ''
         `
       );
     })();

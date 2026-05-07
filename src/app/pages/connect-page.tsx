@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { usePet } from "../context/pet-context";
 import { getPetProfileImage, type PetItem } from "../data/pets";
+import { apiUrl } from "../lib/api";
 import {
   AlbumEntry,
   AlbumReaction,
@@ -63,6 +64,16 @@ type DeleteMenuState = {
   x: number;
   y: number;
 } | null;
+
+type EntryReactionComment = {
+  memberId: string;
+  memberName: string;
+  reaction: Exclude<AlbumReaction, null>;
+};
+
+type EntryReactionCommentMap = Record<string, EntryReactionComment[]>;
+
+const REACTION_COMMENTS_STORAGE_KEY = "kinlight:album-reaction-comments";
 
 const rangeOptions: { key: TimeRange; label: string }[] = [
   { key: "day", label: "Today" },
@@ -155,30 +166,72 @@ function matchesRange(uploadedAt: string, range: TimeRange) {
   return diffDays <= 366;
 }
 
+function getRangeLabel(range: TimeRange) {
+  if (range === "day") return "today";
+  if (range === "week") return "this week";
+  if (range === "month") return "this month";
+  return "this year";
+}
+
+function readReactionComments() {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(REACTION_COMMENTS_STORAGE_KEY) || "{}"
+    );
+
+    if (!parsed || typeof parsed !== "object") return {};
+
+    return Object.entries(parsed).reduce<EntryReactionCommentMap>((accumulator, [entryId, value]) => {
+      if (!Array.isArray(value)) return accumulator;
+
+      accumulator[entryId] = value.filter((comment): comment is EntryReactionComment => {
+        return Boolean(
+          comment &&
+            typeof comment === "object" &&
+            typeof comment.memberId === "string" &&
+            typeof comment.memberName === "string" &&
+            typeof comment.reaction === "string"
+        );
+      });
+
+      return accumulator;
+    }, {});
+  } catch {
+    return {};
+  }
+}
+
 function buildSummary(member: FamilyMember, range: TimeRange, entries: AlbumEntry[]) {
-  const newest = entries[0];
-  const highlight = newest?.dogMessage.trim();
+  const petName = member.dogName || `${member.name}'s pet`;
+  const rangeLabel = getRangeLabel(range);
 
   if (!entries.length) {
-    if (range === "day") return `${member.dogName} has not shared anything new today.`;
-    if (range === "week") return `${member.dogName} has not shared anything new this week.`;
-    if (range === "month") return `${member.dogName} has not shared anything new this month.`;
-    return `${member.dogName} has not shared anything new this year.`;
+    return `${petName} has not shared anything new ${rangeLabel}.`;
   }
 
-  if (range === "day") {
-    return `${member.dogName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} today${highlight ? ` and wants to say "${highlight}"` : "."}`;
+  const photoNotes = entries
+    .map((entry) => entry.dogMessage.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const lines = [
+    `${petName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} ${rangeLabel}.`,
+  ];
+
+  if (!photoNotes.length) {
+    lines.push("The latest update was saved without a text note.");
+    return lines.join("\n");
   }
 
-  if (range === "week") {
-    return `${member.dogName} shared ${entries.length} photo${entries.length > 1 ? "s" : ""} this week${highlight ? `, and the main note was "${highlight}"` : "."}`;
-  }
+  photoNotes.forEach((note, index) => {
+    const prefix =
+      index === 0 ? "Latest image note" : index === 1 ? "Earlier image note" : "Another image note";
+    lines.push(`${prefix}: "${note}".`);
+  });
 
-  if (range === "month") {
-    return `${member.dogName} saved ${entries.length} photo${entries.length > 1 ? "s" : ""} this month${highlight ? `, and the latest note was "${highlight}"` : "."}`;
-  }
-
-  return `${member.dogName} kept ${entries.length} photo${entries.length > 1 ? "s" : ""} this year${highlight ? `, and the most memorable note was "${highlight}"` : "."}`;
+  return lines.join("\n");
 }
 
 function selectedReactionEmoji(reaction: AlbumReaction) {
@@ -216,6 +269,8 @@ export function ConnectPage({
   const [deleteMenu, setDeleteMenu] = useState<DeleteMenuState>(null);
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [reactionCommentsByEntryId, setReactionCommentsByEntryId] =
+    useState<EntryReactionCommentMap>(readReactionComments);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -233,7 +288,8 @@ export function ConnectPage({
     () => groupEntries(mergedAlbumEntries),
     [mergedAlbumEntries]
   );
-  const selectedMember = familyMembers.find((member) => member.id === selectedMemberId) ?? null;
+  const selectedMember =
+    familyMembers.find((member) => String(member.id) === String(selectedMemberId)) ?? null;
   const isCurrentUserMember = (member?: FamilyMember | null) => {
     if (!member || !currentUser) return false;
     return (
@@ -241,12 +297,12 @@ export function ConnectPage({
       Boolean(member.email && currentUser.email && member.email === currentUser.email)
     );
   };
+  const currentUserMemberId = currentUser?.id != null ? String(currentUser.id) : null;
   const currentMember =
     familyMembers.find((member) => isCurrentUserMember(member)) ?? familyMembers[0] ?? null;
-  const isSelectedMemberCurrentUser =
-    selectedMember && currentMember
-      ? String(selectedMember.id) === String(currentMember.id)
-      : false;
+  const isSelectedMemberCurrentUser = selectedMember
+    ? String(selectedMember.id) === String(currentUserMemberId ?? currentMember?.id ?? "")
+    : false;
   const selectedEntries = useMemo(() => {
     if (!selectedMemberId) return [];
 
@@ -258,7 +314,7 @@ export function ConnectPage({
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/me");
+        const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
         const user = await response.json();
         setCurrentUser(user);
@@ -302,7 +358,7 @@ export function ConnectPage({
 
     const fetchPosts = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/posts");
+        const response = await fetch(apiUrl("/api/posts"));
         if (!response.ok) return;
 
         const data = await response.json();
@@ -323,6 +379,14 @@ export function ConnectPage({
       isMounted = false;
     };
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      REACTION_COMMENTS_STORAGE_KEY,
+      JSON.stringify(reactionCommentsByEntryId)
+    );
+  }, [reactionCommentsByEntryId]);
 
   useEffect(() => {
     onOverlayChange?.(
@@ -350,6 +414,42 @@ export function ConnectPage({
     setShowRangeMenu(false);
     setOpenReactionEntryId(null);
     setDeleteMenu(null);
+  };
+
+  const getReactionCommentsForEntry = (entryId: string) =>
+    reactionCommentsByEntryId[String(entryId)] ?? [];
+
+  const getCurrentViewerReaction = (entryId: string) => {
+    if (!currentMember) return null;
+
+    return (
+      getReactionCommentsForEntry(entryId).find(
+        (comment) => comment.memberId === String(currentMember.id)
+      )?.reaction ?? null
+    );
+  };
+
+  const handleReactionSelect = (entryId: string, reaction: Exclude<AlbumReaction, null>) => {
+    if (!currentMember) return;
+
+    const normalizedEntryId = String(entryId);
+    const memberId = String(currentMember.id);
+    const memberName = currentMember.name || "Me";
+
+    setReactionCommentsByEntryId((current) => {
+      const existing = current[normalizedEntryId] ?? [];
+      const nextComments = [
+        ...existing.filter((comment) => comment.memberId !== memberId),
+        { memberId, memberName, reaction },
+      ];
+
+      return {
+        ...current,
+        [normalizedEntryId]: nextComments,
+      };
+    });
+
+    onUpdateReaction(entryId, reaction);
   };
 
   const handleChooseFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -395,7 +495,7 @@ export function ConnectPage({
       formData.append("image", draft.file);
 
       try {
-        const uploadResponse = await fetch("http://localhost:3001/api/uploads", {
+        const uploadResponse = await fetch(apiUrl("/api/uploads"), {
           method: "POST",
           body: formData,
         });
@@ -414,7 +514,7 @@ export function ConnectPage({
     }
 
     try {
-      const postResponse = await fetch("http://localhost:3001/api/posts", {
+      const postResponse = await fetch(apiUrl("/api/posts"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -470,7 +570,7 @@ export function ConnectPage({
 
     if (!entryIdToDelete.startsWith("local-")) {
       try {
-        await fetch(`http://localhost:3001/api/posts/${entryIdToDelete}`, {
+        await fetch(apiUrl(`/api/posts/${entryIdToDelete}`), {
           method: "DELETE",
         });
       } catch (error) {
@@ -609,13 +709,15 @@ export function ConnectPage({
                     summaryExpanded ? "max-w-[74%] px-4 py-4" : "px-3 py-3"
                   }`}
                 >
-                  <div className="rounded-[10px] bg-[#f8eee7] p-2">
-                    <img
-                      src={getMemberPetProfileImage(selectedMember, currentPet)}
-                      alt={`${selectedMember.name}'s pet`}
-                      className="h-10 w-10 object-contain"
-                    />
-                  </div>
+                  {!summaryExpanded && (
+                    <div className="rounded-[10px] bg-[#f8eee7] p-2">
+                      <img
+                        src={getMemberPetProfileImage(selectedMember, currentPet)}
+                        alt={`${selectedMember.name}'s pet`}
+                        className="h-10 w-10 object-contain"
+                      />
+                    </div>
+                  )}
                   {summaryExpanded && (
                     <div className="min-w-0 text-left">
                       <div className="mb-1 flex items-center gap-1 text-[#6c5341]">
@@ -624,7 +726,7 @@ export function ConnectPage({
                           Summary
                         </span>
                       </div>
-                      <p className="text-[16px] leading-6 text-[#2f2720]">
+                      <p className="whitespace-pre-line text-[16px] leading-6 text-[#2f2720]">
                         {buildSummary(selectedMember, selectedRange, selectedEntries)}
                       </p>
                     </div>
@@ -637,6 +739,8 @@ export function ConnectPage({
           <div className={`space-y-6 ${summaryExpanded ? "pt-20" : "pt-8"}`}>
             {selectedEntries.map((entry) => {
               const canDelete = isSelectedMemberCurrentUser;
+              const reactionComments = getReactionCommentsForEntry(entry.id);
+              const currentViewerReaction = getCurrentViewerReaction(entry.id);
 
               return (
                 <article key={entry.id} className="relative">
@@ -672,11 +776,11 @@ export function ConnectPage({
                                 key={option.value}
                                 type="button"
                                 onClick={() => {
-                                  onUpdateReaction(entry.id, option.value);
+                                  handleReactionSelect(entry.id, option.value);
                                   setOpenReactionEntryId(null);
                                 }}
                                 className={`flex h-9 w-9 items-center justify-center rounded-full text-xl ${
-                                  entry.reaction === option.value ? "bg-[#f3efe9]" : ""
+                                  currentViewerReaction === option.value ? "bg-[#f3efe9]" : ""
                                 }`}
                               >
                                 {option.emoji}
@@ -694,9 +798,9 @@ export function ConnectPage({
                           }
                           className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white/8 text-white backdrop-blur-sm"
                         >
-                          {selectedReactionEmoji(entry.reaction) ? (
+                          {selectedReactionEmoji(currentViewerReaction) ? (
                             <span className="text-[30px] leading-none">
-                              {selectedReactionEmoji(entry.reaction)}
+                              {selectedReactionEmoji(currentViewerReaction)}
                             </span>
                           ) : (
                             <Smile className="h-7 w-7" strokeWidth={2.2} />
@@ -705,6 +809,24 @@ export function ConnectPage({
                       </div>
                     </div>
                   </div>
+
+                  {reactionComments.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-3 px-2">
+                      {reactionComments.map((comment) => (
+                        <div
+                          key={`${entry.id}-${comment.memberId}`}
+                          className="flex min-w-[52px] flex-col items-center text-center"
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-2xl shadow-[0_8px_18px_rgba(79,57,38,0.12)]">
+                            {selectedReactionEmoji(comment.reaction)}
+                          </div>
+                          <div className="mt-1 text-[11px] font-medium leading-4 text-[#7a6555]">
+                            {comment.memberName}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {entry.dogMessage.trim() && (
                     <div className="mt-2 px-2 text-[14px] text-[#6d5849]">

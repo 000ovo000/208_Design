@@ -7,26 +7,15 @@ let inventorySchemaReadyPromise = null;
 
 const DAILY_DROP_SEEDS = [
   { name: "Pet Biscuit", category: "food", icon: "🍪" },
-  { name: "Pet Milk", category: "food", icon: "🥛" },
-  { name: "Water Bowl", category: "food", icon: "💧" },
+  { name: "Pet Food", category: "food", icon: "🍖" },
+  { name: "Pet Milk", category: "drink", icon: "🥛" },
+  { name: "Pet Water", category: "drink", icon: "💧" },
   { name: "Small Ball", category: "toy", icon: "🟠" },
-  { name: "Crunchy Kibble", category: "food", icon: "🥣" },
-  { name: "Pet Brush", category: "toy", icon: "🪮" },
-  { name: "Pet Bandana", category: "toy", icon: "🧣" },
-  { name: "Fish Snack", category: "food", icon: "🐟" },
-  { name: "Yarn Ball", category: "toy", icon: "🧶" },
-  { name: "Feather Toy", category: "toy", icon: "🪶" },
-  { name: "Cat Kibble", category: "food", icon: "🥣" },
-  { name: "Tuna Bite", category: "food", icon: "🥫" },
-  { name: "Toy Mouse", category: "toy", icon: "🐭" },
-  { name: "Jingle Bell", category: "toy", icon: "🔔" },
-  { name: "Scratching Pad", category: "toy", icon: "🧩" },
+  { name: "Canned Tuna", category: "food", icon: "🥫" },
+  { name: "Fish Toy", category: "toy", icon: "🐟" },
   { name: "Small Bone", category: "food", icon: "🦴" },
   { name: "Chew Toy", category: "toy", icon: "🪢" },
-  { name: "Tennis Ball", category: "toy", icon: "🎾" },
-  { name: "Puppy Kibble", category: "food", icon: "🥣" },
-  { name: "Chicken Bite", category: "food", icon: "🍗" },
-  { name: "Carrot Nibble", category: "food", icon: "🥕" },
+  { name: "Plush Bear", category: "toy", icon: "🧸" },
 ];
 
 async function resolveCurrentUser() {
@@ -73,6 +62,26 @@ async function ensureInventorySchemaReady() {
         )
       `);
 
+      const [itemColumns] = await db.query(
+        `
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'items'
+        `
+      );
+      const itemColumnNames = new Set(
+        Array.isArray(itemColumns) ? itemColumns.map((column) => column.COLUMN_NAME) : []
+      );
+
+      if (!itemColumnNames.has("icon")) {
+        await db.query(`ALTER TABLE items ADD COLUMN icon VARCHAR(255) NULL`);
+      }
+
+      if (!itemColumnNames.has("price")) {
+        await db.query(`ALTER TABLE items ADD COLUMN price INT DEFAULT 0`);
+      }
+
       await db.query(`
         CREATE TABLE IF NOT EXISTS member_items (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -98,28 +107,28 @@ async function ensureInventorySchemaReady() {
       }
 
       const currentUser = await resolveCurrentUser();
-      const [carrotRows] = await db.query(`SELECT id FROM items WHERE name = ? LIMIT 1`, ["Carrot"]);
-      const [tennisRows] = await db.query(`SELECT id FROM items WHERE name = ? LIMIT 1`, ["Tennis Ball"]);
+      const [petBiscuitRows] = await db.query(`SELECT id FROM items WHERE name = ? LIMIT 1`, ["Pet Biscuit"]);
+      const [smallBallRows] = await db.query(`SELECT id FROM items WHERE name = ? LIMIT 1`, ["Small Ball"]);
 
-      if (carrotRows[0]?.id) {
+      if (petBiscuitRows[0]?.id) {
         await db.query(
           `
           INSERT INTO member_items (family_member_id, item_id, quantity)
           VALUES (?, ?, ?)
           ON DUPLICATE KEY UPDATE quantity = GREATEST(member_items.quantity, VALUES(quantity))
           `,
-          [Number(currentUser.id), Number(carrotRows[0].id), 2]
+          [Number(currentUser.id), Number(petBiscuitRows[0].id), 2]
         );
       }
 
-      if (tennisRows[0]?.id) {
+      if (smallBallRows[0]?.id) {
         await db.query(
           `
           INSERT INTO member_items (family_member_id, item_id, quantity)
           VALUES (?, ?, ?)
           ON DUPLICATE KEY UPDATE quantity = GREATEST(member_items.quantity, VALUES(quantity))
           `,
-          [Number(currentUser.id), Number(tennisRows[0].id), 1]
+          [Number(currentUser.id), Number(smallBallRows[0].id), 1]
         );
       }
     })();

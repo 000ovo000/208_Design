@@ -7,7 +7,12 @@ import { ProfilePage } from "./pages/profile-page";
 import { WeeklyEchoPage } from "./pages/weekly-echo-page";
 import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
-import type { WeeklyReward, WeeklyRewardStats } from "./data/weekly-rewards";
+import { apiUrl } from "./lib/api";
+import {
+  weeklyRewards,
+  type WeeklyReward,
+  type WeeklyRewardStats,
+} from "./data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId, TabKey } from "./types";
 
 type CurrentUser = {
@@ -23,7 +28,7 @@ export default function App() {
   const [dbFamilyMembers, setDbFamilyMembers] = useState<FamilyMember[]>(familyMembers);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [weeklyKeepsakes, setWeeklyKeepsakes] = useState<WeeklyReward[]>([]);
-  const [homeBubbleMessage, setHomeBubbleMessage] = useState("今天想让小狗帮你传什么话？");
+  const [homeBubbleMessage, setHomeBubbleMessage] = useState("今天想让小狗帮你传什么话呢？");
   const [latestMePostEntry, setLatestMePostEntry] = useState<AlbumEntry | null>(null);
 
   const isCurrentUserMember = (member: FamilyMember, user: CurrentUser | null) => {
@@ -37,7 +42,7 @@ export default function App() {
   useEffect(() => {
     const loadFamilyMembers = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/family-members");
+        const response = await fetch(apiUrl("/api/family-members"));
         if (!response.ok) return;
         const data = await response.json().catch(() => []);
         if (Array.isArray(data) && data.length) setDbFamilyMembers(data);
@@ -51,7 +56,7 @@ export default function App() {
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/me");
+        const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
         const user = await response.json();
         setCurrentUser(user);
@@ -81,7 +86,7 @@ export default function App() {
 
     const loadLatestMePost = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/posts");
+        const response = await fetch(apiUrl("/api/posts"));
         if (!response.ok) return;
 
         const data = await response.json().catch(() => []);
@@ -139,8 +144,8 @@ export default function App() {
     return localLatestEntries;
   }, [albumEntries, latestMePostEntry, dbFamilyMembers]);
 
-  const weeklyStats = useMemo<WeeklyRewardStats>(() => {
-    const weekEntries = albumEntries.filter((entry) => {
+  const weeklyAlbumEntries = useMemo(() => {
+    return albumEntries.filter((entry) => {
       const parsed = new Date(entry.uploadedAt.replace(" ", "T"));
       if (Number.isNaN(parsed.getTime())) return false;
 
@@ -149,19 +154,32 @@ export default function App() {
         (latestDate.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24);
       return diffDays <= 7;
     });
-
-    return {
-      petMessages: weekEntries.filter((entry) => entry.dogMessage.trim()).length,
-      photoShares: weekEntries.length,
-      gentleReactions: weekEntries.filter((entry) => entry.reaction).length,
-      moodCheckIns: 3,
-      connectedDays: new Set(
-        weekEntries.map((entry) => entry.uploadedAt.split(" ")[0])
-      ).size,
-    };
   }, [albumEntries]);
 
+  const weeklyStats = useMemo<WeeklyRewardStats>(() => {
+    return {
+      petMessages: weeklyAlbumEntries.filter((entry) => entry.dogMessage.trim()).length,
+      photoShares: weeklyAlbumEntries.length,
+      gentleReactions: weeklyAlbumEntries.filter((entry) => entry.reaction).length,
+      moodCheckIns: 3,
+      connectedDays: new Set(
+        weeklyAlbumEntries.map((entry) => entry.uploadedAt.split(" ")[0])
+      ).size,
+    };
+  }, [weeklyAlbumEntries]);
+
+  const definedWeeklyRewardIds = useMemo(
+    () => new Set(weeklyRewards.map((reward) => reward.id)),
+    []
+  );
+  const displayedWeeklyKeepsakes = useMemo(
+    () => weeklyKeepsakes.filter((reward) => definedWeeklyRewardIds.has(reward.id)),
+    [definedWeeklyRewardIds, weeklyKeepsakes]
+  );
+
   const handleWeeklyKeepsakeAdd = (reward: WeeklyReward) => {
+    if (!definedWeeklyRewardIds.has(reward.id)) return;
+
     setWeeklyKeepsakes((prev) =>
       prev.some((item) => item.id === reward.id) ? prev : [...prev, reward]
     );
@@ -189,6 +207,11 @@ export default function App() {
       prev.map((entry) => (entry.id === entryId ? { ...entry, reaction } : entry))
     );
   };
+
+  const handleAlbumEntryDelete = (entryId: string) => {
+    setAlbumEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+  };
+
   const handleFamilyMembersChange = (members: FamilyMember[]) => {
     setDbFamilyMembers(members);
   };
@@ -201,7 +224,7 @@ export default function App() {
             familyMembers={dbFamilyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
-            weeklyKeepsakes={weeklyKeepsakes}
+            weeklyKeepsakes={displayedWeeklyKeepsakes}
           />
         );
 
@@ -212,18 +235,22 @@ export default function App() {
             albumEntries={albumEntries}
             onCreateEntry={handleAlbumEntryCreate}
             onUpdateReaction={handleAlbumEntryReactionChange}
+            onDeleteEntry={handleAlbumEntryDelete}
           />
         );
 
       case "jar":
-        return <JarPage />;
+        return <JarPage familyMembers={dbFamilyMembers} />;
 
       case "echo":
         return (
           <WeeklyEchoPage
             stats={weeklyStats}
+            weeklyAlbumEntries={weeklyAlbumEntries}
+            familyMembers={dbFamilyMembers}
+            weeklyKeepsakes={displayedWeeklyKeepsakes}
             onAddKeepsake={handleWeeklyKeepsakeAdd}
-            addedKeepsakeIds={weeklyKeepsakes.map((item) => item.id)}
+            addedKeepsakeIds={displayedWeeklyKeepsakes.map((item) => item.id)}
           />
         );
 
@@ -241,7 +268,7 @@ export default function App() {
             familyMembers={dbFamilyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
-            weeklyKeepsakes={weeklyKeepsakes}
+            weeklyKeepsakes={displayedWeeklyKeepsakes}
           />
         );
     }

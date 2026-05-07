@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, ChevronDown, Trash2 } from "lucide-react";
-import { motion } from "motion/react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Bell, ChevronDown, Home, Send, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { usePet } from "../context/pet-context";
 import {
   dailyDrops,
@@ -8,8 +8,16 @@ import {
   type DailyDrop,
 } from "../data/daily-drops";
 import { getFamilySelectedPetId } from "../data/family-data";
-import { defaultPetId, getPetById, getPetProfileImage, type PetId } from "../data/pets";
+import {
+  defaultPetId,
+  getPetById,
+  getPetProfileImage,
+  type PetId,
+  type PetItem,
+  type PetSpecies,
+} from "../data/pets";
 import { getPetReaction } from "../data/pet-reactions";
+import { apiUrl } from "../lib/api";
 import type { WeeklyReward } from "../data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
 
@@ -20,7 +28,7 @@ interface ChatPageProps {
   weeklyKeepsakes: WeeklyReward[];
 }
 
-type InventoryTab = "shop" | "food" | "toy";
+type InventoryTab = "petSelection" | "food" | "toy";
 type DailyDropState = "available" | "claiming" | "claimed";
 type StorageArea = "food" | "toy";
 type DbPost = {
@@ -53,10 +61,61 @@ type CurrentUser = {
   family_id?: number | string;
 };
 
+type CareMessage = {
+  id: number | string;
+  sender_user_id: number | string;
+  receiver_user_id: number | string;
+  family_id: number | string;
+  care_type: string;
+  message: string;
+  is_read: number | boolean;
+  created_at: string;
+  read_at?: string | null;
+  sender_name?: string;
+};
+
+type PetMessage = {
+  id: number | string;
+  sender_user_id: number | string;
+  receiver_user_id: number | string;
+  family_id: number | string;
+  message: string;
+  is_read: number | boolean;
+  created_at: string;
+  read_at?: string | null;
+  sender_name?: string;
+};
+
+type PetMessageComposerState = {
+  member: FamilyMember;
+  text: string;
+  error: string;
+} | null;
+
+type PetMessageViewerState = {
+  member: FamilyMember;
+  messages: PetMessage[];
+} | null;
+
+type VisualItem = {
+  name: string;
+  emoji: string;
+  image?: string;
+  sceneImage?: string;
+};
+
+type ScenePlacement = {
+  positionClassName: string;
+  sizeClassName: string;
+  imageClassName: string;
+  durationMs: number | null;
+  style?: CSSProperties;
+};
+
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
-  { key: "shop", label: "Shop", title: "Pet Collection", emoji: "🛍️" },
-  { key: "food", label: "Food", title: "Food Storage", emoji: "🍪" },
-  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🎾" },
+  { key: "petSelection", label: "Change your pet", title: "Pet Collection", emoji: "🐾" },
+  { key: "food", label: "Food", title: "Food Storage", emoji: "🍖" },
+  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
 ];
 
 const getStorageArea = (drop: DailyDrop): StorageArea => {
@@ -65,6 +124,92 @@ const getStorageArea = (drop: DailyDrop): StorageArea => {
 
 const pickRandomDrop = (drops: DailyDrop[]) => {
   return drops[Math.floor(Math.random() * drops.length)] ?? dailyDrops[0];
+};
+
+const getScenePlacement = (item: DailyDrop): ScenePlacement => {
+  const base = {
+    imageClassName: "drop-shadow-[0_10px_16px_rgba(73,56,42,0.18)]",
+  };
+
+  switch (item.id) {
+    case "pet-water":
+      return {
+        ...base,
+        positionClassName: "absolute -left-16 bottom-1 z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-16 w-16",
+        durationMs: 25000,
+      };
+    case "pet-milk":
+      return {
+        ...base,
+        positionClassName: "absolute -left-16 bottom-[34px] z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-16 w-16",
+        durationMs: 25000,
+      };
+    case "canned-tuna":
+      return {
+        ...base,
+        positionClassName: "absolute -right-[51px] bottom-[60px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[53px] w-[53px]",
+        durationMs: 25000,
+      };
+    case "pet-food":
+      return {
+        ...base,
+        positionClassName: "absolute -left-16 bottom-[-26px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[70px] w-[70px]",
+        durationMs: 25000,
+      };
+    case "pet-biscuit":
+      return {
+        ...base,
+        positionClassName: "absolute left-1/2 bottom-[-8px] z-20 flex -translate-x-1/2 items-center justify-center text-4xl",
+        sizeClassName: "h-[45px] w-[45px]",
+        durationMs: 25000,
+      };
+    case "small-bone":
+      return {
+        ...base,
+        positionClassName: "absolute left-1/2 bottom-[-8px] z-20 flex -translate-x-[calc(50%+60px)] items-center justify-center text-4xl",
+        sizeClassName: "h-[38px] w-[38px]",
+        durationMs: 25000,
+      };
+    case "small-ball":
+      return {
+        ...base,
+        positionClassName: "absolute -left-[18px] bottom-[83px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[39px] w-[39px]",
+        durationMs: 50000,
+      };
+    case "chew-toy":
+      return {
+        ...base,
+        positionClassName: "absolute left-[calc(50%+55px)] bottom-[1px] z-20 flex -translate-x-1/2 items-center justify-center text-4xl scale-[1.5]",
+        sizeClassName: "h-[70px] w-[70px]",
+        durationMs: 50000,
+      };
+    case "plush-bear":
+      return {
+        ...base,
+        positionClassName: "absolute -right-16 bottom-[72px] z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[82px] w-[82px]",
+        durationMs: 50000,
+      };
+    case "fish-toy":
+      return {
+        ...base,
+        positionClassName: "absolute -right-[76px] bottom-[-23px] z-20 flex items-center justify-center text-4xl",
+        sizeClassName: "h-[51px] w-[51px]",
+        durationMs: 50000,
+      };
+    default:
+      return {
+        ...base,
+        positionClassName: "absolute -right-12 bottom-14 z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-20 w-20",
+        durationMs: item.category === "food" || item.category === "drink" ? 25000 : 50000,
+      };
+  }
 };
 
 const SELECTED_PET_STORAGE_KEY = "selectedPetId";
@@ -80,6 +225,229 @@ const readSelectedPetIdForUser = (userId: FamilyMemberId | null | undefined): Pe
   }
   return getFamilySelectedPetId(userId) ?? defaultPetId;
 };
+
+function PawIcon() {
+  return (
+    <div className="relative w-9 h-9">
+      <span className="absolute left-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute left-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute right-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute right-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute left-1/2 bottom-0 -translate-x-1/2 w-[26px] h-[21px] bg-[#341056] rounded-[18px_18px_14px_14px]" />
+    </div>
+  );
+}
+
+function ItemIcon({
+  item,
+  source = "image",
+  sizeClass = "h-11 w-11",
+  imageClassName = "",
+  emojiClassName = "text-xl leading-none",
+  alt = "",
+}: {
+  item: VisualItem;
+  source?: "image" | "sceneImage";
+  sizeClass?: string;
+  imageClassName?: string;
+  emojiClassName?: string;
+  alt?: string;
+}) {
+  const src = item[source];
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  if (src && failedSrc !== src) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className={`${sizeClass} object-contain ${imageClassName}`}
+        onError={() => setFailedSrc(src)}
+      />
+    );
+  }
+
+  return (
+    <span className={emojiClassName} aria-hidden="true">
+      {item.emoji}
+    </span>
+  );
+}
+
+function PlacedDailyDropSceneItem({
+  drop,
+  onExpire,
+}: {
+  drop: DailyDrop;
+  onExpire: (dropId: string) => void;
+}) {
+  const placement = getScenePlacement(drop);
+
+  useEffect(() => {
+    if (placement.durationMs === null) return;
+
+    const timeoutId = window.setTimeout(() => {
+      onExpire(drop.id);
+    }, placement.durationMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [drop.id, onExpire, placement.durationMs]);
+
+  return (
+    <div className={placement.positionClassName} style={placement.style}>
+      <ItemIcon
+        item={drop}
+        source="sceneImage"
+        sizeClass={placement.sizeClassName}
+        imageClassName={placement.imageClassName}
+        emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
+        alt={drop.name}
+      />
+    </div>
+  );
+}
+
+function PetSelectionCard({
+  pet,
+  active = false,
+  unlocked = false,
+  onClick,
+}: {
+  pet: PetItem;
+  active?: boolean;
+  unlocked?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!unlocked}
+      className={`flex flex-col items-center justify-end rounded-[22px] transition-all ${
+        active ? "bg-[#B98A54] shadow-md" : "bg-white/55 border border-white/70"
+      } ${!unlocked ? "opacity-50" : "active:scale-[0.98]"}`}
+      style={{ width: 118, height: 136, paddingBottom: 10 }}
+    >
+      <div className="relative w-[96px] h-[82px] mb-2 flex items-end justify-center">
+        <div className="absolute inset-x-0 bottom-0 mx-auto w-[84px] h-[44px] rounded-full bg-[#E8B85E]/80" />
+        <img
+          src={pet.image}
+          alt={pet.name}
+          className="relative z-[2] max-h-[78px] max-w-[94px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
+        />
+      </div>
+
+      <span
+        className={`px-2 text-center text-[13px] font-semibold leading-[1.15] ${
+          active ? "text-white" : "text-[#7A5A43]"
+        }`}
+      >
+        {pet.name}
+      </span>
+    </button>
+  );
+}
+
+function PetSelectionView({
+  selectedPetId,
+  setSelectedPetId,
+  currentPet,
+  petItems,
+  unlockedPetIds,
+  onBack,
+}: {
+  selectedPetId: PetId;
+  setSelectedPetId: (value: PetId) => void;
+  currentPet: PetItem;
+  petItems: PetItem[];
+  unlockedPetIds: PetId[];
+  onBack: () => void;
+}) {
+  const [activeSpecies, setActiveSpecies] = useState<PetSpecies>(currentPet.species);
+  const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
+
+  return (
+    <div className="h-full overflow-y-auto px-5 pt-2 pb-8">
+      <div className="flex items-center justify-start mb-6">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={onBack}
+          className="w-8 h-8 flex items-center justify-center text-[#333333]"
+        >
+          <ArrowLeft size={22} strokeWidth={2} />
+        </button>
+      </div>
+
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-[26px] font-medium text-[#171717]">Pet Collection</h2>
+            <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
+              Choose one shared companion for Home and Mood Jar.
+            </p>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 rounded-[22px] bg-white/55 p-2 border border-white/70">
+          <button
+            type="button"
+            onClick={() => setActiveSpecies("dog")}
+            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+              activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+            }`}
+          >
+            Puppies
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSpecies("cat")}
+            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+              activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+            }`}
+          >
+            Kittens
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 justify-items-center gap-4">
+          {visiblePets.map((pet) => {
+            const unlocked = unlockedPetIds.includes(pet.id);
+            return (
+              <PetSelectionCard
+                key={pet.id}
+                pet={pet}
+                active={selectedPetId === pet.id}
+                unlocked={unlocked}
+                onClick={() => setSelectedPetId(pet.id)}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-[22px] font-medium text-[#171717] mb-5">
+          Your selection:
+        </h3>
+
+        <div className="flex flex-col items-center rounded-[28px] bg-white/55 border border-white/70 px-4 py-5">
+          <img
+            src={currentPet.image}
+            alt={currentPet.name}
+            className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+          />
+          <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
+            {currentPet.name}
+          </p>
+          <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
+            {currentPet.description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function ChatPage({
   familyMembers,
@@ -97,6 +465,8 @@ export function ChatPage({
     useDailyDropItem,
     getDailyDropCount,
     lastPlacedDailyDrop,
+    placedDailyDrops,
+    clearPlacedDailyDrop,
   } = usePet();
 
   const [selectedFamilyDog, setSelectedFamilyDog] = useState<FamilyMemberId | null>(null);
@@ -109,6 +479,8 @@ export function ChatPage({
     toy: false,
   });
   const [storagePulse, setStoragePulse] = useState<StorageArea | null>(null);
+  const [localDailyDropInventory, setLocalDailyDropInventory] = useState<Record<string, number>>({});
+  const [localPlacedDailyDrops, setLocalPlacedDailyDrops] = useState<DailyDrop[]>([]);
   const [petFeedback, setPetFeedback] = useState("Your companion is waiting for a small family moment.");
   const [posts, setPosts] = useState<DbPost[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
@@ -117,13 +489,22 @@ export function ChatPage({
   const [isPublishingPost, setIsPublishingPost] = useState(false);
   const [latestAlbumPost, setLatestAlbumPost] = useState<Post | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [unreadCareMessages, setUnreadCareMessages] = useState<CareMessage[]>([]);
+  const [unreadPetMessages, setUnreadPetMessages] = useState<PetMessage[]>([]);
+  const [bubbleAnimationTick, setBubbleAnimationTick] = useState(0);
   const [showMemberSwitcher, setShowMemberSwitcher] = useState(false);
+  const [petMessageComposer, setPetMessageComposer] = useState<PetMessageComposerState>(null);
+  const [petMessageViewer, setPetMessageViewer] = useState<PetMessageViewerState>(null);
+  const [isSendingPetMessage, setIsSendingPetMessage] = useState(false);
+  const [isMarkingPetMessagesRead, setIsMarkingPetMessagesRead] = useState(false);
   const [hasClaimedDailyDropToday, setHasClaimedDailyDropToday] = useState(false);
   const [homeOwnerUserId, setHomeOwnerUserId] = useState<string | null>(null);
+  const [debugDropToolsOpen, setDebugDropToolsOpen] = useState(false);
+  const [debugBypassDailyDropClaim, setDebugBypassDailyDropClaim] = useState(false);
 
   const loadPosts = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:3001/api/posts");
+      const response = await fetch(apiUrl("/api/posts"));
       const data = await response.json().catch(() => []);
 
       if (!response.ok) {
@@ -149,6 +530,13 @@ export function ChatPage({
 
   function getDailyDropClaimKey(userId: string | number) {
     return `daily-drop-claimed-${userId}-${getTodayKey()}`;
+  }
+
+  function clearDailyDropClaimStorageForDebug() {
+    if (typeof window === "undefined") return;
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith("daily-drop-claimed-"))
+      .forEach((key) => window.localStorage.removeItem(key));
   }
 
   const isCurrentUserMember = (member: FamilyMember) => {
@@ -241,9 +629,16 @@ export function ChatPage({
     (String(selectedHomeMemberId) === String(me?.id)
       ? bubbleMessage
       : "No message yet.");
-
-  const petTitle =
-    selectedMember ? `${selectedMember.name.toUpperCase()}'S PET` : "PET";
+  const activeCareMessage =
+    isViewingOwnHome && unreadCareMessages.length > 0 ? unreadCareMessages[0] : null;
+  const displayedBubble = activeCareMessage?.message || selectedBubble;
+  const showCareUnreadDot =
+    Boolean(activeCareMessage) && unreadCareMessages.length > 1;
+  const unreadPetMessageSenders = useMemo(
+    () => new Set(unreadPetMessages.map((message) => String(message.sender_user_id))),
+    [unreadPetMessages]
+  );
+  const hasUnreadPetMessages = unreadPetMessages.length > 0;
 
   const availableDailyDrops = useMemo(() => {
     return getDailyDropsForPet(currentPet.species);
@@ -253,10 +648,64 @@ export function ChatPage({
     pickRandomDrop(getDailyDropsForPet(currentPet.species))
   );
 
+  const isDevDailyDropTools = import.meta.env.DEV;
+  const shouldBypassDailyDropClaim =
+    isDevDailyDropTools && debugBypassDailyDropClaim;
+
+  const canShowDailyDrop =
+    Boolean(todayDrop) &&
+    (dailyDropState === "available" ||
+      dailyDropState === "claiming" ||
+      shouldBypassDailyDropClaim) &&
+    (!hasClaimedDailyDropToday || shouldBypassDailyDropClaim);
+  const showDailyDropButton = Boolean(currentMember) && canShowDailyDrop;
+  const getDisplayedDailyDropCount = (dropId: string) =>
+    getDailyDropCount(dropId) + (localDailyDropInventory[dropId] ?? 0);
+
+  const makeDailyDropAvailableForDebug = (drop: DailyDrop, message: string) => {
+    if (!isDevDailyDropTools) return;
+    clearDailyDropClaimStorageForDebug();
+    setTodayDrop(drop);
+    setHasClaimedDailyDropToday(false);
+    setDailyDropState("available");
+    setCollectedMessage("");
+    setDebugBypassDailyDropClaim(true);
+    setPetFeedback(message);
+  };
+
+  const resetDailyDropForDebug = () => {
+    if (!isDevDailyDropTools) return;
+    const nextDrop =
+      availableDailyDrops.find((drop) => drop.id === todayDrop.id) ??
+      pickRandomDrop(availableDailyDrops);
+    makeDailyDropAvailableForDebug(
+      nextDrop,
+      "Daily Drop reset. You can claim again."
+    );
+  };
+
+  const randomizeDailyDropForDebug = () => {
+    if (!isDevDailyDropTools) return;
+    makeDailyDropAvailableForDebug(
+      pickRandomDrop(availableDailyDrops),
+      "Daily Drop randomized. You can claim again."
+    );
+  };
+
+  const selectDailyDropForDebug = (dropId: string) => {
+    if (!isDevDailyDropTools) return;
+    const selectedDrop = availableDailyDrops.find((drop) => drop.id === dropId);
+    if (!selectedDrop) return;
+    makeDailyDropAvailableForDebug(
+      selectedDrop,
+      `${selectedDrop.name} selected. You can claim again.`
+    );
+  };
+
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/me");
+        const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
         const user = await response.json();
         setCurrentUser(user);
@@ -315,9 +764,15 @@ export function ChatPage({
   }, [orderedHomeMembers, currentMember, selectedHomeMemberId]);
 
   useEffect(() => {
-    setTodayDrop(pickRandomDrop(availableDailyDrops));
+    setTodayDrop((current) =>
+      availableDailyDrops.some((drop) => drop.id === current.id)
+        ? current
+        : pickRandomDrop(availableDailyDrops)
+    );
     setDailyDropState(hasClaimedDailyDropToday ? "claimed" : "available");
-    setCollectedMessage("");
+    if (!hasClaimedDailyDropToday) {
+      setCollectedMessage("");
+    }
   }, [availableDailyDrops, hasClaimedDailyDropToday]);
 
   useEffect(() => {
@@ -327,8 +782,14 @@ export function ChatPage({
         return;
       }
 
+      if (shouldBypassDailyDropClaim) {
+        setHasClaimedDailyDropToday(false);
+        setDailyDropState("available");
+        return;
+      }
+
       try {
-        const response = await fetch("http://localhost:3001/api/daily-drop/status");
+        const response = await fetch(apiUrl("/api/daily-drop/status"));
         if (!response.ok) throw new Error("Failed to fetch daily drop status");
         const result = await response.json();
         setHasClaimedDailyDropToday(Boolean(result?.claimed));
@@ -341,7 +802,7 @@ export function ChatPage({
     };
 
     void checkDailyDropStatus();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, shouldBypassDailyDropClaim]);
 
   useEffect(() => {
     const fetchLatestPost = async () => {
@@ -350,7 +811,7 @@ export function ChatPage({
         return;
       }
       try {
-        const response = await fetch("http://localhost:3001/api/posts");
+        const response = await fetch(apiUrl("/api/posts"));
 
         if (!response.ok) {
           throw new Error("Failed to fetch posts");
@@ -397,6 +858,239 @@ export function ChatPage({
     };
   }, [loadPosts]);
 
+  const loadUnreadCareMessages = useCallback(async () => {
+    if (!currentUser?.id) {
+      setUnreadCareMessages([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl("/api/care-messages/unread"));
+      const data = await response.json().catch(() => []);
+
+      if (!response.ok) {
+        console.error("Failed to load care messages:", data);
+        return;
+      }
+
+      setUnreadCareMessages(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    }
+  }, [currentUser?.id]);
+
+  const loadUnreadPetMessages = useCallback(async () => {
+    if (!currentUser?.id) {
+      setUnreadPetMessages([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl("/api/pet-messages/unread"));
+      const data = await response.json().catch(() => []);
+
+      if (!response.ok) {
+        console.error("Failed to load pet messages:", data);
+        return;
+      }
+
+      setUnreadPetMessages(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    void loadUnreadCareMessages();
+  }, [loadUnreadCareMessages]);
+
+  useEffect(() => {
+    void loadUnreadPetMessages();
+  }, [loadUnreadPetMessages]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadUnreadCareMessages();
+      }
+    };
+    const refreshOnFocus = () => {
+      void loadUnreadCareMessages();
+    };
+    const onHomeDataUpdated = () => {
+      void loadUnreadCareMessages();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    window.addEventListener("home-data-updated", onHomeDataUpdated);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+      window.removeEventListener("home-data-updated", onHomeDataUpdated);
+    };
+  }, [loadUnreadCareMessages]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadUnreadPetMessages();
+      }
+    };
+    const refreshOnFocus = () => {
+      void loadUnreadPetMessages();
+    };
+    const onHomeDataUpdated = () => {
+      void loadUnreadPetMessages();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    window.addEventListener("home-data-updated", onHomeDataUpdated);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+      window.removeEventListener("home-data-updated", onHomeDataUpdated);
+    };
+  }, [loadUnreadPetMessages]);
+
+  const markPetMessagesAsRead = useCallback(
+    async (messages: PetMessage[]) => {
+      if (!messages.length || isMarkingPetMessagesRead) return;
+
+      try {
+        setIsMarkingPetMessagesRead(true);
+
+        await Promise.all(
+          messages.map((message) =>
+            fetch(apiUrl(`/api/pet-messages/${message.id}/read`), {
+              method: "PATCH",
+            })
+          )
+        );
+
+        setUnreadPetMessages((prev) =>
+          prev.filter(
+            (message) =>
+              !messages.some((target) => String(target.id) === String(message.id))
+          )
+        );
+      } catch (error) {
+        console.error("Failed to mark pet messages as read:", error);
+      } finally {
+        setIsMarkingPetMessagesRead(false);
+      }
+    },
+    [isMarkingPetMessagesRead]
+  );
+
+  const handleOpenMemberScene = (member: FamilyMember) => {
+    setSelectedHomeMemberId(member.id);
+    setShowMemberSwitcher(false);
+  };
+
+  const handleOpenPetMessageAction = (member: FamilyMember) => {
+    const messages = unreadPetMessages.filter(
+      (message) => String(message.sender_user_id) === String(member.id)
+    );
+
+    if (messages.length > 0) {
+      setPetMessageViewer({ member, messages });
+      setPetMessageComposer(null);
+      return;
+    }
+
+    setPetMessageComposer({
+      member,
+      text: "",
+      error: "",
+    });
+    setPetMessageViewer(null);
+  };
+
+  const handleSendPetMessage = async () => {
+    if (!petMessageComposer || !currentUser?.id || isSendingPetMessage) return;
+
+    const trimmed = petMessageComposer.text.trim();
+    if (!trimmed) {
+      setPetMessageComposer((current) =>
+        current ? { ...current, error: "请输入想传的话。" } : current
+      );
+      return;
+    }
+
+    try {
+      setIsSendingPetMessage(true);
+      const response = await fetch(apiUrl("/api/pet-messages"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sender_user_id: currentUser.id,
+          receiver_user_id: petMessageComposer.member.id,
+          message: trimmed,
+        }),
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setPetMessageComposer((current) =>
+          current ? { ...current, error: result?.error || "发送失败。" } : current
+        );
+        return;
+      }
+
+      setPetMessageComposer(null);
+      window.dispatchEvent(new Event("home-data-updated"));
+    } catch (error) {
+      console.error("Failed to send pet message:", error);
+      setPetMessageComposer((current) =>
+        current ? { ...current, error: "发送失败。" } : current
+      );
+    } finally {
+      setIsSendingPetMessage(false);
+    }
+  };
+
+  const handleClosePetMessageViewer = async () => {
+    if (!petMessageViewer) return;
+    const messages = petMessageViewer.messages;
+    setPetMessageViewer(null);
+    await markPetMessagesAsRead(messages);
+  };
+
+  const handleBubbleClick = async () => {
+    setShowMemberSwitcher(false);
+
+    if (!activeCareMessage) {
+      setBubbleAnimationTick((current) => current + 1);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        apiUrl(`/api/care-messages/${activeCareMessage.id}/read`),
+        {
+          method: "PATCH",
+        }
+      );
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        console.error("Failed to mark care message as read:", result);
+        return;
+      }
+
+      setUnreadCareMessages((prev) =>
+        prev.filter((message) => String(message.id) !== String(activeCareMessage.id))
+      );
+      setBubbleAnimationTick((current) => current + 1);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    }
+  };
+
   const handlePublishPost = async () => {
     if (isPublishingPost) return;
     if (!currentUser?.id) return;
@@ -408,7 +1102,7 @@ export function ChatPage({
     try {
       setIsPublishingPost(true);
 
-      const response = await fetch("http://localhost:3001/api/posts", {
+      const response = await fetch(apiUrl("/api/posts"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -448,7 +1142,7 @@ export function ChatPage({
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`http://localhost:3001/api/posts/${postId}`, {
+      const response = await fetch(apiUrl(`/api/posts/${postId}`), {
         method: "DELETE",
       });
 
@@ -472,9 +1166,9 @@ export function ChatPage({
       dailyDrops.filter(
         (drop) =>
           (drop.category === "food" || drop.category === "drink") &&
-          getDailyDropCount(drop.id) > 0
+          getDisplayedDailyDropCount(drop.id) > 0
       ),
-    [getDailyDropCount]
+    [getDailyDropCount, localDailyDropInventory]
   );
 
   const toyInventory = useMemo(
@@ -482,9 +1176,9 @@ export function ChatPage({
       dailyDrops.filter(
         (drop) =>
           (drop.category === "basic-toy" || drop.category === "care") &&
-          getDailyDropCount(drop.id) > 0
+          getDisplayedDailyDropCount(drop.id) > 0
       ),
-    [getDailyDropCount]
+    [getDailyDropCount, localDailyDropInventory]
   );
 
   const activeInventoryTitle = inventoryTabs.find(
@@ -501,102 +1195,118 @@ export function ChatPage({
   };
 
   const claimDailyDrop = async () => {
+    console.log("[DailyDrop] claim clicked", { todayDrop, dailyDropState });
     setShowMemberSwitcher(false);
-    if (!currentUser?.id || dailyDropState !== "available" || hasClaimedDailyDropToday) return;
+    if (
+      (dailyDropState !== "available" && !shouldBypassDailyDropClaim) ||
+      (hasClaimedDailyDropToday && !shouldBypassDailyDropClaim)
+    ) {
+      console.warn("[DailyDrop] claim blocked", {
+        dailyDropState,
+        hasClaimedDailyDropToday,
+        shouldBypassDailyDropClaim,
+      });
+      return;
+    }
 
     setDailyDropState("claiming");
+    console.log("[DailyDrop] set claiming");
+    const claimedDrop = todayDrop;
 
     window.setTimeout(async () => {
-      const storageArea = getStorageArea(todayDrop);
       try {
-        const itemsRes = await fetch("http://localhost:3001/api/items");
-        if (!itemsRes.ok) throw new Error("Failed to load items");
-        const items = await itemsRes.json();
-        const item = items.find((entry: { name: string }) => entry.name === todayDrop.name);
-        if (!item?.id) throw new Error("Drop item not found");
-
-        const claimRes = await fetch("http://localhost:3001/api/daily-drop/claim", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ item_id: item.id }),
-        });
-
-        if (claimRes.status === 409) {
-          setHasClaimedDailyDropToday(true);
-          setDailyDropState("claimed");
-          if (currentUser?.id) {
-            window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
-          }
-          return;
-        }
-
-        if (!claimRes.ok) throw new Error("Failed to claim daily drop");
-
-        const added = await addDailyDropToInventory(todayDrop.id, 1);
-        if (!added) {
+        console.log("[DailyDrop] finish claim timeout start", { todayDrop: claimedDrop });
+        if (!claimedDrop) {
+          console.warn("[DailyDrop] no todayDrop when finishing claim");
           setDailyDropState("available");
-          setPetFeedback("Collected but inventory refresh failed. Please reload.");
           return;
         }
-      } catch {
+
+        const storageArea = getStorageArea(claimedDrop);
+        console.log("[DailyDrop] storageArea", storageArea);
+        console.log("[DailyDrop] add inventory start", claimedDrop.id);
+        const added = await addDailyDropToInventory(claimedDrop.id, 1);
+        console.log("[DailyDrop] add inventory done", claimedDrop.id, { added });
+
+        if (!added) {
+          if (!isDevDailyDropTools && !shouldBypassDailyDropClaim) {
+            console.warn("[DailyDrop] backend inventory add failed outside dev bypass");
+            setDailyDropState("available");
+            setPetFeedback("Daily Drop could not be collected. Please try again.");
+            return;
+          }
+
+          console.warn("[DailyDrop] using local inventory fallback", claimedDrop.id);
+          setLocalDailyDropInventory((prev) => ({
+            ...prev,
+            [claimedDrop.id]: (prev[claimedDrop.id] ?? 0) + 1,
+          }));
+        }
+
+        setHasClaimedDailyDropToday(true);
+        if (currentUser?.id) {
+          window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+        }
+        setDailyDropState("claimed");
+        const message = `${claimedDrop.name} +1`;
+        setCollectedMessage(message);
+        console.log("[DailyDrop] collected message set", message);
+        window.setTimeout(() => {
+          setCollectedMessage("");
+        }, 2000);
+        setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
+        setStoragePulse(storageArea);
+        setPetFeedback(`Collected ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
+        setDebugBypassDailyDropClaim(false);
+        console.log("[DailyDrop] count after add", claimedDrop.id, getDisplayedDailyDropCount(claimedDrop.id));
+
+        window.setTimeout(() => {
+          setStoragePulse(null);
+        }, 1200);
+      } catch (error) {
+        console.error("[DailyDrop] claim failed", error);
         setDailyDropState("available");
-        setPetFeedback("Could not save this drop to inventory.");
-        return;
+        setPetFeedback("Daily Drop could not be collected. Please try again.");
       }
-
-      setHasClaimedDailyDropToday(true);
-      if (currentUser?.id) {
-        window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
-      }
-      setDailyDropState("claimed");
-      setCollectedMessage(`${todayDrop.name} +1`);
-      window.setTimeout(() => {
-        setCollectedMessage("");
-      }, 2000);
-      setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
-      setStoragePulse(storageArea);
-      setPetFeedback(`Collected ${todayDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
-
-      window.setTimeout(() => {
-        setStoragePulse(null);
-      }, 1200);
     }, 520);
   };
 
   const useDrop = async (drop: DailyDrop) => {
     setShowMemberSwitcher(false);
     const usedDrop = await useDailyDropItem(drop.id);
-    if (!usedDrop) return;
+    const localCount = localDailyDropInventory[drop.id] ?? 0;
+    if (!usedDrop && localCount <= 0) return;
 
-    setPetFeedback(getPetReaction(usedDrop.category));
-    setActiveInventory(null);
-  };
-
-  const choosePet = (petId: typeof petItems[number]["id"]) => {
-    setShowMemberSwitcher(false);
-    const pet = petItems.find((item) => item.id === petId);
-    if (!pet || !unlockedPetIds.includes(pet.id)) return;
-    setSelectedPetId(pet.id);
-    setPetFeedback(`${me.name}'s pet changed into ${pet.name}.`);
-  };
-
-  const renderDropIcon = (drop: DailyDrop, sizeClass = "h-11 w-11") => {
-    if (drop.image) {
-      return (
-        <img
-          src={drop.image}
-          alt=""
-          className={`${sizeClass} object-contain`}
-        />
+    if (!usedDrop) {
+      setLocalDailyDropInventory((prev) => ({
+        ...prev,
+        [drop.id]: Math.max((prev[drop.id] ?? 0) - 1, 0),
+      }));
+      setLocalPlacedDailyDrops((prev) =>
+        prev.some((item) => item.id === drop.id) ? prev : [...prev, drop]
       );
     }
 
-    return (
-      <span className="text-xl leading-none" aria-hidden="true">
-        {drop.emoji}
-      </span>
-    );
+    setPetFeedback(getPetReaction((usedDrop ?? drop).category));
+    setActiveInventory(null);
   };
+
+  const renderDropIcon = (drop: DailyDrop, sizeClass = "h-11 w-11") => {
+    return <ItemIcon item={drop} sizeClass={sizeClass} />;
+  };
+
+  const clearLocalPlacedDailyDrop = useCallback((dropId: string) => {
+    setLocalPlacedDailyDrops((prev) => prev.filter((item) => item.id !== dropId));
+  }, []);
+
+  const displayedPlacedDailyDrops = useMemo(() => {
+    const byId = new Map<string, DailyDrop>();
+    placedDailyDrops.forEach((drop) => byId.set(drop.id, drop));
+    localPlacedDailyDrops.forEach((drop) => byId.set(drop.id, drop));
+    return Array.from(byId.values());
+  }, [placedDailyDrops, localPlacedDailyDrops]);
+  const latestDisplayedPlacedDailyDrop =
+    displayedPlacedDailyDrops[displayedPlacedDailyDrops.length - 1] ?? lastPlacedDailyDrop;
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-[#f4ede4]">
@@ -634,15 +1344,15 @@ export function ChatPage({
         </div>
 
         <div className="mb-4 flex items-start justify-between gap-3">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setActiveInventory(null);
-              setShowMemberSwitcher((current) => !current);
-            }}
-            className="absolute left-[28px] top-[100px] z-40 flex items-center gap-3 rounded-full border border-[#f0d8ca] bg-white/90 px-3 py-2 shadow-[0_10px_24px_rgba(92,61,38,0.12)] backdrop-blur"
-          >
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setActiveInventory(null);
+                setShowMemberSwitcher((current) => !current);
+              }}
+              className="absolute left-[28px] top-[100px] z-40 flex items-center gap-3 rounded-full border border-[#f0d8ca] bg-white/90 px-3 py-2 shadow-[0_10px_24px_rgba(92,61,38,0.12)] backdrop-blur"
+            >
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f8efe7]">
               <img
                 src={getMemberPetProfileImage(selectedHomeMember?.id)}
@@ -663,6 +1373,9 @@ export function ChatPage({
                 showMemberSwitcher ? "rotate-180" : ""
               }`}
             />
+            {hasUnreadPetMessages && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#e76f51]" />
+            )}
           </button>
 
           {showMemberSwitcher && !activeInventory && (
@@ -677,32 +1390,57 @@ export function ChatPage({
                 {orderedHomeMembers.map((member) => {
                   const isSelected = String(member.id) === String(selectedHomeMemberId);
                   return (
-                    <button
+                    <div
                       key={member.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedHomeMemberId(member.id);
-                        setShowMemberSwitcher(false);
-                      }}
                       className={`flex w-full items-center gap-3 rounded-[20px] px-3 py-2 text-left transition ${
                         isSelected ? "bg-[#fff1ea] ring-1 ring-[#f6b8a0]" : "hover:bg-[#f8efe7]"
                       }`}
                     >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f8efe7]">
-                        <img
-                          src={getMemberPetProfileImage(member.id)}
-                          alt={`${member.name}'s pet`}
-                          className="h-8 w-8 object-contain"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-[#4f3c2e]">
-                          {member.name}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMemberScene(member)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f8efe7]">
+                          <img
+                            src={getMemberPetProfileImage(member.id)}
+                            alt={`${member.name}'s pet`}
+                            className="h-8 w-8 object-contain"
+                          />
                         </div>
-                        <div className="text-[11px] text-[#a48976]">View scene</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-[#4f3c2e]">
+                            {member.name}
+                          </div>
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenMemberScene(member);
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f7efe7] text-[#8b705d]"
+                        >
+                          <Home className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenPetMessageAction(member);
+                          }}
+                          className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#fff1ea] text-[#c27c57]"
+                        >
+                          <Send className="h-4 w-4" />
+                          {unreadPetMessageSenders.has(String(member.id)) && (
+                            <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[#e76f51]" />
+                          )}
+                        </button>
+                        {isSelected && <div className="h-2 w-2 rounded-full bg-[#f2a07f]" />}
                       </div>
-                      {isSelected && <div className="h-2 w-2 rounded-full bg-[#f2a07f]" />}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -710,7 +1448,7 @@ export function ChatPage({
           )}
 
           {isViewingOwnHome && (
-            <div className="absolute right-5 top-[170px] z-30 flex flex-col items-center gap-4">
+            <div className="absolute right-[15px] top-[100px] z-30 flex flex-col items-center gap-4">
               {inventoryTabs.map((item) => {
                 const hasDot = item.key === "food" || item.key === "toy" ? storageDot[item.key] : false;
                 const isPulsing = item.key === storagePulse;
@@ -727,12 +1465,12 @@ export function ChatPage({
                         isPulsing ? "scale-110 ring-2 ring-[#f0a35f]/50" : ""
                       }`}
                     >
-                      <span className="text-2xl leading-none" aria-hidden="true">
+                      <span className="text-[26px] leading-none" aria-hidden="true">
                         {item.emoji}
                       </span>
                     </div>
 
-                    {(hasDot || isPulsing) && item.key !== "shop" && (
+                    {(hasDot || isPulsing) && item.key !== "petSelection" && (
                       <span
                         className={`absolute right-1 top-0 rounded-full bg-[#e76f51] shadow-sm ${
                           isPulsing
@@ -752,18 +1490,87 @@ export function ChatPage({
               })}
             </div>
           )}
+
+          {isViewingOwnHome && isDevDailyDropTools && (
+            <div
+              className="absolute left-[28px] top-[230px] z-40 w-[210px] rounded-[20px] border border-[#f0d8ca] bg-white/90 p-2 shadow-[0_12px_26px_rgba(92,61,38,0.12)] backdrop-blur"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setDebugDropToolsOpen((current) => !current)}
+                className="flex w-full items-center justify-between rounded-[14px] px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-[#8d684d]"
+              >
+                <span>Drop Debug</span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition ${debugDropToolsOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {debugDropToolsOpen && (
+                <div className="mt-2 space-y-2 px-1 pb-1">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={resetDailyDropForDebug}
+                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={randomizeDailyDropForDebug}
+                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
+                    >
+                      Random
+                    </button>
+                  </div>
+
+                  <select
+                    value={todayDrop.id}
+                    onChange={(event) => selectDailyDropForDebug(event.target.value)}
+                    className="w-full rounded-[14px] border border-[#ead7c8] bg-white px-2 py-1.5 text-[11px] font-semibold text-[#5d4838] outline-none"
+                  >
+                    {availableDailyDrops.map((drop) => (
+                      <option key={drop.id} value={drop.id}>
+                        {drop.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="rounded-[14px] bg-[#fff8f1] px-2 py-2 text-[10px] leading-4 text-[#8d684d]">
+                    <div>todayDrop.id: {todayDrop?.id ?? "none"}</div>
+                    <div>todayDrop.name: {todayDrop?.name ?? "none"}</div>
+                    <div>dailyDropState: {dailyDropState}</div>
+                    <div>storagePulse: {storagePulse ?? "none"}</div>
+                    <div>storageDot.food: {String(storageDot.food)}</div>
+                    <div>storageDot.toy: {String(storageDot.toy)}</div>
+                    <div>collectedMessage: {collectedMessage || "none"}</div>
+                    <div>claimedToday: {String(hasClaimedDailyDropToday)}</div>
+                    <div>debugBypass: {String(debugBypassDailyDropClaim)}</div>
+                    <div>shouldBypass: {String(shouldBypassDailyDropClaim)}</div>
+                    <div>canShowDailyDrop: {String(canShowDailyDrop)}</div>
+                  </div>
+
+                  <p className="text-[10px] leading-4 text-[#9a7a61]">
+                    Reset also bypasses today's claim lock for the next dev claim.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="relative flex flex-1 items-center justify-center">
           <div className="absolute left-1/2 top-[50px] z-20 h-[150px] w-[230px] -translate-x-1/2">
-            {/* 相框底层 */}
+            {/* Frame base layer */}
             <img
               src="/images/home/hanging-frame.png"
               alt="Hanging photo frame"
               className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
             />
 
-            {/* 照片层：固定内框大小，超出部分裁剪，效果和 Connect 相册一致 */}
+            {/* Photo layer with the same clipped inner frame as Connect. */}
             <div
               className="absolute z-20 overflow-hidden rounded-[3px] bg-[#f3e1cf]"
               style={{
@@ -787,16 +1594,21 @@ export function ChatPage({
             </div>
           </div>
 
-          {currentMember && !hasClaimedDailyDropToday && dailyDropState !== "claimed" && todayDrop && (
+          {showDailyDropButton && (
             <motion.button
               type="button"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 setShowMemberSwitcher(false);
                 void claimDailyDrop();
               }}
-              disabled={dailyDropState !== "available"}
-              whileTap={dailyDropState === "available" ? { scale: 0.95 } : undefined}
-              className="absolute right-[28px] top-[620px] z-30 flex flex-col items-center disabled:cursor-default"
+              disabled={dailyDropState !== "available" && !shouldBypassDailyDropClaim}
+              whileTap={
+                dailyDropState === "available" || shouldBypassDailyDropClaim
+                  ? { scale: 0.95 }
+                  : undefined
+              }
+              className="absolute right-[22px] bottom-[66px] z-40 flex flex-col items-center disabled:cursor-default"
             >
               <motion.div
                 animate={
@@ -811,15 +1623,12 @@ export function ChatPage({
                 }
                 className="flex h-[72px] w-[72px] items-center justify-center rounded-full border border-white/80 bg-white/60 text-3xl shadow-[0_14px_26px_rgba(97,74,56,0.14)] backdrop-blur-md"
               >
-                {todayDrop.image ? (
-                  <img
-                    src={todayDrop.image}
-                    alt={todayDrop.name}
-                    className="h-11 w-11 object-contain"
-                  />
-                ) : (
-                  <span>{todayDrop.emoji}</span>
-                )}
+                <ItemIcon
+                  item={todayDrop}
+                  sizeClass="h-11 w-11"
+                  emojiClassName="leading-none"
+                  alt={todayDrop.name}
+                />
               </motion.div>
               <span className="mt-1 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[#8d684d] shadow-sm">
                 Daily Drop
@@ -827,11 +1636,11 @@ export function ChatPage({
             </motion.button>
           )}
 
-          {collectedMessage && dailyDropState === "claimed" && (
+          {collectedMessage && (
             <motion.div
               initial={{ opacity: 0, y: 6, scale: 0.94 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="absolute right-[28px] top-[690px] z-30 rounded-full bg-white/88 px-3 py-2 text-xs font-bold text-[#8d684d] shadow-sm"
+              className="absolute right-[22px] bottom-[38px] z-40 rounded-full bg-white/88 px-3 py-2 text-xs font-bold text-[#8d684d] shadow-sm"
             >
               {collectedMessage}
             </motion.div>
@@ -839,40 +1648,64 @@ export function ChatPage({
 
           <div className="absolute bottom-7 h-9 w-[240px] rounded-full bg-[radial-gradient(ellipse_at_center,_rgba(106,83,61,0.28),_rgba(106,83,61,0)_72%)]" />
 
-          <div className="relative mt-[260px] flex flex-col items-center">
+          <div className="relative mt-[275px] flex flex-col items-center">
             <div className="relative flex items-center justify-center">
-              <div className="absolute bottom-[calc(100%-25px)] left-1/2 z-10 w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white px-5 py-4 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]">
-                <div className="mb-1 flex items-center justify-center gap-1.5">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: selectedMember.accentColor }}
-                    aria-hidden="true"
-                  />
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#b98559]">
-                    {petTitle}
-                  </p>
+              <motion.button
+                type="button"
+                onClick={() => {
+                  void handleBubbleClick();
+                }}
+                key={`${activeCareMessage?.id ?? "default"}-${displayedBubble}-${bubbleAnimationTick}`}
+                initial={{ scale: 0.98 }}
+                animate={{ scale: [0.98, 1.03, 1] }}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+                className="absolute bottom-[calc(100%-32px)] left-1/2 z-10 w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white px-5 py-3 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  {showCareUnreadDot ? (
+                    <motion.span
+                      key="care-dot"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[#e76f51]"
+                    />
+                  ) : null}
+                </AnimatePresence>
+                <div className="relative min-h-[48px]">
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.p
+                      key={`${activeCareMessage?.id ?? "default"}-${displayedBubble}-${bubbleAnimationTick}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.22, ease: "easeOut" }}
+                      className="absolute inset-0 text-center text-[15px] leading-6 text-[#5d4838]"
+                    >
+                      {displayedBubble}
+                    </motion.p>
+                  </AnimatePresence>
                 </div>
-
-                <p className="text-center text-[15px] leading-6 text-[#5d4838]">
-                  {selectedBubble}
-                </p>
 
                 <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white" />
-              </div>
+              </motion.button>
 
-              {lastPlacedDailyDrop && (
-                <div className="absolute -right-11 bottom-16 z-10 flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 text-4xl shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm">
-                  {lastPlacedDailyDrop.sceneImage ? (
-                    <img
-                      src={lastPlacedDailyDrop.sceneImage}
-                      alt={lastPlacedDailyDrop.name}
-                      className="h-14 w-14 object-contain"
-                    />
-                  ) : (
-                    <span>{lastPlacedDailyDrop.emoji}</span>
-                  )}
-                </div>
-              )}
+              {displayedPlacedDailyDrops.map((drop) => {
+                const isLocalPlacedDrop = localPlacedDailyDrops.some(
+                  (item) => item.id === drop.id
+                );
+
+                return (
+                  <PlacedDailyDropSceneItem
+                    key={drop.id}
+                    drop={drop}
+                    onExpire={
+                      isLocalPlacedDrop ? clearLocalPlacedDailyDrop : clearPlacedDailyDrop
+                    }
+                  />
+                );
+              })}
 
               <button
                 type="button"
@@ -892,15 +1725,6 @@ export function ChatPage({
               </button>
             </div>
 
-            <p className="mt-3 text-sm font-semibold text-[#4c3a2d]">
-              {selectedMember.name}'s companion pet
-            </p>
-
-            <p className="mt-1 text-[11px] text-[#8b705d]">
-              {selectedHomePet.name +
-                ` · ${lastPlacedDailyDrop ? lastPlacedDailyDrop.name : "waiting for care"}`}
-            </p>
-
             {String(selectedHomeMemberId) !== String(me?.id) && (
               <p className="mt-1 text-xs text-[#8b705d]">
                 Viewing {selectedMember.name}'s companion status
@@ -918,9 +1742,23 @@ export function ChatPage({
           onClick={() => setShowMemberSwitcher(false)}
         >
           <div
-            className="max-h-[68vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
+            className="max-h-[76vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
             onClick={(event) => event.stopPropagation()}
           >
+            {activeInventory === "petSelection" ? (
+              <PetSelectionView
+                selectedPetId={selectedPetId}
+                setSelectedPetId={setSelectedPetId}
+                currentPet={currentPet}
+                petItems={petItems}
+                unlockedPetIds={unlockedPetIds}
+                onBack={() => {
+                  setShowMemberSwitcher(false);
+                  setActiveInventory(null);
+                }}
+              />
+            ) : (
+              <>
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#b08a6d]">
@@ -939,40 +1777,9 @@ export function ChatPage({
                 }}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3e5d8] text-sm font-bold text-[#7d6554]"
               >
-                ×
+                X
               </button>
             </div>
-
-            {activeInventory === "shop" && (
-              <div className="grid grid-cols-2 gap-3">
-                {petItems.map((pet) => {
-                  const isSelected = selectedPetId === pet.id;
-                  const isUnlocked = unlockedPetIds.includes(pet.id);
-
-                  return (
-                    <button
-                      key={pet.id}
-                      type="button"
-                      disabled={!isUnlocked}
-                      onClick={() => choosePet(pet.id)}
-                      className={`rounded-3xl border p-3 text-left transition ${
-                        isSelected
-                          ? "border-[#d18b63] bg-[#fff1df]"
-                          : "border-[#f2dfcf] bg-white"
-                      } ${!isUnlocked ? "opacity-50" : "active:scale-[0.98]"}`}
-                    >
-                      <div className="mb-2 flex h-20 items-center justify-center rounded-2xl bg-[#f7eadf]">
-                        <img src={pet.image} alt="" className="h-16 w-auto object-contain" />
-                      </div>
-                      <p className="text-xs font-semibold text-[#49372a]">{pet.name}</p>
-                      <p className="mt-1 text-[10px] leading-4 text-[#8b705d]">
-                        {pet.description}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
 
             {activeInventory === "food" && (
               <div className="space-y-2">
@@ -983,7 +1790,7 @@ export function ChatPage({
                 )}
 
                 {foodInventory.map((drop) => {
-                  const count = getDailyDropCount(drop.id);
+                  const count = getDisplayedDailyDropCount(drop.id);
 
                   return (
                     <button
@@ -1007,7 +1814,7 @@ export function ChatPage({
                         </span>
                       </span>
                       <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        × {count}
+                        x {count}
                       </span>
                     </button>
                   );
@@ -1024,7 +1831,7 @@ export function ChatPage({
                 )}
 
                 {toyInventory.map((drop) => {
-                  const count = getDailyDropCount(drop.id);
+                  const count = getDisplayedDailyDropCount(drop.id);
 
                   return (
                     <button
@@ -1048,7 +1855,7 @@ export function ChatPage({
                         </span>
                       </span>
                       <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        Use × {count}
+                        Use x {count}
                       </span>
                     </button>
                   );
@@ -1065,15 +1872,7 @@ export function ChatPage({
                     className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
                   >
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf] text-xl">
-                      {keepsake.image ? (
-                        <img
-                          src={keepsake.image}
-                          alt=""
-                          className="h-10 w-10 object-contain"
-                        />
-                      ) : (
-                        keepsake.emoji
-                      )}
+                      <ItemIcon item={keepsake} sizeClass="h-10 w-10" />
                     </span>
                     <span className="flex-1">
                       <span className="block text-sm font-semibold text-[#49372a]">
@@ -1094,6 +1893,115 @@ export function ChatPage({
             <p className="mt-3 text-center text-[11px] leading-4 text-[#9a7a61]">
               Food and drink are consumable. Toys, care items, and weekly keepsakes can stay as shared pet memories.
             </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {petMessageComposer && (
+        <div className="absolute inset-0 z-[999] flex items-center justify-center bg-black/20 px-5">
+          <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold text-[#463326]">
+                  Send a message to {petMessageComposer.member.name}
+                </p>
+                <p className="mt-1 text-sm text-[#8b705d]">
+                  想让小狗帮你传什么话？
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPetMessageComposer(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <textarea
+              value={petMessageComposer.text}
+              onChange={(event) =>
+                setPetMessageComposer((current) =>
+                  current
+                    ? { ...current, text: event.target.value, error: "" }
+                    : current
+                )
+              }
+              placeholder="想让小狗帮你传什么话？"
+              rows={4}
+              className="w-full resize-none rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
+            />
+
+            {petMessageComposer.error && (
+              <p className="mt-2 text-xs text-[#c25a46]">{petMessageComposer.error}</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPetMessageComposer(null)}
+                className="rounded-full bg-[#f3eee9] px-4 py-2 text-sm font-medium text-[#6d5645]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendPetMessage()}
+                disabled={isSendingPetMessage}
+                className="rounded-full bg-[#6d5645] px-4 py-2 text-sm font-medium text-white disabled:bg-[#c7b7aa]"
+              >
+                {isSendingPetMessage ? "Sending..." : "Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {petMessageViewer && (
+        <div className="absolute inset-0 z-[999] flex items-center justify-center bg-black/20 px-5">
+          <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold text-[#463326]">
+                  Messages from {petMessageViewer.member.name}
+                </p>
+                <p className="mt-1 text-sm text-[#8b705d]">
+                  查看后这些未读消息会标记为已读。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleClosePetMessageViewer()}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[260px] space-y-3 overflow-y-auto">
+              {petMessageViewer.messages.map((message) => (
+                <div
+                  key={message.id}
+                  className="rounded-[18px] bg-[#f7efe7] px-4 py-3 text-sm leading-6 text-[#463326]"
+                >
+                  <p>{message.message}</p>
+                  <p className="mt-2 text-[11px] text-[#9a8573]">{message.created_at}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void handleClosePetMessageViewer()}
+                disabled={isMarkingPetMessagesRead}
+                className="rounded-full bg-[#6d5645] px-4 py-2 text-sm font-medium text-white disabled:bg-[#c7b7aa]"
+              >
+                {isMarkingPetMessagesRead ? "Closing..." : "Close"}
+              </button>
+            </div>
           </div>
         </div>
       )}

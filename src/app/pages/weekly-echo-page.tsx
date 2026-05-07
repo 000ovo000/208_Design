@@ -1,4 +1,4 @@
-import { type CSSProperties, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,6 +15,8 @@ import {
   type WeeklyReward,
   type WeeklyRewardStats,
 } from "../data/weekly-rewards";
+import { apiUrl } from "../lib/api";
+import type { AlbumEntry, FamilyMember } from "../types";
 
 type EchoPageKey = "summary" | "moments" | "keepsakes";
 
@@ -23,6 +25,11 @@ type PetReplyKey = "gentle" | "details" | "thanks";
 type WeeklyEchoScene = "boards" | "gift";
 
 type GiftRevealStage = "closed" | "shaking" | "open" | "revealed";
+
+type AiEchoSummary = {
+  subtitle: string;
+  body: string;
+};
 
 const chalkFontStyle: CSSProperties = {
   fontFamily: '"Segoe Print", "Comic Sans MS", "Bradley Hand", cursive',
@@ -36,12 +43,47 @@ const petReplies: Record<PetReplyKey, string> = {
 
 interface WeeklyEchoPageProps {
   stats: WeeklyRewardStats;
+  weeklyAlbumEntries: AlbumEntry[];
+  familyMembers: FamilyMember[];
+  weeklyKeepsakes: WeeklyReward[];
   onAddKeepsake: (reward: WeeklyReward) => void;
   addedKeepsakeIds: string[];
 }
 
+function RewardIcon({
+  reward,
+  sizeClass = "h-16 w-16",
+  emojiClassName = "text-4xl leading-none",
+}: {
+  reward: WeeklyReward;
+  sizeClass?: string;
+  emojiClassName?: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  if (reward.image && failedSrc !== reward.image) {
+    return (
+      <img
+        src={reward.image}
+        alt={reward.name}
+        className={`${sizeClass} object-contain`}
+        onError={() => setFailedSrc(reward.image ?? null)}
+      />
+    );
+  }
+
+  return (
+    <span className={emojiClassName} aria-hidden="true">
+      {reward.emoji}
+    </span>
+  );
+}
+
 export function WeeklyEchoPage({
   stats,
+  weeklyAlbumEntries,
+  familyMembers,
+  weeklyKeepsakes,
   onAddKeepsake,
   addedKeepsakeIds,
 }: WeeklyEchoPageProps) {
@@ -50,6 +92,9 @@ export function WeeklyEchoPage({
 
   const [activePage, setActivePage] = useState(0);
   const [replyKey, setReplyKey] = useState<PetReplyKey>("gentle");
+  const [aiSummary, setAiSummary] = useState<AiEchoSummary | null>(null);
+  const [aiSummaryStatus, setAiSummaryStatus] = useState<"loading" | "ready" | "fallback" | "error">("loading");
+  const [aiSummaryError, setAiSummaryError] = useState("");
 
   const [scene, setScene] = useState<WeeklyEchoScene>("boards");
   const [giftRevealStage, setGiftRevealStage] = useState<GiftRevealStage>("closed");
@@ -66,6 +111,107 @@ export function WeeklyEchoPage({
     `${stats.petMessages} pet messages helped small moments travel home.`,
     `${stats.gentleReactions} gentle reactions and ${stats.moodCheckIns} mood check-ins kept the week warm.`,
   ];
+  const weeklyStorySignals = useMemo(
+    () => ({
+      photos: weeklyAlbumEntries.map((entry) => {
+        const member = familyMembers.find(
+          (familyMember) => String(familyMember.id) === String(entry.memberId)
+        );
+
+        return {
+          author: member?.name || "Family member",
+          uploadedAt: entry.uploadedAt,
+          dogMessage: entry.dogMessage,
+          reaction: entry.reaction,
+        };
+      }),
+      moodBeads: {
+        count: stats.moodCheckIns,
+      },
+      lightResponses: weeklyAlbumEntries
+        .filter((entry) => entry.reaction)
+        .map((entry) => ({
+          reaction: entry.reaction,
+          uploadedAt: entry.uploadedAt,
+        })),
+      unlockedDecorations: [
+        ...weeklyKeepsakes.map((keepsake) => keepsake.name),
+        addedToToyBox ? weeklyKeepsake.name : null,
+      ].filter(Boolean),
+      currentPet: {
+        name: currentPet.name,
+        species: currentPet.species,
+      },
+    }),
+    [
+      addedToToyBox,
+      currentPet.name,
+      currentPet.species,
+      familyMembers,
+      stats.moodCheckIns,
+      weeklyAlbumEntries,
+      weeklyKeepsake.name,
+      weeklyKeepsakes,
+    ]
+  );
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadWeeklyEchoSummary() {
+      setAiSummaryStatus("loading");
+      setAiSummaryError("");
+
+      try {
+        const response = await fetch(apiUrl("/api/weekly-echo/summary"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            stats,
+            moments: weeklyMoments,
+            storySignals: weeklyStorySignals,
+            petName: currentPet.name,
+          }),
+        });
+
+        const data = await response.json();
+        if (ignore) return;
+
+        if (!response.ok && !data.summary) {
+          throw new Error(data.error || "Failed to load weekly echo.");
+        }
+
+        setAiSummary(data.summary);
+        setAiSummaryStatus(data.source === "ai" ? "ready" : "fallback");
+
+        if (!response.ok) {
+          setAiSummaryError("AI service is unavailable, so the board used a local weekly summary.");
+        }
+      } catch (error) {
+        if (ignore) return;
+        setAiSummary(null);
+        setAiSummaryStatus("error");
+        setAiSummaryError(error instanceof Error ? error.message : "Failed to load weekly echo.");
+      }
+    }
+
+    void loadWeeklyEchoSummary();
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    currentPet.name,
+    stats.connectedDays,
+    stats.gentleReactions,
+    stats.moodCheckIns,
+    stats.petMessages,
+    stats.photoShares,
+    weeklyStorySignals,
+  ]);
+
   const giftBubbleText =
     giftRevealStage === "closed"
       ? "Tap the box to open it."
@@ -95,8 +241,8 @@ export function WeeklyEchoPage({
       {
         key: "summary" as EchoPageKey,
         title: "This Week's Echo",
-        subtitle: `Your family shared ${stats.photoShares} small moments.`,
-        body: `You stayed lightly connected on ${stats.connectedDays} days. No pressure, just a few warm traces left behind.`,
+        subtitle: aiSummary?.subtitle || `Your family shared ${stats.photoShares} small moments.`,
+        body: aiSummary?.body || `You stayed lightly connected on ${stats.connectedDays} days. No pressure, just a few warm traces left behind.`,
       },
       {
         key: "moments" as EchoPageKey,
@@ -111,7 +257,7 @@ export function WeeklyEchoPage({
         body: "Food drops can be used every day. Longer-lasting keepsakes are saved here as family memories.",
       },
     ],
-    [stats.connectedDays, stats.photoShares]
+    [aiSummary?.body, aiSummary?.subtitle, stats.connectedDays, stats.photoShares]
   );
 
   const scrollToPage = (index: number) => {
@@ -235,7 +381,7 @@ export function WeeklyEchoPage({
                 className="w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
               >
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#fff1d6] text-4xl">
-                  {weeklyKeepsake.emoji}
+                  <RewardIcon reward={weeklyKeepsake} />
                 </div>
 
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
@@ -325,35 +471,61 @@ export function WeeklyEchoPage({
                 </h2>
 
                 <p
-                  className="mt-2 text-sm leading-5 text-[#f7efd9]"
+                  className="mt-2 whitespace-pre-line text-sm leading-5 text-[#f7efd9]"
                   style={chalkFontStyle}
                 >
                   {page.body}
                 </p>
 
                 {page.key === "summary" && (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {weeklyStats.map((stat) => (
-                      <div
-                        key={stat.label}
-                        className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2"
-                      >
-                        <div className="text-base">{stat.icon}</div>
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {weeklyStats.map((stat) => (
                         <div
-                          className="text-base font-bold text-white"
-                          style={chalkFontStyle}
+                          key={stat.label}
+                          className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2"
                         >
-                          {stat.value}
+                          <div className="text-base">{stat.icon}</div>
+                          <div
+                            className="text-base font-bold text-white"
+                            style={chalkFontStyle}
+                          >
+                            {stat.value}
+                          </div>
+                          <div
+                            className="text-xs text-[#e7dcc0]"
+                            style={chalkFontStyle}
+                          >
+                            {stat.label}
+                          </div>
                         </div>
-                        <div
-                          className="text-xs text-[#e7dcc0]"
-                          style={chalkFontStyle}
-                        >
-                          {stat.label}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+
+                    {aiSummaryStatus === "loading" && (
+                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
+                        Writing this week's echo...
+                      </p>
+                    )}
+
+                    {aiSummaryStatus === "fallback" && (
+                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
+                        Local weekly echo shown until the AI key is configured.
+                      </p>
+                    )}
+
+                    {aiSummaryStatus === "error" && (
+                      <p className="mt-2 text-xs text-[#ffd4c4]" style={chalkFontStyle}>
+                        {aiSummaryError}
+                      </p>
+                    )}
+
+                    {aiSummaryError && aiSummaryStatus !== "error" && (
+                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
+                        {aiSummaryError}
+                      </p>
+                    )}
+                  </>
                 )}
 
                 {page.key === "moments" && (

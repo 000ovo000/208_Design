@@ -1,8 +1,8 @@
 const express = require("express");
 const db = require("../db");
+const { getCurrentUserId } = require("../current-user");
 
 const router = express.Router();
-const CURRENT_USER_ID = Number(process.env.CURRENT_USER_ID || 1);
 
 async function resolveCurrentUser() {
   try {
@@ -18,7 +18,7 @@ async function resolveCurrentUser() {
       WHERE fm.user_id = ?
       LIMIT 1
       `,
-      [CURRENT_USER_ID]
+      [getCurrentUserId()]
     );
 
     if (rows.length > 0) return rows[0];
@@ -27,9 +27,9 @@ async function resolveCurrentUser() {
   }
 
   return {
-    id: CURRENT_USER_ID,
-    name: `User ${CURRENT_USER_ID}`,
-    email: `user${CURRENT_USER_ID}@example.com`,
+    id: getCurrentUserId(),
+    name: `User ${getCurrentUserId()}`,
+    email: `user${getCurrentUserId()}@example.com`,
     family_id: 1,
   };
 }
@@ -67,10 +67,10 @@ router.post("/", async (req, res) => {
     const currentUser = await resolveCurrentUser();
     const [userResult] = await db.query(
       `
-      INSERT INTO users (name, email, avatar_url)
-      VALUES (?, ?, ?)
+      INSERT INTO users (family_id, name, email, avatar_url)
+      VALUES (?, ?, ?, ?)
       `,
-      [name.trim(), email?.trim() || null, null]
+      [Number(currentUser.family_id), name.trim(), email?.trim() || null, null]
     );
 
     const newUserId = userResult.insertId;
@@ -105,7 +105,11 @@ router.delete("/:id", async (req, res) => {
 
   try {
     const currentUser = await resolveCurrentUser();
-    await db.query(
+    if (Number(currentUser.id) === userId) {
+      return res.status(400).json({ error: "You cannot delete the current user." });
+    }
+
+    const [memberResult] = await db.query(
       `
       DELETE FROM family_members
       WHERE family_id = ?
@@ -113,6 +117,10 @@ router.delete("/:id", async (req, res) => {
       `,
       [Number(currentUser.family_id), userId]
     );
+
+    if (!memberResult.affectedRows) {
+      return res.status(404).json({ error: "Family member not found." });
+    }
 
     await db.query(
       `

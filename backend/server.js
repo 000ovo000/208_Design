@@ -8,9 +8,12 @@ const postRoutes = require("./routes/posts");
 const uploadRoutes = require("./routes/uploads");
 const itemRoutes = require("./routes/items");
 const dailyDropRoutes = require("./routes/daily-drop");
+const weeklyEchoRoutes = require("./routes/weekly-echo");
+const careMessageRoutes = require("./routes/care-messages");
+const petMessageRoutes = require("./routes/pet-messages");
 
 const app = express();
-const PORT = 3001;
+const PORT = Number(process.env.PORT || 3001);
 
 app.use(cors());
 app.use(express.json());
@@ -28,6 +31,9 @@ app.use("/api/posts", postRoutes);
 app.use("/api/uploads", uploadRoutes);
 app.use("/api", itemRoutes);
 app.use("/api", dailyDropRoutes);
+app.use("/api/weekly-echo", weeklyEchoRoutes);
+app.use("/api/care-messages", careMessageRoutes);
+app.use("/api/pet-messages", petMessageRoutes);
 
 app.listen(PORT, () => {
   console.log(`Backend server running at http://localhost:${PORT}`);
