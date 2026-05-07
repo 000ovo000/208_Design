@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Gift,
-  MessageCircle,
   Sparkles,
   ArrowLeft,
 } from "lucide-react";
@@ -20,15 +19,26 @@ import type { AlbumEntry, FamilyMember } from "../types";
 
 type EchoPageKey = "summary" | "moments" | "keepsakes";
 
-type PetReplyKey = "gentle" | "details" | "thanks";
-
 type WeeklyEchoScene = "boards" | "gift";
 
 type GiftRevealStage = "closed" | "shaking" | "open" | "revealed";
 
-type AiEchoSummary = {
+type WeeklyEchoSummary = {
   subtitle: string;
   body: string;
+};
+
+type WeeklyEchoKeepsake = {
+  category: DropSummaryCategory;
+  label: string;
+  count: number;
+  preview: string;
+};
+
+type WeeklyEchoSummaryResponse = {
+  summary?: WeeklyEchoSummary;
+  stats?: Partial<WeeklyRewardStats> & { smallMoments?: number };
+  keepsakes?: WeeklyEchoKeepsake[];
 };
 
 type DropSummaryCategory = "food" | "drink" | "basic-toy";
@@ -43,12 +53,6 @@ type WeeklyDropCategorySummary = {
 
 const chalkFontStyle: CSSProperties = {
   fontFamily: '"Segoe Print", "Comic Sans MS", "Bradley Hand", cursive',
-};
-
-const petReplies: Record<PetReplyKey, string> = {
-  gentle: "I kept the small moments safe for your family.",
-  details: "This week felt warm: more reactions, a few photos, and gentle mood sharing.",
-  thanks: "I can help you send a small thank-you back to your family.",
 };
 
 const dropCategoryLabels: Record<DropSummaryCategory, string> = {
@@ -71,6 +75,11 @@ const formatDropNamePreview = (itemNames: string[]) => {
   }
   return itemNames.join(", ");
 };
+
+const normalizeWeeklyEchoBody = (body: string) =>
+  body
+    .replace(/The family dog carried a note:/g, "Latest note from this week:")
+    .replace(/Latest note from this week's messages:/g, "Latest note from this week:");
 
 interface WeeklyEchoPageProps {
   stats: WeeklyRewardStats;
@@ -116,27 +125,30 @@ export function WeeklyEchoPage({
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   const [activePage, setActivePage] = useState(0);
-  const [replyKey, setReplyKey] = useState<PetReplyKey>("gentle");
-  const [aiSummary, setAiSummary] = useState<AiEchoSummary | null>(null);
-  const [aiSummaryStatus, setAiSummaryStatus] = useState<"loading" | "ready" | "fallback" | "error">("loading");
-  const [aiSummaryError, setAiSummaryError] = useState("");
+  const [echoSummary, setEchoSummary] = useState<WeeklyEchoSummary | null>(null);
+  const [echoStats, setEchoStats] = useState<WeeklyRewardStats | null>(null);
+  const [echoKeepsakes, setEchoKeepsakes] = useState<WeeklyEchoKeepsake[] | null>(null);
+  const [echoSummaryStatus, setEchoSummaryStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [echoSummaryError, setEchoSummaryError] = useState("");
 
   const [scene, setScene] = useState<WeeklyEchoScene>("boards");
   const [giftRevealStage, setGiftRevealStage] = useState<GiftRevealStage>("closed");
   const weeklyKeepsake = selectWeeklyReward(stats, currentPet.species);
   const addedToToyBox = isWeeklyRewardOwned(weeklyKeepsake.id);
+  const boardStats = echoStats ?? stats;
   const weeklyStats = [
-    { label: "Pet messages", value: stats.petMessages, icon: "🐾" },
-    { label: "Photo shares", value: stats.photoShares, icon: "🖼️" },
-    { label: "Gentle reactions", value: stats.gentleReactions, icon: "💗" },
-    { label: "Mood check-ins", value: stats.moodCheckIns, icon: "🫧" },
+    { label: "Pet messages", value: boardStats.petMessages, icon: "🐾" },
+    { label: "Photo shares", value: boardStats.photoShares, icon: "🖼️" },
+    { label: "Gentle reactions", value: boardStats.gentleReactions, icon: "💗" },
+    { label: "Mood check-ins", value: boardStats.moodCheckIns, icon: "🫧" },
   ];
   const weeklyMoments = [
-    `Your family shared ${stats.photoShares} photos this week.`,
-    `${stats.petMessages} pet messages helped small moments travel home.`,
-    `${stats.gentleReactions} gentle reactions and ${stats.moodCheckIns} mood check-ins kept the week warm.`,
+    `Your family shared ${boardStats.photoShares} photos this week.`,
+    `${boardStats.petMessages} pet messages helped small moments travel home.`,
+    `${boardStats.gentleReactions} gentle reactions and ${boardStats.moodCheckIns} mood check-ins kept the week warm.`,
   ];
-  const weeklyDropCategorySummaries = useMemo<WeeklyDropCategorySummary[]>(() => {
+  // Demo fallback only; real Shared Keepsakes data comes from /api/weekly-echo/summary.
+  const demoWeeklyDropCategorySummaries = useMemo<WeeklyDropCategorySummary[]>(() => {
     const summaryMap = new Map<DropSummaryCategory, { count: number; itemNames: string[] }>();
 
     weeklyCollectedDrops.forEach((drop) => {
@@ -166,6 +178,16 @@ export function WeeklyEchoPage({
       })
       .filter((summary): summary is WeeklyDropCategorySummary => Boolean(summary));
   }, []);
+  const weeklyDropCategorySummaries =
+    echoKeepsakes && echoKeepsakes.length > 0
+      ? echoKeepsakes.map((keepsake) => ({
+          key: keepsake.category,
+          label: keepsake.label,
+          count: keepsake.count,
+          itemNames: [],
+          preview: keepsake.preview,
+        }))
+      : demoWeeklyDropCategorySummaries;
   const weeklyStorySignals = useMemo(
     () => ({
       photos: weeklyAlbumEntries.map((entry) => {
@@ -214,8 +236,8 @@ export function WeeklyEchoPage({
     let ignore = false;
 
     async function loadWeeklyEchoSummary() {
-      setAiSummaryStatus("loading");
-      setAiSummaryError("");
+      setEchoSummaryStatus("loading");
+      setEchoSummaryError("");
 
       try {
         const response = await fetch(apiUrl("/api/weekly-echo/summary"), {
@@ -231,24 +253,37 @@ export function WeeklyEchoPage({
           }),
         });
 
-        const data = await response.json();
+        const data: WeeklyEchoSummaryResponse & { error?: string } = await response.json();
         if (ignore) return;
 
         if (!response.ok && !data.summary) {
           throw new Error(data.error || "Failed to load weekly echo.");
         }
 
-        setAiSummary(data.summary);
-        setAiSummaryStatus(data.source === "ai" ? "ready" : "fallback");
-
-        if (!response.ok) {
-          setAiSummaryError("AI service is unavailable, so the board used a local weekly summary.");
-        }
+        setEchoSummary(
+          data.summary
+            ? {
+                ...data.summary,
+                body: normalizeWeeklyEchoBody(data.summary.body),
+              }
+            : null
+        );
+        setEchoStats({
+          petMessages: Number(data.stats?.petMessages ?? stats.petMessages) || 0,
+          photoShares: Number(data.stats?.photoShares ?? stats.photoShares) || 0,
+          gentleReactions: Number(data.stats?.gentleReactions ?? stats.gentleReactions) || 0,
+          moodCheckIns: Number(data.stats?.moodCheckIns ?? stats.moodCheckIns) || 0,
+          connectedDays: Number(data.stats?.connectedDays ?? stats.connectedDays) || 0,
+        });
+        setEchoKeepsakes(Array.isArray(data.keepsakes) ? data.keepsakes : null);
+        setEchoSummaryStatus("ready");
       } catch (error) {
         if (ignore) return;
-        setAiSummary(null);
-        setAiSummaryStatus("error");
-        setAiSummaryError(error instanceof Error ? error.message : "Failed to load weekly echo.");
+        setEchoSummary(null);
+        setEchoStats(null);
+        setEchoKeepsakes(null);
+        setEchoSummaryStatus("error");
+        setEchoSummaryError(error instanceof Error ? error.message : "Failed to load weekly echo.");
       }
     }
 
@@ -296,8 +331,8 @@ export function WeeklyEchoPage({
       {
         key: "summary" as EchoPageKey,
         title: "This Week's Echo",
-        subtitle: aiSummary?.subtitle || `Your family shared ${stats.photoShares} small moments.`,
-        body: aiSummary?.body || `You stayed lightly connected on ${stats.connectedDays} days. No pressure, just a few warm traces left behind.`,
+        subtitle: echoSummary?.subtitle || `Your family shared ${boardStats.photoShares} small moments.`,
+        body: echoSummary?.body || `You stayed lightly connected on ${boardStats.connectedDays} days. No pressure, just a few warm traces left behind.`,
       },
       {
         key: "moments" as EchoPageKey,
@@ -312,7 +347,7 @@ export function WeeklyEchoPage({
         body: "Your pet found little surprises through the week.\nSome small items fade, while keepsakes stay as family memories.",
       },
     ],
-    [aiSummary?.body, aiSummary?.subtitle, stats.connectedDays, stats.photoShares]
+    [boardStats.connectedDays, boardStats.photoShares, echoSummary?.body, echoSummary?.subtitle]
   );
 
   const scrollToPage = (index: number) => {
@@ -494,7 +529,7 @@ export function WeeklyEchoPage({
   }
 
   return (
-    <div className="relative min-h-full overflow-y-auto bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] px-5 pb-32 pt-5 text-[#4b3528]">
+    <div className="relative h-full overflow-hidden bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] px-5 pb-20 pt-4 text-[#4b3528]">
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -522,7 +557,9 @@ export function WeeklyEchoPage({
             {pages.map((page) => (
               <article
                 key={page.key}
-                className="h-full min-w-full snap-center px-4 py-2 text-[#fff8e8]"
+                className={`h-full min-w-full snap-center px-4 pt-2 text-[#fff8e8] ${
+                  page.key === "summary" ? "pb-6" : "pb-2"
+                }`}
               >
                 <p className="text-sm text-[#f9d98f]" style={chalkFontStyle}>
                   {page.title}
@@ -575,27 +612,21 @@ export function WeeklyEchoPage({
                       ))}
                     </div>
 
-                    {aiSummaryStatus === "loading" && (
+                    {echoSummaryStatus === "loading" && (
                       <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
                         Writing this week's echo...
                       </p>
                     )}
 
-                    {aiSummaryStatus === "fallback" && (
+                    {echoSummaryStatus === "ready" && (
                       <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
-                        Local weekly echo shown until the AI key is configured.
+                        Small moments made the week feel closer.
                       </p>
                     )}
 
-                    {aiSummaryStatus === "error" && (
+                    {echoSummaryStatus === "error" && (
                       <p className="mt-2 text-xs text-[#ffd4c4]" style={chalkFontStyle}>
-                        {aiSummaryError}
-                      </p>
-                    )}
-
-                    {aiSummaryError && aiSummaryStatus !== "error" && (
-                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
-                        {aiSummaryError}
+                        {echoSummaryError}
                       </p>
                     )}
                   </>
@@ -666,7 +697,7 @@ export function WeeklyEchoPage({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-4">
+        <div className="mt-4 flex -translate-y-[3px] items-center justify-center gap-4">
           <button
             type="button"
             onClick={() => scrollToPage(activePage - 1)}
@@ -702,52 +733,7 @@ export function WeeklyEchoPage({
           </button>
         </div>
       </section>
-
-      <section className="mt-5 rounded-[28px] bg-white/80 p-4 shadow-[0_12px_28px_rgba(128,93,63,0.12)] backdrop-blur">
-        <div className="flex items-center gap-2 text-sm font-bold text-[#5d4435]">
-          <MessageCircle className="h-4 w-4 text-[#b98559]" />
-          Talk with {currentPet.name}
-        </div>
-
-        <p className="mt-2 rounded-2xl bg-[#fff5e8] px-4 py-3 text-sm leading-6 text-[#7b604f]">
-          “{petReplies[replyKey]}”
-        </p>
-
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => setReplyKey("gentle")}
-            className="rounded-2xl bg-[#f9e4d2] px-2 py-2 text-xs font-semibold text-[#8b6042]"
-          >
-            Summary
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setReplyKey("details")}
-            className="rounded-2xl bg-[#f9e4d2] px-2 py-2 text-xs font-semibold text-[#8b6042]"
-          >
-            More
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setReplyKey("thanks")}
-            className="rounded-2xl bg-[#f9e4d2] px-2 py-2 text-xs font-semibold text-[#8b6042]"
-          >
-            Thanks
-          </button>
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-[24px] bg-[#fffaf4] p-4 text-sm leading-6 text-[#7b604f] shadow-sm">
-        <div className="mb-2 flex items-center gap-2 font-bold text-[#5d4435]">
-          <Sparkles className="h-4 w-4 text-[#d39a5c]" />
-          Design note
-        </div>
-        Daily drops give the pet small everyday care. Weekly Echo turns those
-        small interactions into a gentle family memory.
-      </section>
     </div>
   );
 }
+

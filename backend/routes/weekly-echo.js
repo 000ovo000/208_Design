@@ -54,6 +54,27 @@ function getWeekKey(date) {
   return formatDateTime(date).slice(0, 10);
 }
 
+function normalizeKeepsakeCategory(category) {
+  const value = String(category ?? "").trim().toLowerCase();
+
+  if (value === "food") return { category: "food", label: "Food" };
+  if (value === "drink") return { category: "drink", label: "Drink" };
+  if (value === "toy" || value === "basic-toy" || value === "care") {
+    return { category: "basic-toy", label: "Basic toy" };
+  }
+
+  return null;
+}
+
+function formatKeepsakePreview(names) {
+  const uniqueNames = Array.from(new Set(names.filter(Boolean)));
+  if (uniqueNames.length > 3) {
+    return `${uniqueNames.slice(0, 3).join(", ")}, ...`;
+  }
+
+  return uniqueNames.join(", ");
+}
+
 async function ensureWeeklyEchoSchemaReady() {
   if (!weeklyEchoSchemaReadyPromise) {
     weeklyEchoSchemaReadyPromise = db.query(`
@@ -63,7 +84,7 @@ async function ensureWeeklyEchoSchemaReady() {
         week_start VARCHAR(10) NOT NULL,
         subtitle VARCHAR(255) NOT NULL,
         body TEXT NOT NULL,
-        source VARCHAR(30) NOT NULL DEFAULT 'ai',
+        source VARCHAR(30) NOT NULL DEFAULT 'activity',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_family_week (family_id, week_start)
@@ -108,16 +129,62 @@ async function saveWeeklySummary(familyId, weekKey, summary, source) {
       [Number(familyId), weekKey, summary.subtitle, summary.body, source]
     );
   } catch (error) {
-    // Falling back to an uncached summary is acceptable for the demo flow.
+    // An uncached activity summary is acceptable for the demo flow.
   }
 }
 
-function buildFallbackSummary({ stats, posts, moods, userName, storySignals }) {
+function getDateKey(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function buildActivityStats({ requestStats, posts, moods, petMessages, storySignals }) {
+  const photos = posts.filter((post) => Boolean(post.media_url) || post.media_type === "image");
+  const storyPhotos = Array.isArray(storySignals?.photos) ? storySignals.photos : [];
+  const gentleReactions = storyPhotos.filter((photo) => Boolean(photo?.reaction)).length;
+  const connectedDates = new Set();
+
+  posts.forEach((post) => {
+    const key = getDateKey(post.created_at);
+    if (key) connectedDates.add(key);
+  });
+  moods.forEach((mood) => {
+    const key = getDateKey(mood.entry_date);
+    if (key) connectedDates.add(key);
+  });
+  petMessages.forEach((message) => {
+    const key = getDateKey(message.created_at);
+    if (key) connectedDates.add(key);
+  });
+
+  return {
+    petMessages: petMessages.length || Number(requestStats.petMessages) || 0,
+    photoShares: photos.length || Number(requestStats.photoShares) || storyPhotos.length || 0,
+    gentleReactions: gentleReactions || Number(requestStats.gentleReactions) || 0,
+    moodCheckIns: moods.length || Number(requestStats.moodCheckIns) || 0,
+    connectedDays: connectedDates.size || Number(requestStats.connectedDays) || 0,
+    smallMoments:
+      posts.length +
+        moods.length +
+        petMessages.length +
+        (gentleReactions || Number(requestStats.gentleReactions) || 0) ||
+      Number(requestStats.smallMoments) ||
+      0,
+  };
+}
+
+function getFeaturedPetMessage(petMessages) {
+  return petMessages.find((message) => message?.message?.trim())?.message?.trim() || "";
+}
+
+function buildActivitySummary({ stats, posts, moods, petMessages, userName, storySignals }) {
   const photos = Array.isArray(storySignals?.photos) ? storySignals.photos : [];
   const decorations = Array.isArray(storySignals?.unlockedDecorations)
     ? storySignals.unlockedDecorations.filter(Boolean)
     : [];
-  const firstDogMessage = photos.find((photo) => photo?.dogMessage?.trim())?.dogMessage?.trim();
+  const featuredPetMessage = getFeaturedPetMessage(petMessages);
   const firstReaction = photos.find((photo) => photo?.reaction)?.reaction;
   const firstDecoration = decorations[0];
 
@@ -125,11 +192,11 @@ function buildFallbackSummary({ stats, posts, moods, userName, storySignals }) {
     `This week, your family shared ${stats.photoShares ?? posts.length ?? photos.length} small moments.`,
   ];
 
-  if (firstDogMessage) {
-    lines.push(`The family dog carried a note: "${firstDogMessage}".`);
-  } else if (posts[0]?.content || posts[0]?.title) {
-    lines.push(`${posts[0].user_name || "Someone"} shared ${posts[0].title || posts[0].content}.`);
-  }
+  lines.push(
+    featuredPetMessage
+      ? `Latest note from this week: "${featuredPetMessage}".`
+      : "Latest note from this week: No shared note this week yet."
+  );
 
   lines.push(`You added ${stats.moodCheckIns ?? moods.length ?? 0} calm mood beads.`);
 
@@ -149,29 +216,6 @@ function buildFallbackSummary({ stats, posts, moods, userName, storySignals }) {
   };
 }
 
-function parseAiSummary(content) {
-  const cleaned = String(content || "").trim();
-  if (!cleaned) return null;
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (parsed && typeof parsed.subtitle === "string" && typeof parsed.body === "string") {
-      return {
-        subtitle: parsed.subtitle.slice(0, 120),
-        body: parsed.body.slice(0, 420),
-      };
-    }
-  } catch (error) {
-    // Fall through to plain text handling.
-  }
-
-  const [firstLine, ...rest] = cleaned.split(/\r?\n/).filter(Boolean);
-  return {
-    subtitle: (firstLine || "This week's echo").slice(0, 120),
-    body: (rest.join(" ") || cleaned).slice(0, 420),
-  };
-}
-
 async function fetchWeeklyPosts(familyId, weekStart) {
   try {
     const [rows] = await db.query(
@@ -179,6 +223,7 @@ async function fetchWeeklyPosts(familyId, weekStart) {
       SELECT
         p.title,
         p.content,
+        p.media_url,
         p.media_type,
         p.created_at,
         u.name AS user_name
@@ -219,51 +264,81 @@ async function fetchWeeklyMoods(familyId, weekStart) {
   }
 }
 
-async function createAiSummary({ stats, moments, storySignals, posts, moods, userName, petName }) {
-  const apiKey = process.env.AI_API_KEY;
-  const model = process.env.AI_MODEL || "gpt-4o-mini";
-  const baseUrl = (process.env.AI_API_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-
-  if (!apiKey) return null;
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.7,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You write warm weekly family recap stories for a pet-themed app. Return strict JSON with subtitle and body. The body must be 4-5 short English lines separated by newline characters. Cover this week's photos, dog-carried messages, mood beads, lightweight family reactions, and unlocked pet decorations when data exists. Do not invent names, events, or counts.",
-        },
-        {
-          role: "user",
-          content: `Create the blackboard text for "This Week's Echo" from this data:\n${JSON.stringify({
-            userName,
-            petName,
-            stats,
-            pageMoments: moments,
-            storySignals,
-            weeklyPosts: posts,
-            weeklyMoods: moods,
-          })}`,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`AI request failed: ${response.status} ${details}`);
+async function fetchWeeklyPetMessages(familyId, weekStart) {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT
+        message,
+        created_at
+      FROM pet_messages
+      WHERE family_id = ? AND created_at >= ?
+      ORDER BY created_at DESC
+      LIMIT 50
+      `,
+      [Number(familyId), formatDateTime(weekStart)]
+    );
+    return rows;
+  } catch (error) {
+    return [];
   }
+}
 
-  const result = await response.json();
-  return parseAiSummary(result?.choices?.[0]?.message?.content);
+async function fetchWeeklyDailyDropKeepsakes(familyId, weekStart) {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT
+        i.category,
+        i.name,
+        COUNT(*) AS item_count
+      FROM daily_drops dd
+      JOIN items i ON dd.item_id = i.id
+      JOIN family_members fm ON dd.family_member_id = fm.user_id
+      WHERE fm.family_id = ? AND dd.drop_date >= ?
+      GROUP BY i.category, i.name
+      ORDER BY MIN(dd.drop_date) ASC, i.name ASC
+      `,
+      [Number(familyId), formatDateTime(weekStart).slice(0, 10)]
+    );
+
+    const summaryMap = new Map();
+
+    rows.forEach((row) => {
+      const normalized = normalizeKeepsakeCategory(row.category);
+      if (!normalized) return;
+
+      const summary = summaryMap.get(normalized.category) ?? {
+        category: normalized.category,
+        label: normalized.label,
+        count: 0,
+        names: [],
+      };
+
+      const itemCount = Number(row.item_count) || 0;
+      summary.count += itemCount;
+      if (row.name && !summary.names.includes(row.name)) {
+        summary.names.push(row.name);
+      }
+      summaryMap.set(normalized.category, summary);
+    });
+
+    return ["food", "drink", "basic-toy"]
+      .map((category) => {
+        const summary = summaryMap.get(category);
+        if (!summary || summary.count <= 0) return null;
+
+        return {
+          category: summary.category,
+          label: summary.label,
+          count: summary.count,
+          preview: formatKeepsakePreview(summary.names),
+        };
+      })
+      .filter(Boolean);
+  } catch (error) {
+    return [];
+  }
 }
 
 router.post("/summary", async (req, res) => {
@@ -271,70 +346,44 @@ router.post("/summary", async (req, res) => {
     const currentUser = await resolveCurrentUser();
     const weekStart = getWeekStart();
     const weekKey = getWeekKey(weekStart);
-    const cachedSummary = await getCachedSummary(currentUser.family_id, weekKey);
-
-    if (cachedSummary) {
-      return res.json({
-        summary: {
-          subtitle: cachedSummary.subtitle,
-          body: cachedSummary.body,
-        },
-        source: cachedSummary.source,
-        weekStart: weekKey,
-      });
-    }
-
-    const [posts, moods] = await Promise.all([
+    const [posts, moods, petMessages, keepsakes] = await Promise.all([
       fetchWeeklyPosts(currentUser.family_id, weekStart),
       fetchWeeklyMoods(currentUser.family_id, weekStart),
+      fetchWeeklyPetMessages(currentUser.family_id, weekStart),
+      fetchWeeklyDailyDropKeepsakes(currentUser.family_id, weekStart),
     ]);
 
     const stats =
       req.body?.stats && typeof req.body.stats === "object" ? req.body.stats : {};
-    const moments = Array.isArray(req.body?.moments) ? req.body.moments : [];
     const storySignals =
       req.body?.storySignals && typeof req.body.storySignals === "object"
         ? req.body.storySignals
         : {};
-    const fallback = buildFallbackSummary({
-      stats,
+    const activityStats = buildActivityStats({
+      requestStats: stats,
       posts,
       moods,
+      petMessages,
+      storySignals,
+    });
+    const summary = buildActivitySummary({
+      stats: activityStats,
+      posts,
+      moods,
+      petMessages,
       userName: currentUser.name,
       storySignals,
     });
 
-    try {
-      const summary = await createAiSummary({
-        stats,
-        moments,
-        storySignals,
-        posts,
-        moods,
-        userName: currentUser.name,
-        petName:
-          typeof req.body?.petName === "string" && req.body.petName.trim()
-            ? req.body.petName.trim()
-            : "your pet",
-      });
+    await saveWeeklySummary(currentUser.family_id, weekKey, summary, "activity");
 
-      if (summary) {
-        await saveWeeklySummary(currentUser.family_id, weekKey, summary, "ai");
-      }
-
-      return res.json({
-        summary: summary || fallback,
-        source: summary ? "ai" : "fallback",
-        weekStart: weekKey,
-      });
-    } catch (error) {
-      return res.status(502).json({
-        error: error.message,
-        summary: fallback,
-        source: "fallback",
-        weekStart: weekKey,
-      });
-    }
+    return res.json({
+      summary,
+      stats: activityStats,
+      source: "activity",
+      weekStart: weekKey,
+      keepsakes,
+    });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
