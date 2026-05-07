@@ -12,8 +12,18 @@ import {
   X,
 } from "lucide-react";
 import { usePet } from "../context/pet-context";
+import { DEMO_MODE } from "../config";
 import { getPetProfileImage, type PetItem } from "../data/pets";
 import { apiUrl } from "../lib/api";
+import {
+  createDemoPost,
+  deleteDemoPost,
+  getDemoCurrentUser,
+  getDemoPosts,
+  getScopedReactionCommentsStorageKey,
+  updateDemoPostReaction,
+} from "../lib/demo-store";
+import { getFamilyMemberAvatarUrl } from "../lib/member-avatar";
 import {
   AlbumEntry,
   AlbumReaction,
@@ -39,8 +49,8 @@ type UploadDraft = {
 type DbPost = {
   id: number | string;
   family_member_id?: number | string;
-  user_id?: number;
-  family_id?: number;
+  user_id?: number | string;
+  family_id?: number | string;
   title?: string;
   content?: string | null;
   media_url?: string | null;
@@ -49,6 +59,7 @@ type DbPost = {
   createdAt?: string;
   uploadedAt?: string;
   reaction?: AlbumReaction;
+  reaction_comments?: EntryReactionComment[];
 };
 type CurrentUser = {
   id: number | string;
@@ -73,7 +84,7 @@ type EntryReactionComment = {
 
 type EntryReactionCommentMap = Record<string, EntryReactionComment[]>;
 
-const REACTION_COMMENTS_STORAGE_KEY = "kinlight:album-reaction-comments";
+const REACTION_COMMENTS_STORAGE_KEY = getScopedReactionCommentsStorageKey();
 
 const rangeOptions: { key: TimeRange; label: string }[] = [
   { key: "day", label: "Today" },
@@ -100,6 +111,45 @@ const quickMessageTags = [
 function getMemberPetProfileImage(member: FamilyMember, currentPet: PetItem) {
   if (member.is_current_user) return getPetProfileImage(currentPet);
   return "/images/dog/profile/dog-white.png";
+}
+
+function MemberAvatar({
+  member,
+  sizeClassName,
+  fallbackTextClassName,
+}: {
+  member: FamilyMember;
+  sizeClassName: string;
+  fallbackTextClassName: string;
+}) {
+  const avatarUrl = getFamilyMemberAvatarUrl(member);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
+  if (avatarUrl && !imageFailed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={member.name}
+        className={`${sizeClassName} rounded-full object-cover`}
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  const fallbackLabel = member.name.trim().charAt(0).toUpperCase() || "?";
+
+  return (
+    <div
+      aria-label={member.name}
+      className={`${sizeClassName} flex items-center justify-center rounded-full bg-[#f3e7dc] text-[#7a6555]`}
+    >
+      <span className={fallbackTextClassName}>{fallbackLabel}</span>
+    </div>
+  );
 }
 
 function groupEntries(entries: AlbumEntry[]) {
@@ -132,6 +182,15 @@ function formatNow() {
   const minutes = `${now.getMinutes()}`.padStart(2, "0");
 
   return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read image."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function parseUploadedAt(uploadedAt: string) {
@@ -249,6 +308,25 @@ function convertPostToAlbumEntry(post: DbPost): AlbumEntry {
   };
 }
 
+function buildReactionCommentMap(posts: DbPost[]) {
+  return posts.reduce<EntryReactionCommentMap>((accumulator, post) => {
+    const comments = Array.isArray(post.reaction_comments)
+      ? post.reaction_comments.filter(
+          (comment): comment is EntryReactionComment =>
+            Boolean(
+              comment &&
+                typeof comment.memberId === "string" &&
+                typeof comment.memberName === "string" &&
+                typeof comment.reaction === "string"
+            )
+        )
+      : [];
+
+    accumulator[String(post.id)] = comments;
+    return accumulator;
+  }, {});
+}
+
 export function ConnectPage({
   familyMembers,
   albumEntries,
@@ -278,6 +356,10 @@ export function ConnectPage({
 
   const dbAlbumEntries = useMemo(
     () => dbPosts.map((post) => convertPostToAlbumEntry(post)),
+    [dbPosts]
+  );
+  const persistedEntryIds = useMemo(
+    () => new Set(dbPosts.map((post) => String(post.id))),
     [dbPosts]
   );
   const mergedAlbumEntries = useMemo(
@@ -313,6 +395,11 @@ export function ConnectPage({
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
@@ -327,15 +414,20 @@ export function ConnectPage({
     const refreshOnFocus = () => {
       void fetchCurrentUser();
     };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") {
         void fetchCurrentUser();
       }
     };
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, []);
@@ -357,6 +449,18 @@ export function ConnectPage({
     let isMounted = true;
 
     const fetchPosts = async () => {
+      if (DEMO_MODE) {
+        const posts = getDemoPosts();
+        if (isMounted) {
+          setDbPosts(posts);
+          setReactionCommentsByEntryId((current) => ({
+            ...current,
+            ...buildReactionCommentMap(posts),
+          }));
+        }
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/posts"));
         if (!response.ok) return;
@@ -366,6 +470,10 @@ export function ConnectPage({
 
         if (isMounted && Array.isArray(posts)) {
           setDbPosts(posts);
+          setReactionCommentsByEntryId((current) => ({
+            ...current,
+            ...buildReactionCommentMap(posts),
+          }));
         }
       } catch (error) {
         // Keep the local album entries visible if the backend is unavailable.
@@ -435,14 +543,13 @@ export function ConnectPage({
     const normalizedEntryId = String(entryId);
     const memberId = String(currentMember.id);
     const memberName = currentMember.name || "Me";
+    const previousComments = getReactionCommentsForEntry(normalizedEntryId);
+    const nextComments = [
+      ...previousComments.filter((comment) => comment.memberId !== memberId),
+      { memberId, memberName, reaction },
+    ];
 
     setReactionCommentsByEntryId((current) => {
-      const existing = current[normalizedEntryId] ?? [];
-      const nextComments = [
-        ...existing.filter((comment) => comment.memberId !== memberId),
-        { memberId, memberName, reaction },
-      ];
-
       return {
         ...current,
         [normalizedEntryId]: nextComments,
@@ -450,6 +557,47 @@ export function ConnectPage({
     });
 
     onUpdateReaction(entryId, reaction);
+
+    if (!persistedEntryIds.has(normalizedEntryId)) {
+      return;
+    }
+
+    void (async () => {
+      if (DEMO_MODE) {
+        updateDemoPostReaction(normalizedEntryId, reaction);
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl(`/api/posts/${normalizedEntryId}/reaction`), {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reaction }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to save reaction.");
+        }
+
+        const result = await response.json();
+        const reactionComments = Array.isArray(result?.reactionComments)
+          ? result.reactionComments
+          : nextComments;
+
+        setReactionCommentsByEntryId((current) => ({
+          ...current,
+          [normalizedEntryId]: reactionComments,
+        }));
+      } catch (error) {
+        setReactionCommentsByEntryId((current) => ({
+          ...current,
+          [normalizedEntryId]: previousComments,
+        }));
+        alert("Failed to save reaction.");
+      }
+    })();
   };
 
   const handleChooseFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -491,51 +639,73 @@ export function ConnectPage({
     let uploadedImageUrl: string | null = null;
 
     if (draft.file) {
-      const formData = new FormData();
-      formData.append("image", draft.file);
+      if (DEMO_MODE) {
+        try {
+          uploadedImageUrl = await readFileAsDataUrl(draft.file);
+        } catch (error) {
+          alert("Failed to read image.");
+          return;
+        }
+      } else {
+        const formData = new FormData();
+        formData.append("image", draft.file);
 
-      try {
-        const uploadResponse = await fetch(apiUrl("/api/uploads"), {
-          method: "POST",
-          body: formData,
-        });
+        try {
+          const uploadResponse = await fetch(apiUrl("/api/uploads"), {
+            method: "POST",
+            body: formData,
+          });
 
-        if (!uploadResponse.ok) {
+          if (!uploadResponse.ok) {
+            alert("Failed to upload image.");
+            return;
+          }
+
+          const uploadResult = await uploadResponse.json();
+          uploadedImageUrl = uploadResult.imageUrl;
+        } catch (error) {
           alert("Failed to upload image.");
           return;
         }
-
-        const uploadResult = await uploadResponse.json();
-        uploadedImageUrl = uploadResult.imageUrl;
-      } catch (error) {
-        alert("Failed to upload image.");
-        return;
       }
     }
 
     try {
-      const postResponse = await fetch(apiUrl("/api/posts"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: currentMember.id,
-          family_member_id: currentMember.id,
-          family_id: currentMember.family_id ?? 1,
-          title: "Family Update",
-          content: draft.dogMessage.trim(),
-          media_url: uploadedImageUrl,
-          media_type: uploadedImageUrl ? "image" : "text",
-        }),
-      });
+      const result = DEMO_MODE
+        ? createDemoPost({
+            userId: currentMember.id,
+            familyId: Number(currentMember.family_id ?? 1),
+            title: "Family Update",
+            content: draft.dogMessage.trim(),
+            mediaUrl: uploadedImageUrl,
+            mediaType: uploadedImageUrl ? "image" : "text",
+          })
+        : await (async () => {
+            const postResponse = await fetch(apiUrl("/api/posts"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                user_id: currentMember.id,
+                family_member_id: currentMember.id,
+                family_id: currentMember.family_id ?? 1,
+                title: "Family Update",
+                content: draft.dogMessage.trim(),
+                media_url: uploadedImageUrl,
+                media_type: uploadedImageUrl ? "image" : "text",
+              }),
+            });
 
-      if (!postResponse.ok) {
-        alert("Failed to create post.");
-        return;
-      }
+            if (!postResponse.ok) {
+              alert("Failed to create post.");
+              return null;
+            }
 
-      const result = await postResponse.json();
+            return postResponse.json();
+          })();
+
+      if (!result) return;
       const savedPost: DbPost = {
         ...result,
         id: result.id ?? `local-${Date.now()}`,
@@ -567,6 +737,11 @@ export function ConnectPage({
     }
     setPendingDeleteEntryId(null);
     setDeleteMenu(null);
+
+    if (DEMO_MODE) {
+      deleteDemoPost(entryIdToDelete);
+      return;
+    }
 
     if (!entryIdToDelete.startsWith("local-")) {
       try {
@@ -626,11 +801,11 @@ export function ConnectPage({
               <ArrowLeft className="h-5 w-5" />
             </button>
 
-            <div className="h-12 w-12 overflow-hidden rounded-[16px]">
-              <img
-                src={selectedMember.avatarUrl}
-                alt={selectedMember.name}
-                className="h-full w-full object-cover"
+            <div className="h-12 w-12 overflow-hidden rounded-full">
+              <MemberAvatar
+                member={selectedMember}
+                sizeClassName="h-full w-full"
+                fallbackTextClassName="text-sm font-semibold"
               />
             </div>
 
@@ -1075,10 +1250,10 @@ export function ConnectPage({
                 className="w-full rounded-[28px] bg-white/90 p-4 text-left shadow-[0_10px_24px_rgba(81,60,42,0.08)]"
               >
                 <div className="mb-2 flex items-center gap-3">
-                  <img
-                    src={member.avatarUrl}
-                    alt={member.name}
-                    className="h-14 w-14 rounded-[16px] object-cover"
+                  <MemberAvatar
+                    member={member}
+                    sizeClassName="h-14 w-14"
+                    fallbackTextClassName="text-base font-semibold"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">

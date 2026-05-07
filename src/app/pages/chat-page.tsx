@@ -1,7 +1,8 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Bell, ChevronDown, Home, Send, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { usePet } from "../context/pet-context";
+import { DEMO_MODE } from "../config";
 import {
   dailyDrops,
   getDailyDropsForPet,
@@ -18,7 +19,22 @@ import {
 } from "../data/pets";
 import { getPetReaction } from "../data/pet-reactions";
 import { apiUrl } from "../lib/api";
-import type { WeeklyReward } from "../data/weekly-rewards";
+import {
+  createDemoPetMessage,
+  createDemoPost,
+  deleteDemoPost,
+  getDemoCareMessages,
+  getDemoCurrentUser,
+  getDemoDailyDropClaimsStorageKey,
+  getDemoPetMessages,
+  getDemoPosts,
+  getScopedSelectedPetStorageKey,
+  markDemoCareMessageRead,
+  markDemoPetMessagesRead,
+} from "../lib/demo-store";
+import {
+  type WeeklyReward,
+} from "../data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
 
 interface ChatPageProps {
@@ -30,6 +46,11 @@ interface ChatPageProps {
 type InventoryTab = "petSelection" | "food" | "toy";
 type DailyDropState = "available" | "claiming" | "claimed";
 type StorageArea = "food" | "toy";
+type DailyDropClaimRecord = {
+  date: string;
+  count: number;
+  claimedIds: string[];
+};
 type DbPost = {
   id: number | string;
   user_id: number | string;
@@ -103,7 +124,7 @@ type SceneBubbleMessage = {
 
 type VisualItem = {
   name: string;
-  emoji: string;
+  emoji?: string;
   image?: string;
   sceneImage?: string;
 };
@@ -114,15 +135,18 @@ type ScenePlacement = {
   imageClassName: string;
   durationMs: number | null;
   style?: CSSProperties;
+  scaleClassName?: string;
 };
-
-type WeeklyRewardScenePlacement = Omit<ScenePlacement, "durationMs">;
 
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
   { key: "petSelection", label: "Change your pet", title: "Pet Collection", emoji: "🐾" },
   { key: "food", label: "Food", title: "Food Storage", emoji: "🍖" },
   { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
 ];
+
+const DAILY_DROP_MAX_PER_DAY = 6;
+const DAILY_DROP_DEV_DELAY_MS = { min: 5000, max: 10000 };
+const DAILY_DROP_PROD_DELAY_MS = { min: 2 * 60 * 1000, max: 5 * 60 * 1000 };
 
 const getStorageArea = (drop: DailyDrop): StorageArea => {
   return drop.category === "food" || drop.category === "drink" ? "food" : "toy";
@@ -218,46 +242,46 @@ const getScenePlacement = (item: DailyDrop): ScenePlacement => {
   }
 };
 
-const getWeeklyRewardScenePlacement = (
-  reward: WeeklyReward,
-  petSpecies: PetSpecies
-): WeeklyRewardScenePlacement => {
+const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => {
   const base = {
-    imageClassName: "drop-shadow-[0_16px_20px_rgba(73,56,42,0.16)]",
+    imageClassName: "drop-shadow-[0_12px_18px_rgba(73,56,42,0.18)]",
+    durationMs: null,
   };
 
+  if (reward.id.startsWith("pet-sofa")) {
+    return {
+      ...base,
+      positionClassName:
+        "absolute left-1/2 bottom-[-10px] z-[5] flex -translate-x-1/2 items-center justify-center",
+      sizeClassName: "h-[122px] w-[230px]",
+      scaleClassName: "scale-[2] origin-center",
+    };
+  }
+
   switch (reward.id) {
-    case "pet-sofa1":
-    case "pet-sofa2":
-    case "pet-sofa3":
-    case "pet-sofa4":
-    case "pet-sofa5":
-      return {
-        ...base,
-        positionClassName:
-          "absolute left-1/2 bottom-[-16px] z-0 flex -translate-x-1/2 items-end justify-center",
-        sizeClassName: "h-[108px] w-[170px]",
-      };
     case "cat-climber":
       return {
         ...base,
         positionClassName:
-          "absolute left-[calc(50%-112px)] bottom-[18px] z-0 flex items-end justify-center",
-        sizeClassName: "h-[128px] w-[108px]",
+          "absolute left-[calc(50%-107px)] bottom-[88px] z-[1] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[150px] w-[112px]",
+        scaleClassName: "scale-[1.5] origin-bottom",
       };
     case "cat-teaser":
       return {
         ...base,
         positionClassName:
-          "absolute left-[calc(50%+68px)] bottom-[112px] z-20 flex items-center justify-center",
-        sizeClassName: "h-[66px] w-[66px]",
+          "absolute left-[calc(50%+85px)] bottom-[70px] z-20 flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[78px] w-[78px]",
+        scaleClassName: "scale-[10] origin-center",
       };
     case "carrot-toy":
       return {
         ...base,
         positionClassName:
-          "absolute left-[calc(50%+78px)] bottom-[6px] z-20 flex items-center justify-center",
-        sizeClassName: petSpecies === "dog" ? "h-[72px] w-[72px]" : "h-[60px] w-[60px]",
+          "absolute left-[calc(50%+95px)] bottom-[70px] z-[25] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[72px] w-[72px]",
+        scaleClassName: "scale-[2] origin-center",
       };
     default:
       return {
@@ -269,14 +293,15 @@ const getWeeklyRewardScenePlacement = (
   }
 };
 
-const SELECTED_PET_STORAGE_KEY = "selectedPetId";
-
-const getUserScopedPetKey = (userId: string | number) =>
-  `kinlight:${SELECTED_PET_STORAGE_KEY}:${String(userId)}`;
+const getMsUntilNextDay = () => {
+  const nextDay = new Date();
+  nextDay.setHours(24, 0, 0, 0);
+  return Math.max(nextDay.getTime() - Date.now(), 1000);
+};
 
 const readSelectedPetIdForUser = (userId: FamilyMemberId | null | undefined): PetId => {
   if (userId == null || typeof window === "undefined") return defaultPetId;
-  const savedId = window.localStorage.getItem(getUserScopedPetKey(userId));
+  const savedId = window.localStorage.getItem(getScopedSelectedPetStorageKey(userId));
   if (savedId && savedId === getPetById(savedId as PetId).id) {
     return savedId as PetId;
   }
@@ -324,40 +349,50 @@ function ItemIcon({
     );
   }
 
+  if (item.emoji) {
+    return (
+      <span className={emojiClassName} aria-hidden="true">
+        {item.emoji}
+      </span>
+    );
+  }
+
   return (
-    <span className={emojiClassName} aria-hidden="true">
-      {item.emoji}
-    </span>
+    <span className={`${sizeClass} inline-block`} aria-hidden="true" />
   );
 }
 
 function PlacedDailyDropSceneItem({
   drop,
   onExpire,
+  disableExpire = false,
 }: {
   drop: DailyDrop;
   onExpire: (dropId: string) => void;
+  disableExpire?: boolean;
 }) {
   const placement = getScenePlacement(drop);
 
   useEffect(() => {
-    if (placement.durationMs === null) return;
+    if (disableExpire || placement.durationMs === null) return;
 
     const timeoutId = window.setTimeout(() => {
       onExpire(drop.id);
     }, placement.durationMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [drop.id, onExpire, placement.durationMs]);
+  }, [disableExpire, drop.id, onExpire, placement.durationMs]);
 
   return (
-    <div className={placement.positionClassName} style={placement.style}>
+    <div
+      className={`${placement.positionClassName} ${placement.scaleClassName ?? ""}`}
+      style={placement.style}
+    >
       <ItemIcon
         item={drop}
         source="sceneImage"
         sizeClass={placement.sizeClassName}
         imageClassName={placement.imageClassName}
-        emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
         alt={drop.name}
       />
     </div>
@@ -366,21 +401,21 @@ function PlacedDailyDropSceneItem({
 
 function PlacedWeeklyRewardSceneItem({
   reward,
-  petSpecies,
 }: {
   reward: WeeklyReward;
-  petSpecies: PetSpecies;
 }) {
-  const placement = getWeeklyRewardScenePlacement(reward, petSpecies);
+  const placement = getWeeklyRewardScenePlacement(reward);
 
   return (
-    <div className={placement.positionClassName} style={placement.style}>
+    <div
+      className={`${placement.positionClassName} ${placement.scaleClassName ?? ""}`}
+      style={placement.style}
+    >
       <ItemIcon
         item={reward}
         source="sceneImage"
         sizeClass={placement.sizeClassName}
         imageClassName={placement.imageClassName}
-        emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
         alt={reward.name}
       />
     </div>
@@ -406,14 +441,14 @@ function PetSelectionCard({
       className={`flex flex-col items-center justify-end rounded-[22px] transition-all ${
         active ? "bg-[#B98A54] shadow-md" : "bg-white/55 border border-white/70"
       } ${!unlocked ? "opacity-50" : "active:scale-[0.98]"}`}
-      style={{ width: 118, height: 136, paddingBottom: 10 }}
+      style={{ width: 112, height: 126, paddingBottom: 10 }}
     >
-      <div className="relative w-[96px] h-[82px] mb-2 flex items-end justify-center">
-        <div className="absolute inset-x-0 bottom-0 mx-auto w-[84px] h-[44px] rounded-full bg-[#E8B85E]/80" />
+      <div className="relative mb-2 flex h-[76px] w-[92px] items-end justify-center">
+        <div className="absolute inset-x-0 bottom-0 mx-auto h-[40px] w-[78px] rounded-full bg-[#E8B85E]/80" />
         <img
           src={pet.image}
           alt={pet.name}
-          className="relative z-[2] max-h-[78px] max-w-[94px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
+          className="relative z-[2] max-h-[74px] max-w-[88px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
         />
       </div>
 
@@ -447,8 +482,8 @@ function PetSelectionView({
   const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
 
   return (
-    <div className="h-full overflow-y-auto px-5 pt-2 pb-8">
-      <div className="flex items-center justify-start mb-6">
+    <div className="h-full overflow-y-auto px-4 pt-1 pb-4">
+      <div className="mb-4 flex items-center justify-start">
         <button
           type="button"
           aria-label="Back"
@@ -459,17 +494,17 @@ function PetSelectionView({
         </button>
       </div>
 
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-5">
+      <div className="mb-6">
+        <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-[26px] font-medium text-[#171717]">Pet Collection</h2>
+            <h2 className="text-[24px] font-medium text-[#171717]">Pet Collection</h2>
             <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
               Choose one shared companion for Home and Mood Jar.
             </p>
           </div>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 rounded-[22px] bg-white/55 p-2 border border-white/70">
+        <div className="mb-4 grid grid-cols-2 gap-3 rounded-[22px] border border-white/70 bg-white/55 p-2">
           <button
             type="button"
             onClick={() => setActiveSpecies("dog")}
@@ -490,7 +525,7 @@ function PetSelectionView({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 justify-items-center gap-4">
+        <div className="grid grid-cols-2 justify-items-center gap-3">
           {visiblePets.map((pet) => {
             const unlocked = unlockedPetIds.includes(pet.id);
             return (
@@ -507,7 +542,7 @@ function PetSelectionView({
       </div>
 
       <div>
-        <h3 className="text-[22px] font-medium text-[#171717] mb-5">
+        <h3 className="mb-4 text-[22px] font-medium text-[#171717]">
           Your selection:
         </h3>
 
@@ -580,14 +615,23 @@ export function ChatPage({
   const [petMessageComposer, setPetMessageComposer] = useState<PetMessageComposerState>(null);
   const [isSendingPetMessage, setIsSendingPetMessage] = useState(false);
   const [isMarkingPetMessagesRead, setIsMarkingPetMessagesRead] = useState(false);
-  const [hasClaimedDailyDropToday, setHasClaimedDailyDropToday] = useState(false);
+  const [dailyDropClaimsToday, setDailyDropClaimsToday] = useState<DailyDropClaimRecord>(() => ({
+    date: getTodayKey(),
+    count: 0,
+    claimedIds: [],
+  }));
   const [homeOwnerUserId, setHomeOwnerUserId] = useState<string | null>(null);
-  const [debugDropToolsOpen, setDebugDropToolsOpen] = useState(false);
-  const [debugBypassDailyDropClaim, setDebugBypassDailyDropClaim] = useState(false);
+  const nextDailyDropTimerRef = useRef<number | null>(null);
   const [sceneBubbleMessages, setSceneBubbleMessages] = useState<SceneBubbleMessage[]>([]);
   const [activeSceneBubbleKey, setActiveSceneBubbleKey] = useState<string | null>(null);
 
   const loadPosts = useCallback(async () => {
+    if (DEMO_MODE) {
+      setPosts(getDemoPosts());
+      setIsLoadingPosts(false);
+      return;
+    }
+
     try {
       const response = await fetch(apiUrl("/api/posts"));
       const data = await response.json().catch(() => []);
@@ -617,11 +661,65 @@ export function ChatPage({
     return `daily-drop-claimed-${userId}-${getTodayKey()}`;
   }
 
-  function clearDailyDropClaimStorageForDebug() {
+  function getDailyDropClaimsKey(userId: string | number, date = getTodayKey()) {
+    if (DEMO_MODE) {
+      return getDemoDailyDropClaimsStorageKey(userId, date);
+    }
+    return `kinlight:daily-drop-claims:${userId}:${date}`;
+  }
+
+  function createEmptyDailyDropClaims(date = getTodayKey()): DailyDropClaimRecord {
+    return { date, count: 0, claimedIds: [] };
+  }
+
+  function readDailyDropClaims(userId: string | number): DailyDropClaimRecord {
+    const date = getTodayKey();
+    if (typeof window === "undefined") return createEmptyDailyDropClaims(date);
+
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(getDailyDropClaimsKey(userId, date)) || "null"
+      );
+      if (saved?.date === date) {
+        return {
+          date,
+          count: Math.min(Math.max(Number(saved.count) || 0, 0), DAILY_DROP_MAX_PER_DAY),
+          claimedIds: Array.isArray(saved.claimedIds)
+            ? saved.claimedIds.filter((id): id is string => typeof id === "string")
+            : [],
+        };
+      }
+    } catch {
+      // Fall back to the legacy single-claim key for compatibility.
+    }
+
+    if (DEMO_MODE) {
+      return createEmptyDailyDropClaims(date);
+    }
+
+    const legacyClaimed = window.localStorage.getItem(getDailyDropClaimKey(userId)) === "true";
+    return legacyClaimed
+      ? { date, count: 1, claimedIds: ["legacy-daily-drop"] }
+      : createEmptyDailyDropClaims(date);
+  }
+
+  function writeDailyDropClaims(userId: string | number, record: DailyDropClaimRecord) {
     if (typeof window === "undefined") return;
-    Object.keys(window.localStorage)
-      .filter((key) => key.startsWith("daily-drop-claimed-"))
-      .forEach((key) => window.localStorage.removeItem(key));
+    window.localStorage.setItem(
+      getDailyDropClaimsKey(userId, record.date),
+      JSON.stringify(record)
+    );
+  }
+
+  function clearNextDailyDropTimer() {
+    if (nextDailyDropTimerRef.current == null) return;
+    window.clearTimeout(nextDailyDropTimerRef.current);
+    nextDailyDropTimerRef.current = null;
+  }
+
+  function getNextDailyDropDelay() {
+    const range = import.meta.env.DEV ? DAILY_DROP_DEV_DELAY_MS : DAILY_DROP_PROD_DELAY_MS;
+    return Math.floor(range.min + Math.random() * (range.max - range.min));
   }
 
   const isCurrentUserMember = (member: FamilyMember) => {
@@ -743,7 +841,9 @@ export function ChatPage({
       const latestTextPost = getMemberLatestTextPost(memberId);
       const latestAlbumEntry = getMemberLatestAlbumEntry(memberId);
       const fallbackMoment =
-        String(memberId) === String(me?.id) ? bubbleMessage : "No message yet.";
+        String(memberId) === String(me?.id)
+          ? bubbleMessage
+          : "Do you want me to help deliver a message?";
       const seen = new Set<string>();
 
       return [
@@ -852,7 +952,8 @@ export function ChatPage({
     return activeMessage;
   }, [activeCareMessage, activeSceneBubbleKey, sceneBubbleMessages]);
 
-  const displayedBubble = displayedBubbleMessage?.text || "No message yet.";
+  const displayedBubble =
+    displayedBubbleMessage?.text || "Do you want me to help deliver a message?";
   const showUnreadRelayBubbleDot =
     !activeCareMessage && Boolean(displayedBubbleMessage?.isUnread);
 
@@ -865,61 +966,53 @@ export function ChatPage({
   );
 
   const isDevDailyDropTools = import.meta.env.DEV;
-  const shouldBypassDailyDropClaim =
-    isDevDailyDropTools && debugBypassDailyDropClaim;
-
+  const dailyDropClaimsRemaining = Math.max(
+    DAILY_DROP_MAX_PER_DAY - dailyDropClaimsToday.count,
+    0
+  );
+  const hasDailyDropClaimsRemaining = dailyDropClaimsRemaining > 0;
   const canShowDailyDrop =
     Boolean(todayDrop) &&
-    (dailyDropState === "available" ||
-      dailyDropState === "claiming" ||
-      shouldBypassDailyDropClaim) &&
-    (!hasClaimedDailyDropToday || shouldBypassDailyDropClaim);
+    (dailyDropState === "available" || dailyDropState === "claiming") &&
+    hasDailyDropClaimsRemaining;
   const showDailyDropButton = Boolean(currentMember) && canShowDailyDrop;
   const getDisplayedDailyDropCount = (dropId: string) =>
     getDailyDropCount(dropId) + (localDailyDropInventory[dropId] ?? 0);
 
-  const makeDailyDropAvailableForDebug = (drop: DailyDrop, message: string) => {
-    if (!isDevDailyDropTools) return;
-    clearDailyDropClaimStorageForDebug();
-    setTodayDrop(drop);
-    setHasClaimedDailyDropToday(false);
-    setDailyDropState("available");
-    setCollectedMessage("");
-    setDebugBypassDailyDropClaim(true);
-    setPetFeedback(message);
-  };
+  const showNextDailyDrop = useCallback(
+    (drop = pickRandomDrop(availableDailyDrops)) => {
+      if (!hasDailyDropClaimsRemaining) return;
+      clearNextDailyDropTimer();
+      setTodayDrop(drop);
+      setDailyDropState("available");
+      setCollectedMessage("");
+    },
+    [availableDailyDrops, hasDailyDropClaimsRemaining]
+  );
 
-  const resetDailyDropForDebug = () => {
-    if (!isDevDailyDropTools) return;
-    const nextDrop =
-      availableDailyDrops.find((drop) => drop.id === todayDrop.id) ??
-      pickRandomDrop(availableDailyDrops);
-    makeDailyDropAvailableForDebug(
-      nextDrop,
-      "Daily Drop reset. You can claim again."
-    );
-  };
+  const scheduleNextDailyDrop = useCallback(
+    (claimRecord: DailyDropClaimRecord) => {
+      clearNextDailyDropTimer();
+      if (claimRecord.count >= DAILY_DROP_MAX_PER_DAY) return;
 
-  const randomizeDailyDropForDebug = () => {
-    if (!isDevDailyDropTools) return;
-    makeDailyDropAvailableForDebug(
-      pickRandomDrop(availableDailyDrops),
-      "Daily Drop randomized. You can claim again."
-    );
-  };
-
-  const selectDailyDropForDebug = (dropId: string) => {
-    if (!isDevDailyDropTools) return;
-    const selectedDrop = availableDailyDrops.find((drop) => drop.id === dropId);
-    if (!selectedDrop) return;
-    makeDailyDropAvailableForDebug(
-      selectedDrop,
-      `${selectedDrop.name} selected. You can claim again.`
-    );
-  };
+      nextDailyDropTimerRef.current = window.setTimeout(() => {
+        nextDailyDropTimerRef.current = null;
+        setTodayDrop(pickRandomDrop(availableDailyDrops));
+        setDailyDropState("available");
+        setCollectedMessage("");
+        setPetFeedback("Your pet found something small.");
+      }, getNextDailyDropDelay());
+    },
+    [availableDailyDrops]
+  );
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
@@ -934,15 +1027,20 @@ export function ChatPage({
     const refreshOnFocus = () => {
       void fetchCurrentUser();
     };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") {
         void fetchCurrentUser();
       }
     };
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, []);
@@ -1015,22 +1113,23 @@ export function ChatPage({
         ? current
         : pickRandomDrop(availableDailyDrops)
     );
-    setDailyDropState(hasClaimedDailyDropToday ? "claimed" : "available");
-    if (!hasClaimedDailyDropToday) {
+    setDailyDropState(hasDailyDropClaimsRemaining ? "available" : "claimed");
+    if (hasDailyDropClaimsRemaining) {
       setCollectedMessage("");
     }
-  }, [availableDailyDrops, hasClaimedDailyDropToday]);
+  }, [availableDailyDrops, hasDailyDropClaimsRemaining]);
 
   useEffect(() => {
     const checkDailyDropStatus = async () => {
       if (!currentUser?.id) {
-        setHasClaimedDailyDropToday(false);
+        setDailyDropClaimsToday(createEmptyDailyDropClaims());
         return;
       }
 
-      if (shouldBypassDailyDropClaim) {
-        setHasClaimedDailyDropToday(false);
-        setDailyDropState("available");
+      const localClaims = readDailyDropClaims(currentUser.id);
+      setDailyDropClaimsToday(localClaims);
+
+      if (DEMO_MODE) {
         return;
       }
 
@@ -1038,17 +1137,32 @@ export function ChatPage({
         const response = await fetch(apiUrl("/api/daily-drop/status"));
         if (!response.ok) throw new Error("Failed to fetch daily drop status");
         const result = await response.json();
-        setHasClaimedDailyDropToday(Boolean(result?.claimed));
-        return;
+        const backendCount = Number(result?.count);
+        if (Number.isFinite(backendCount)) {
+          const nextClaims = {
+            ...localClaims,
+            count: Math.max(localClaims.count, Math.min(backendCount, DAILY_DROP_MAX_PER_DAY)),
+          };
+          setDailyDropClaimsToday(nextClaims);
+          writeDailyDropClaims(currentUser.id, nextClaims);
+        } else if (result?.claimed && localClaims.count === 0) {
+          const nextClaims = { ...localClaims, count: 1, claimedIds: ["backend-daily-drop"] };
+          setDailyDropClaimsToday(nextClaims);
+          writeDailyDropClaims(currentUser.id, nextClaims);
+        }
       } catch {
-        setHasClaimedDailyDropToday(
-          window.localStorage.getItem(getDailyDropClaimKey(currentUser.id)) === "true"
-        );
+        setDailyDropClaimsToday(readDailyDropClaims(currentUser.id));
       }
     };
 
     void checkDailyDropStatus();
-  }, [currentUser?.id, shouldBypassDailyDropClaim]);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    return () => {
+      clearNextDailyDropTimer();
+    };
+  }, []);
 
   useEffect(() => {
     const fetchLatestPost = async () => {
@@ -1057,13 +1171,17 @@ export function ChatPage({
         return;
       }
       try {
-        const response = await fetch(apiUrl("/api/posts"));
+        const posts: Post[] = DEMO_MODE
+          ? getDemoPosts()
+          : await (async () => {
+              const response = await fetch(apiUrl("/api/posts"));
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch posts");
-        }
+              if (!response.ok) {
+                throw new Error("Failed to fetch posts");
+              }
 
-        const posts: Post[] = await response.json();
+              return response.json();
+            })();
         const latestPost =
           posts.find((post) => String(post.user_id) === String(currentUser.id)) ?? null;
 
@@ -1110,6 +1228,11 @@ export function ChatPage({
       return;
     }
 
+    if (DEMO_MODE) {
+      setUnreadCareMessages(getDemoCareMessages(currentUser.id, true));
+      return;
+    }
+
     try {
       const response = await fetch(apiUrl("/api/care-messages/unread"));
       const data = await response.json().catch(() => []);
@@ -1128,6 +1251,11 @@ export function ChatPage({
   const loadPetMessages = useCallback(async () => {
     if (!currentUser?.id) {
       setReceivedPetMessages([]);
+      return;
+    }
+
+    if (DEMO_MODE) {
+      setReceivedPetMessages(getDemoPetMessages(currentUser.id));
       return;
     }
 
@@ -1204,6 +1332,24 @@ export function ChatPage({
     async (messages: PetMessage[]) => {
       if (!messages.length || isMarkingPetMessagesRead) return;
 
+      if (DEMO_MODE) {
+        setIsMarkingPetMessagesRead(true);
+        markDemoPetMessagesRead(messages.map((message) => message.id));
+        setReceivedPetMessages((prev) =>
+          prev.map((message) =>
+            messages.some((target) => String(target.id) === String(message.id))
+              ? {
+                  ...message,
+                  is_read: true,
+                  read_at: new Date().toISOString(),
+                }
+              : message
+          )
+        );
+        setIsMarkingPetMessagesRead(false);
+        return;
+      }
+
       try {
         setIsMarkingPetMessagesRead(true);
 
@@ -1247,25 +1393,16 @@ export function ChatPage({
     [markPetMessagesAsRead, receivedPetMessages]
   );
 
-  useEffect(() => {
-    if (
-      activeCareMessage ||
-      !displayedBubbleMessage?.isUnread ||
-      displayedBubbleMessage.kind !== "relay" ||
-      displayedBubbleMessage.messageId == null
-    ) {
-      return;
-    }
-
-    void markMessageAsRead(displayedBubbleMessage.messageId);
-  }, [activeCareMessage, displayedBubbleMessage, markMessageAsRead]);
-
   const handleOpenMemberScene = (member: FamilyMember) => {
     setSelectedHomeMemberId(member.id);
     setShowMemberSwitcher(false);
   };
 
   const handleOpenPetMessageAction = (member: FamilyMember) => {
+    if (String(member.id) === String(currentUser?.id ?? currentMember?.id ?? "")) {
+      return;
+    }
+
     setPetMessageComposer({
       member,
       text: "",
@@ -1277,6 +1414,15 @@ export function ChatPage({
     if (!petMessageComposer || !currentUser?.id || isSendingPetMessage) return;
 
     const trimmed = petMessageComposer.text.trim();
+    const isSendingToSelf = String(petMessageComposer.member.id) === String(currentUser.id);
+
+    if (isSendingToSelf) {
+      setPetMessageComposer((current) =>
+        current ? { ...current, error: "不能给自己传话。" } : current
+      );
+      return;
+    }
+
     if (!trimmed) {
       setPetMessageComposer((current) =>
         current ? { ...current, error: "请输入想传的话。" } : current
@@ -1286,24 +1432,33 @@ export function ChatPage({
 
     try {
       setIsSendingPetMessage(true);
-      const response = await fetch(apiUrl("/api/pet-messages"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sender_user_id: currentUser.id,
-          receiver_user_id: petMessageComposer.member.id,
+      if (DEMO_MODE) {
+        createDemoPetMessage({
+          senderUserId: currentUser.id,
+          receiverUserId: petMessageComposer.member.id,
+          familyId: Number(currentUser.family_id ?? me?.family_id ?? 1),
           message: trimmed,
-        }),
-      });
-      const result = await response.json().catch(() => null);
+        });
+      } else {
+        const response = await fetch(apiUrl("/api/pet-messages"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sender_user_id: currentUser.id,
+            receiver_user_id: petMessageComposer.member.id,
+            message: trimmed,
+          }),
+        });
+        const result = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        setPetMessageComposer((current) =>
-          current ? { ...current, error: result?.error || "发送失败。" } : current
-        );
-        return;
+        if (!response.ok) {
+          setPetMessageComposer((current) =>
+            current ? { ...current, error: result?.error || "发送失败。" } : current
+          );
+          return;
+        }
       }
 
       setPetMessageComposer(null);
@@ -1323,6 +1478,16 @@ export function ChatPage({
     setShowMemberSwitcher(false);
 
     if (!activeCareMessage) {
+      if (
+        displayedBubbleMessage?.kind === "relay" &&
+        displayedBubbleMessage.isUnread &&
+        displayedBubbleMessage.messageId != null
+      ) {
+        await markMessageAsRead(displayedBubbleMessage.messageId);
+        setBubbleAnimationTick((current) => current + 1);
+        return;
+      }
+
       if (sceneBubbleMessages.length > 1) {
         const currentIndex = Math.max(
           0,
@@ -1336,17 +1501,21 @@ export function ChatPage({
     }
 
     try {
-      const response = await fetch(
-        apiUrl(`/api/care-messages/${activeCareMessage.id}/read`),
-        {
-          method: "PATCH",
-        }
-      );
-      const result = await response.json().catch(() => null);
+      if (DEMO_MODE) {
+        markDemoCareMessageRead(activeCareMessage.id);
+      } else {
+        const response = await fetch(
+          apiUrl(`/api/care-messages/${activeCareMessage.id}/read`),
+          {
+            method: "PATCH",
+          }
+        );
+        const result = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        console.error("Failed to mark care message as read:", result);
-        return;
+        if (!response.ok) {
+          console.error("Failed to mark care message as read:", result);
+          return;
+        }
       }
 
       setUnreadCareMessages((prev) =>
@@ -1369,33 +1538,49 @@ export function ChatPage({
     try {
       setIsPublishingPost(true);
 
-      const response = await fetch(apiUrl("/api/posts"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: currentUser.id,
-          family_member_id: currentUser.id,
-          family_id: currentUser.family_id ?? me?.family_id ?? 1,
-          title,
-          content,
-          media_url: null,
-          media_type: "text",
-        }),
-      });
+      const result = DEMO_MODE
+        ? createDemoPost({
+            userId: currentUser.id,
+            familyId: Number(currentUser.family_id ?? me?.family_id ?? 1),
+            title,
+            content,
+            mediaUrl: null,
+            mediaType: "text",
+          })
+        : await (async () => {
+            const response = await fetch(apiUrl("/api/posts"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                user_id: currentUser.id,
+                family_member_id: currentUser.id,
+                family_id: currentUser.family_id ?? me?.family_id ?? 1,
+                title,
+                content,
+                media_url: null,
+                media_type: "text",
+              }),
+            });
 
-      const result = await response.json().catch(() => null);
+            const postResult = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        console.error("Failed to publish post:", result);
-        alert(result?.error || "Failed to publish post.");
-        return;
-      }
+            if (!response.ok) {
+              console.error("Failed to publish post:", postResult);
+              alert(postResult?.error || "Failed to publish post.");
+              return null;
+            }
+
+            return postResult;
+          })();
+
+      if (!result) return;
 
       setPosts((prev) => [result, ...prev]);
       setPostTitle("");
       setPostContent("");
+      window.dispatchEvent(new Event("home-data-updated"));
     } catch (error) {
       console.error("Failed to connect backend:", error);
       alert("Failed to connect backend.");
@@ -1407,6 +1592,13 @@ export function ChatPage({
   const handleDeletePost = async (postId: number) => {
     const confirmed = window.confirm("Delete this post?");
     if (!confirmed) return;
+
+    if (DEMO_MODE) {
+      deleteDemoPost(String(postId));
+      setPosts((prev) => prev.filter((post) => String(post.id) !== String(postId)));
+      window.dispatchEvent(new Event("home-data-updated"));
+      return;
+    }
 
     try {
       const response = await fetch(apiUrl(`/api/posts/${postId}`), {
@@ -1468,14 +1660,11 @@ export function ChatPage({
   const claimDailyDrop = async () => {
     console.log("[DailyDrop] claim clicked", { todayDrop, dailyDropState });
     setShowMemberSwitcher(false);
-    if (
-      (dailyDropState !== "available" && !shouldBypassDailyDropClaim) ||
-      (hasClaimedDailyDropToday && !shouldBypassDailyDropClaim)
-    ) {
+    if (dailyDropState !== "available" || !hasDailyDropClaimsRemaining) {
       console.warn("[DailyDrop] claim blocked", {
         dailyDropState,
-        hasClaimedDailyDropToday,
-        shouldBypassDailyDropClaim,
+        claimsToday: dailyDropClaimsToday.count,
+        maxClaims: DAILY_DROP_MAX_PER_DAY,
       });
       return;
     }
@@ -1496,27 +1685,57 @@ export function ChatPage({
         const storageArea = getStorageArea(claimedDrop);
         console.log("[DailyDrop] storageArea", storageArea);
         console.log("[DailyDrop] add inventory start", claimedDrop.id);
-        const added = await addDailyDropToInventory(claimedDrop.id, 1);
-        console.log("[DailyDrop] add inventory done", claimedDrop.id, { added });
+        const addResult = await addDailyDropToInventory(claimedDrop.id, 1);
+        console.log("[DailyDrop] add inventory done", claimedDrop.id, addResult);
 
-        if (!added) {
-          if (!isDevDailyDropTools && !shouldBypassDailyDropClaim) {
-            console.warn("[DailyDrop] backend inventory add failed outside dev bypass");
+        if (!addResult.ok) {
+          if (addResult.reason === "already-claimed") {
+            const claimedRecord: DailyDropClaimRecord = {
+              date: getTodayKey(),
+              count: Math.max(dailyDropClaimsToday.count, 1),
+              claimedIds:
+                dailyDropClaimsToday.claimedIds.length > 0
+                  ? dailyDropClaimsToday.claimedIds
+                  : ["backend-daily-drop"],
+            };
+            setDailyDropClaimsToday(claimedRecord);
+            if (currentUser?.id) {
+              writeDailyDropClaims(currentUser.id, claimedRecord);
+              if (!DEMO_MODE) {
+                window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+              }
+            }
+            setDailyDropState("claimed");
+            setCollectedMessage("");
+            setPetFeedback("Daily Drop has already been collected today. Come back tomorrow.");
+            return;
+          }
+
+          if (!isDevDailyDropTools) {
+            console.warn("[DailyDrop] backend inventory add failed", claimedDrop.id);
             setDailyDropState("available");
             setPetFeedback("Daily Drop could not be collected. Please try again.");
             return;
           }
 
-          console.warn("[DailyDrop] using local inventory fallback", claimedDrop.id);
+          console.warn("[DailyDrop] using DEV local inventory fallback", claimedDrop.id);
           setLocalDailyDropInventory((prev) => ({
             ...prev,
             [claimedDrop.id]: (prev[claimedDrop.id] ?? 0) + 1,
           }));
         }
 
-        setHasClaimedDailyDropToday(true);
+        const nextClaims: DailyDropClaimRecord = {
+          date: getTodayKey(),
+          count: Math.min(dailyDropClaimsToday.count + 1, DAILY_DROP_MAX_PER_DAY),
+          claimedIds: [...dailyDropClaimsToday.claimedIds, claimedDrop.id],
+        };
+        setDailyDropClaimsToday(nextClaims);
         if (currentUser?.id) {
-          window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+          writeDailyDropClaims(currentUser.id, nextClaims);
+          if (!DEMO_MODE) {
+            window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+          }
         }
         setDailyDropState("claimed");
         const message = `${claimedDrop.name} +1`;
@@ -1528,7 +1747,9 @@ export function ChatPage({
         setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
         setStoragePulse(storageArea);
         setPetFeedback(`Collected ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
-        setDebugBypassDailyDropClaim(false);
+        // TODO: connect Home Daily Drop claim flow to POST /api/daily-drop/claim or sync
+        // successful inventory claim into daily_drops for Weekly Echo keepsakes statistics.
+        scheduleNextDailyDrop(nextClaims);
         console.log("[DailyDrop] count after add", claimedDrop.id, getDisplayedDailyDropCount(claimedDrop.id));
 
         window.setTimeout(() => {
@@ -1670,7 +1891,7 @@ export function ChatPage({
 
           {showMemberSwitcher && !activeInventory && (
             <div
-              className="absolute left-[28px] top-[160px] z-50 w-[210px] rounded-[26px] border border-[#f0d8ca] bg-white/95 p-2 shadow-[0_18px_40px_rgba(92,61,38,0.18)] backdrop-blur"
+              className="absolute left-[28px] top-[160px] z-50 w-[280px] max-w-[calc(100vw-56px)] rounded-[26px] border border-[#f0d8ca] bg-white/95 p-2 shadow-[0_18px_40px_rgba(92,61,38,0.18)] backdrop-blur"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a48976]">
@@ -1679,6 +1900,8 @@ export function ChatPage({
               <div className="space-y-1">
                 {orderedHomeMembers.map((member) => {
                   const isSelected = String(member.id) === String(selectedHomeMemberId);
+                  const isCurrentUserRow =
+                    String(member.id) === String(currentUser?.id ?? currentMember?.id ?? "");
                   const showUnreadDot = hasUnreadFromMember(member.id);
                   return (
                     <div
@@ -1700,12 +1923,12 @@ export function ChatPage({
                           />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold text-[#4f3c2e]">
+                          <div className="truncate whitespace-nowrap text-sm font-semibold text-[#4f3c2e]">
                             {member.name}
                           </div>
                         </div>
                       </button>
-                      <div className="relative flex items-center gap-2">
+                      <div className="relative flex shrink-0 items-center gap-2">
                         {showUnreadDot && (
                           <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#e76f51]" />
                         )}
@@ -1719,16 +1942,18 @@ export function ChatPage({
                         >
                           <Home className="h-4 w-4" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleOpenPetMessageAction(member);
-                          }}
-                          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#fff1ea] text-[#c27c57]"
-                        >
-                          <Send className="h-4 w-4" />
-                        </button>
+                        {!isCurrentUserRow ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleOpenPetMessageAction(member);
+                            }}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#fff1ea] text-[#c27c57]"
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1738,7 +1963,7 @@ export function ChatPage({
           )}
 
           {isViewingOwnHome && (
-            <div className="absolute right-[15px] top-[100px] z-30 flex flex-col items-center gap-4">
+            <div className="absolute right-[15px] top-[65px] z-30 flex flex-col items-center gap-[6px]">
               {inventoryTabs.map((item) => {
                 const hasDot = item.key === "food" || item.key === "toy" ? storageDot[item.key] : false;
                 const isPulsing = item.key === storagePulse;
@@ -1751,7 +1976,7 @@ export function ChatPage({
                     className="relative text-center transition active:scale-95"
                   >
                     <div
-                      className={`mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-[#fbf6f1] shadow-[0_8px_18px_rgba(97,74,56,0.1)] transition ${
+                      className={`mx-auto mb-0.5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-[#fbf6f1] shadow-[0_8px_18px_rgba(97,74,56,0.1)] transition ${
                         isPulsing ? "scale-110 ring-2 ring-[#f0a35f]/50" : ""
                       }`}
                     >
@@ -1781,74 +2006,6 @@ export function ChatPage({
             </div>
           )}
 
-          {isViewingOwnHome && isDevDailyDropTools && (
-            <div
-              className="absolute left-[28px] top-[230px] z-40 w-[210px] rounded-[20px] border border-[#f0d8ca] bg-white/90 p-2 shadow-[0_12px_26px_rgba(92,61,38,0.12)] backdrop-blur"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() => setDebugDropToolsOpen((current) => !current)}
-                className="flex w-full items-center justify-between rounded-[14px] px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-[#8d684d]"
-              >
-                <span>Drop Debug</span>
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition ${debugDropToolsOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              {debugDropToolsOpen && (
-                <div className="mt-2 space-y-2 px-1 pb-1">
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={resetDailyDropForDebug}
-                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={randomizeDailyDropForDebug}
-                      className="rounded-full bg-[#f3e5d8] px-2 py-1.5 text-[11px] font-semibold text-[#7d6554]"
-                    >
-                      Random
-                    </button>
-                  </div>
-
-                  <select
-                    value={todayDrop.id}
-                    onChange={(event) => selectDailyDropForDebug(event.target.value)}
-                    className="w-full rounded-[14px] border border-[#ead7c8] bg-white px-2 py-1.5 text-[11px] font-semibold text-[#5d4838] outline-none"
-                  >
-                    {availableDailyDrops.map((drop) => (
-                      <option key={drop.id} value={drop.id}>
-                        {drop.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="rounded-[14px] bg-[#fff8f1] px-2 py-2 text-[10px] leading-4 text-[#8d684d]">
-                    <div>todayDrop.id: {todayDrop?.id ?? "none"}</div>
-                    <div>todayDrop.name: {todayDrop?.name ?? "none"}</div>
-                    <div>dailyDropState: {dailyDropState}</div>
-                    <div>storagePulse: {storagePulse ?? "none"}</div>
-                    <div>storageDot.food: {String(storageDot.food)}</div>
-                    <div>storageDot.toy: {String(storageDot.toy)}</div>
-                    <div>collectedMessage: {collectedMessage || "none"}</div>
-                    <div>claimedToday: {String(hasClaimedDailyDropToday)}</div>
-                    <div>debugBypass: {String(debugBypassDailyDropClaim)}</div>
-                    <div>shouldBypass: {String(shouldBypassDailyDropClaim)}</div>
-                    <div>canShowDailyDrop: {String(canShowDailyDrop)}</div>
-                  </div>
-
-                  <p className="text-[10px] leading-4 text-[#9a7a61]">
-                    Reset also bypasses today's claim lock for the next dev claim.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="relative flex flex-1 items-center justify-center">
@@ -1892,12 +2049,8 @@ export function ChatPage({
                 setShowMemberSwitcher(false);
                 void claimDailyDrop();
               }}
-              disabled={dailyDropState !== "available" && !shouldBypassDailyDropClaim}
-              whileTap={
-                dailyDropState === "available" || shouldBypassDailyDropClaim
-                  ? { scale: 0.95 }
-                  : undefined
-              }
+              disabled={dailyDropState !== "available"}
+              whileTap={dailyDropState === "available" ? { scale: 0.95 } : undefined}
               className="absolute right-[22px] bottom-[66px] z-40 flex flex-col items-center disabled:cursor-default"
             >
               <motion.div
@@ -1949,7 +2102,7 @@ export function ChatPage({
                 initial={{ scale: 0.98 }}
                 animate={{ scale: [0.98, 1.03, 1] }}
                 transition={{ duration: 0.28, ease: "easeOut" }}
-                className="absolute bottom-[calc(100%-32px)] left-1/2 z-10 w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white px-5 py-3 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
+                className="absolute bottom-[calc(100%-40px)] left-1/2 z-10 min-h-[84px] w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white/80 px-5 py-3.5 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
               >
                 <AnimatePresence mode="wait" initial={false}>
                   {showCareUnreadDot || showUnreadRelayBubbleDot ? (
@@ -1963,7 +2116,7 @@ export function ChatPage({
                     />
                   ) : null}
                 </AnimatePresence>
-                <div className="relative min-h-[48px]">
+                <div className="relative flex min-h-[56px] items-center">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.p
                       key={`${activeCareMessage?.id ?? "default"}-${displayedBubble}-${bubbleAnimationTick}`}
@@ -1971,21 +2124,20 @@ export function ChatPage({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}
                       transition={{ duration: 0.22, ease: "easeOut" }}
-                      className="absolute inset-0 text-center text-[15px] leading-6 text-[#5d4838]"
+                      className="relative block w-full whitespace-normal break-words text-center text-[15px] leading-6 text-[#5d4838]"
                     >
                       {displayedBubble}
                     </motion.p>
                   </AnimatePresence>
                 </div>
 
-                <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white" />
+                <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white/80" />
               </motion.button>
 
               {activeRoomDecor.map((reward) => (
                 <PlacedWeeklyRewardSceneItem
                   key={reward.id}
                   reward={reward}
-                  petSpecies={selectedHomePet.species}
                 />
               ))}
 
@@ -2001,6 +2153,7 @@ export function ChatPage({
                     onExpire={
                       isLocalPlacedDrop ? clearLocalPlacedDailyDrop : clearPlacedDailyDrop
                     }
+                    disableExpire={isDevDailyDropTools && isLocalPlacedDrop}
                   />
                 );
               })}
@@ -2010,7 +2163,7 @@ export function ChatPage({
                 onClick={() => {
                   setShowMemberSwitcher(false);
                 }}
-                className="rounded-2xl"
+                className="relative z-20 rounded-2xl"
               >
                 <img
                   key={`${String(selectedHomeMember?.id ?? "unknown")}-${selectedHomePet.id}`}
@@ -2036,11 +2189,15 @@ export function ChatPage({
 
       {activeInventory && (
         <div
-          className="absolute inset-0 z-50 flex items-end bg-[#3d2d22]/28 px-3 pb-5 backdrop-blur-sm"
+          className={`absolute inset-0 z-50 flex items-end bg-[#3d2d22]/28 px-3 backdrop-blur-sm ${
+            activeInventory === "petSelection" ? "pb-3" : "pb-5"
+          }`}
           onClick={() => setShowMemberSwitcher(false)}
         >
           <div
-            className="max-h-[76vh] w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
+            className={`w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)] ${
+              activeInventory === "petSelection" ? "max-h-[88vh]" : "max-h-[76vh]"
+            }`}
             onClick={(event) => event.stopPropagation()}
           >
             {activeInventory === "petSelection" ? (

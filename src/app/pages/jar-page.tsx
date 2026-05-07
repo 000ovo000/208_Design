@@ -2,7 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronRight, ChevronUp, Heart, Plus, X } from "lucide-react";
 import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
+import { DEMO_MODE } from "../config";
 import { apiUrl } from "../lib/api";
+import {
+  addDemoMoodEntry,
+  createDemoCareMessage,
+  getDemoCurrentUser,
+  getDemoMoodEntries,
+  getScopedLatestParentInteractionStorageKey,
+  getScopedParentInteractionsStorageKey,
+  getScopedSelectedPetStorageKey,
+} from "../lib/demo-store";
 import { defaultPetId, getPetById, petItems, type PetId, type PetItem } from "../data/pets";
 import { getFamilySelectedPetId } from "../data/family-data";
 import type { FamilyMember, FamilyMemberId } from "../types";
@@ -21,7 +31,7 @@ type ParentInteractionRecord = {
 };
 
 type DbMoodEntry = {
-  id: number;
+  id: number | string;
   user_id: number | string;
   user_name: string;
   mood: string;
@@ -86,9 +96,8 @@ const DEMO_TODAY_MONTH =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getMonth() + 1 : 5;
 const DEMO_TODAY_DAY =
   REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getDate() : 1;
-const LATEST_PARENT_INTERACTION_KEY = "kinlight:latestParentInteraction";
-const PARENT_INTERACTIONS_KEY = "kinlight:parentInteractions";
-const SELECTED_PET_STORAGE_KEY = "selectedPetId";
+const LATEST_PARENT_INTERACTION_KEY = getScopedLatestParentInteractionStorageKey();
+const PARENT_INTERACTIONS_KEY = getScopedParentInteractionsStorageKey();
 
 const profileMap: Record<
   UserRole,
@@ -278,17 +287,6 @@ function createCandyEntry({
   };
 }
 
-const sampleCandyEntries: CandyEntry[] = [
-  createCandyEntry({ id: "daughter-1", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 21, mood: "calm", note: "Today was soft and manageable.", shareMode: "soft", x: "18%", y: "8%" }),
-  createCandyEntry({ id: "daughter-2", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 22, mood: "tired", note: "A lot of deadlines today, but I am okay.", shareMode: "soft", x: "34%", y: "7%" }),
-  createCandyEntry({ id: "daughter-3", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 23, mood: "happy", note: "A small good thing happened after class.", shareMode: "full", x: "50%", y: "9%" }),
-  createCandyEntry({ id: "daughter-4", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 24, mood: "needQuiet", note: "I needed a quiet evening.", shareMode: "private", x: "67%", y: "8%" }),
-  createCandyEntry({ id: "daughter-5", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 25, mood: "homesick", note: "I missed home a little after dinner.", shareMode: "soft", x: "25%", y: "20%" }),
-  createCandyEntry({ id: "daughter-6", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 26, mood: "anxious", note: "Presentation week feels a bit heavy.", shareMode: "full", x: "43%", y: "21%" }),
-  createCandyEntry({ id: "daughter-7", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 27, mood: "calm", note: "Nothing big happened, which was nice.", shareMode: "private", x: "61%", y: "22%" }),
-  createCandyEntry({ id: "daughter-8", ownerId: "me", ownerName: "Grace", ownerRoleKey: "daughter", month: 4, day: 28, mood: "happy", note: "The weather made campus look pretty.", shareMode: "soft", x: "77%", y: "27%" }),
-];
-
 function buildRecordMapForOwnerMonth(
   entries: CandyEntry[],
   ownerId: FamilyMemberId,
@@ -403,7 +401,7 @@ function isPetId(value: string | null): value is PetId {
 }
 
 function getUserScopedPetKey(userId: FamilyMemberId) {
-  return `kinlight:${SELECTED_PET_STORAGE_KEY}:${String(userId)}`;
+  return getScopedSelectedPetStorageKey(userId);
 }
 
 function getMemberIdentity(member: Pick<FamilyMember, "id" | "user_id">) {
@@ -625,6 +623,30 @@ function isMoodKey(value: string): value is MoodKey {
   return value in moodColorMap;
 }
 
+function normalizeDbMoodToMoodKey(value: string): MoodKey | null {
+  if (isMoodKey(value)) return value;
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "connected" || normalized === "grateful" || normalized === "warm") {
+    return "happy";
+  }
+
+  if (normalized === "thoughtful" || normalized === "focused") {
+    return "needQuiet";
+  }
+
+  if (normalized === "busy") {
+    return "tired";
+  }
+
+  if (normalized === "steady" || normalized === "helpful") {
+    return "calm";
+  }
+
+  return null;
+}
+
 function getOwnerFromDbUserName(userName: string): UserRole {
   const normalizedName = userName.trim().toLowerCase();
 
@@ -648,11 +670,14 @@ function getMonthDayFromDbDate(dateValue: string) {
 
 function convertDbMoodEntriesToCandyEntries(dbEntries: DbMoodEntry[]): CandyEntry[] {
   return dbEntries
-    .filter((entry) => isMoodKey(entry.mood))
-    .map((entry, index) => {
+    .map((entry) => ({
+      entry,
+      mood: normalizeDbMoodToMoodKey(entry.mood),
+    }))
+    .filter((item): item is { entry: DbMoodEntry; mood: MoodKey } => Boolean(item.mood))
+    .map(({ entry, mood }, index) => {
       const { month, day } = getMonthDayFromDbDate(entry.entry_date);
       const slot = extraCandySlots[index % extraCandySlots.length];
-      const mood = entry.mood as MoodKey;
       const ownerRoleKey = getUserRoleFromName(entry.user_name);
 
       return createCandyEntry({
@@ -672,6 +697,13 @@ function convertDbMoodEntriesToCandyEntries(dbEntries: DbMoodEntry[]): CandyEntr
         y: slot.y,
       });
     });
+}
+
+function buildMoodApiPath(scope: "self" | "family", startDate?: string, endDate?: string) {
+  const searchParams = new URLSearchParams({ scope });
+  if (startDate) searchParams.set("startDate", startDate);
+  if (endDate) searchParams.set("endDate", endDate);
+  return `/api/moods?${searchParams.toString()}`;
 }
 
 function MoodFace({ mood, size = 30 }: { mood: MoodKey; size?: number }) {
@@ -1418,7 +1450,8 @@ export function JarPage({
   const [currentMonth, setCurrentMonth] = useState(DEMO_TODAY_MONTH);
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
   const [shareMode, setShareMode] = useState<ShareMode>("full");
-  const [allEntries, setAllEntries] = useState<CandyEntry[]>([]);
+  const [ownEntries, setOwnEntries] = useState<CandyEntry[]>([]);
+  const [familyVisibleEntries, setFamilyVisibleEntries] = useState<CandyEntry[]>([]);
   const [selectedCareTarget, setSelectedCareTarget] = useState<CareTargetOption | null>(null);
   const [familyReaction, setFamilyReaction] = useState<FamilyReaction>(null);
   const [familyReactionTarget, setFamilyReactionTarget] = useState<FamilyMemberId | null>(
@@ -1461,6 +1494,11 @@ export function JarPage({
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setRealCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
@@ -1475,15 +1513,20 @@ export function JarPage({
     const refreshOnFocus = () => {
       void fetchCurrentUser();
     };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") {
         void fetchCurrentUser();
       }
     };
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, []);
@@ -1520,31 +1563,65 @@ export function JarPage({
     setParentInteractions(readParentInteractionsFromStorage());
   }, []);
 
-  useEffect(() => {
-    const loadMoodEntries = async () => {
-      try {
-        const response = await fetch(apiUrl("/api/moods"));
-        const data = await response.json();
+  const refreshMoodEntries = async () => {
+    if (DEMO_MODE) {
+      const currentUserId = realCurrentUser?.id ?? getDemoCurrentUser().id;
+      const nextOwnEntries = convertDbMoodEntriesToCandyEntries(
+        getDemoMoodEntries("self", currentUserId) as DbMoodEntry[]
+      );
+      const nextFamilyVisibleEntries = convertDbMoodEntriesToCandyEntries(
+        getDemoMoodEntries("family", currentUserId) as DbMoodEntry[]
+      );
 
-        if (!response.ok) {
-          console.error("Failed to load moods:", data);
-          setAllEntries((prev) => (prev.length > 0 ? prev : sampleCandyEntries));
-          return;
-        }
+      setOwnEntries(nextOwnEntries);
+      setFamilyVisibleEntries(nextFamilyVisibleEntries);
+      return;
+    }
 
-        const loadedEntries = convertDbMoodEntriesToCandyEntries(data as DbMoodEntry[]);
+    try {
+      const [ownResponse, familyResponse] = await Promise.all([
+        fetch(apiUrl(buildMoodApiPath("self")), { cache: "no-store" }),
+        fetch(apiUrl(buildMoodApiPath("family")), { cache: "no-store" }),
+      ]);
+      const [ownData, familyData] = await Promise.all([
+        ownResponse.json().catch(() => null),
+        familyResponse.json().catch(() => null),
+      ]);
 
-        setAllEntries((prev) => [
-          ...prev.filter((entry) => !entry.id.startsWith("db-")),
-          ...loadedEntries,
-        ]);
-      } catch (error) {
-        console.error("Failed to connect backend:", error);
-        setAllEntries((prev) => (prev.length > 0 ? prev : sampleCandyEntries));
+      if (!ownResponse.ok || !familyResponse.ok) {
+        console.error("Failed to load moods:", {
+          ownStatus: ownResponse.status,
+          familyStatus: familyResponse.status,
+          ownData,
+          familyData,
+        });
+        setOwnEntries([]);
+        setFamilyVisibleEntries([]);
+        return;
       }
-    };
 
-    void loadMoodEntries();
+      const nextOwnEntries = convertDbMoodEntriesToCandyEntries((ownData ?? []) as DbMoodEntry[]);
+      const nextFamilyVisibleEntries = convertDbMoodEntriesToCandyEntries(
+        (familyData ?? []) as DbMoodEntry[]
+      );
+
+      console.log(
+        `[jar] received moods self=${nextOwnEntries.length} familyVisible=${nextFamilyVisibleEntries.length} currentUser=${String(
+          realCurrentUser?.id ?? "unknown"
+        )}`
+      );
+
+      setOwnEntries(nextOwnEntries);
+      setFamilyVisibleEntries(nextFamilyVisibleEntries);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+      setOwnEntries([]);
+      setFamilyVisibleEntries([]);
+    }
+  };
+
+  useEffect(() => {
+    void refreshMoodEntries();
   }, [realCurrentUser?.id]);
 
   useEffect(() => {
@@ -1576,8 +1653,8 @@ export function JarPage({
   const currentProfile = profileMap[currentUser];
   const currentUserName = currentFamilyMember?.name ?? currentProfile.name;
   const ownRecordMap = useMemo(
-    () => buildRecordMapForOwnerMonth(allEntries, currentUserMemberId ?? "me", currentMonthKey),
-    [allEntries, currentUserMemberId, currentMonthKey]
+    () => buildRecordMapForOwnerMonth(ownEntries, currentUserMemberId ?? "me", currentMonthKey),
+    [ownEntries, currentUserMemberId, currentMonthKey]
   );
   const ownMoodMap = useMemo(() => getMoodMapFromRecords(ownRecordMap), [ownRecordMap]);
 
@@ -1594,7 +1671,7 @@ export function JarPage({
   const existingDayEntry =
     existingDayDialog.day !== null
       ? buildRecordMapForOwnerMonth(
-          allEntries,
+          ownEntries,
           currentUserMemberId ?? "me",
           getMonthKey(DEMO_YEAR, existingDayDialog.month)
         )[existingDayDialog.day] ?? null
@@ -1628,9 +1705,9 @@ export function JarPage({
   const selectedCareTargetEntry = useMemo(
     () =>
       selectedCareTarget
-        ? getTodaySharedEntryForOwner(allEntries, selectedCareTarget.id)
+        ? getTodaySharedEntryForOwner(familyVisibleEntries, selectedCareTarget.id)
         : null,
-    [allEntries, selectedCareTarget]
+    [familyVisibleEntries, selectedCareTarget]
   );
 
   const currentRolePet = useMemo(
@@ -1665,6 +1742,18 @@ export function JarPage({
   ) => {
     if (!currentUserMemberId) return;
 
+    if (DEMO_MODE) {
+      createDemoCareMessage({
+        senderUserId: currentUserMemberId,
+        receiverUserId: targetUser.id,
+        familyId: Number(realCurrentUser?.family_id ?? 1),
+        senderName: currentUserName,
+        careType: getCareTypeFromReaction(reaction),
+      });
+      window.dispatchEvent(new Event("home-data-updated"));
+      return;
+    }
+
     void fetch(apiUrl("/api/care-messages"), {
       method: "POST",
       headers: {
@@ -1689,14 +1778,8 @@ export function JarPage({
   };
 
   const visibleJarEntries = useMemo(
-    () =>
-      allEntries.filter(
-        (entry) =>
-          (currentUserMemberId !== null &&
-            String(entry.ownerId) === String(currentUserMemberId)) ||
-          entry.shareMode !== "private"
-      ),
-    [allEntries, currentUserMemberId]
+    () => familyVisibleEntries,
+    [familyVisibleEntries]
   );
 
   const isAnyOverlayOpen =
@@ -1770,7 +1853,7 @@ export function JarPage({
     const ownerRoleKey = currentUser;
 
     const monthKey = getMonthKey(DEMO_YEAR, month);
-    const nextSlot = getRandomAvailableSlot(allEntries);
+    const nextSlot = getRandomAvailableSlot(familyVisibleEntries);
     if (!nextSlot) return;
 
     const newEntry: CandyEntry = {
@@ -1804,7 +1887,8 @@ export function JarPage({
     ];
 
     if (!withDrop) {
-      setAllEntries(addOrReplaceEntry);
+      setOwnEntries(addOrReplaceEntry);
+      setFamilyVisibleEntries(addOrReplaceEntry);
       return;
     }
 
@@ -1820,7 +1904,8 @@ export function JarPage({
     }, 520);
 
     const t3 = window.setTimeout(() => {
-      setAllEntries(addOrReplaceEntry);
+      setOwnEntries(addOrReplaceEntry);
+      setFamilyVisibleEntries(addOrReplaceEntry);
     }, 1450);
 
     const t4 = window.setTimeout(() => {
@@ -1840,7 +1925,7 @@ export function JarPage({
       return;
     }
 
-    const familyId = realCurrentUser?.family_id ?? 1;
+    const familyId = Number(realCurrentUser?.family_id ?? 1);
 
     const entryDate = `${DEMO_YEAR}-${String(editor.month).padStart(2, "0")}-${String(
       editor.day
@@ -1849,27 +1934,38 @@ export function JarPage({
     try {
       setIsSavingMood(true);
 
-      const response = await fetch(apiUrl("/api/moods"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: Number(realCurrentUser.id),
-          family_id: familyId,
+      if (DEMO_MODE) {
+        addDemoMoodEntry({
+          userId: realCurrentUser.id,
+          familyId,
           mood: selectedMood,
           comment: note,
-          entry_date: entryDate,
           visibility: shareMode,
-        }),
-      });
+          entryDate,
+        });
+      } else {
+        const response = await fetch(apiUrl("/api/moods"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: Number(realCurrentUser.id),
+            family_id: familyId,
+            mood: selectedMood,
+            comment: note,
+            entry_date: entryDate,
+            visibility: shareMode,
+          }),
+        });
 
-      const result = await response.json();
+        const result = await response.json();
 
-      if (!response.ok) {
-        console.error("Failed to save mood:", result);
-        alert(result.error || "Failed to save mood.");
-        return;
+        if (!response.ok) {
+          console.error("Failed to save mood:", result);
+          alert(result.error || "Failed to save mood.");
+          return;
+        }
       }
 
       addCandyEntry({
@@ -1880,6 +1976,13 @@ export function JarPage({
         shareMode,
         withDrop: true,
       });
+      console.log(
+        `[jar] saved mood user=${String(realCurrentUser.id)} date=${entryDate} mood=${selectedMood} visibility=${shareMode}`
+      );
+      window.dispatchEvent(new Event("moods-updated"));
+      window.setTimeout(() => {
+        void refreshMoodEntries();
+      }, 1700);
 
       closeEditor();
     } catch (error) {
@@ -1913,7 +2016,7 @@ export function JarPage({
   const handleTodayPlusClick = () => {
     const todayMonthKey = getMonthKey(DEMO_YEAR, DEMO_TODAY_MONTH);
     const todayOwnMap = buildRecordMapForOwnerMonth(
-      allEntries,
+      ownEntries,
       currentUserMemberId ?? "me",
       todayMonthKey
     );

@@ -4,6 +4,7 @@ const { getCurrentUserId } = require("../current-user");
 
 const router = express.Router();
 let postsSchemaReadyPromise = null;
+const ALBUM_REACTION_TYPES = new Set(["smile", "love", "clap", "wow", "sad"]);
 
 async function resolveCurrentUser() {
   try {
@@ -103,10 +104,83 @@ async function ensurePostsSchemaReady() {
         WHERE media_type IS NULL OR media_type = ''
         `
       );
+
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS post_reactions (
+          id BIGINT PRIMARY KEY AUTO_INCREMENT,
+          post_id BIGINT NOT NULL,
+          family_id BIGINT NOT NULL,
+          user_id BIGINT NOT NULL,
+          reaction_type VARCHAR(20) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_post_reaction_user (post_id, user_id),
+          INDEX idx_post_reactions_family_created (family_id, created_at),
+          INDEX idx_post_reactions_post (post_id),
+          CONSTRAINT fk_post_reactions_post
+            FOREIGN KEY (post_id) REFERENCES posts(id)
+            ON DELETE CASCADE,
+          CONSTRAINT fk_post_reactions_family
+            FOREIGN KEY (family_id) REFERENCES families(id)
+            ON DELETE CASCADE,
+          CONSTRAINT fk_post_reactions_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE
+        )
+      `);
     })();
   }
 
   return postsSchemaReadyPromise;
+}
+
+function normalizeReactionComments(rows) {
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    memberId: String(row.user_id),
+    memberName: String(row.user_name || `User ${row.user_id}`),
+    reaction: row.reaction_type,
+  }));
+}
+
+async function attachReactionComments(posts) {
+  if (!Array.isArray(posts) || posts.length === 0) {
+    return [];
+  }
+
+  const postIds = posts
+    .map((post) => Number(post.id))
+    .filter((postId) => Number.isFinite(postId) && postId > 0);
+
+  if (postIds.length === 0) {
+    return posts.map((post) => ({ ...post, reaction_comments: [] }));
+  }
+
+  const [reactionRows] = await db.query(
+    `
+    SELECT
+      pr.post_id,
+      pr.user_id,
+      pr.reaction_type,
+      u.name AS user_name
+    FROM post_reactions pr
+    JOIN users u ON u.id = pr.user_id
+    WHERE pr.post_id IN (?)
+    ORDER BY pr.updated_at ASC, pr.id ASC
+    `,
+    [postIds]
+  );
+
+  const reactionMap = (Array.isArray(reactionRows) ? reactionRows : []).reduce((accumulator, row) => {
+    const postId = String(row.post_id);
+    if (!accumulator[postId]) accumulator[postId] = [];
+    accumulator[postId].push(row);
+    return accumulator;
+  }, {});
+
+  return posts.map((post) => ({
+    ...post,
+    reaction_comments: normalizeReactionComments(reactionMap[String(post.id)]),
+  }));
 }
 
 router.get("/", async (req, res) => {
@@ -135,7 +209,7 @@ router.get("/", async (req, res) => {
       [Number(currentUser.family_id)]
     );
 
-    res.json(rows);
+    res.json(await attachReactionComments(rows));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -199,9 +273,93 @@ router.post("/", async (req, res) => {
       [newPostId]
     );
 
-    res.json(rows[0]);
+    const postsWithReactions = await attachReactionComments(rows);
+    res.json(postsWithReactions[0] ?? rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.put("/:id/reaction", async (req, res) => {
+  const postId = Number(req.params.id);
+  const reaction =
+    typeof req.body?.reaction === "string" && req.body.reaction.trim()
+      ? req.body.reaction.trim().toLowerCase()
+      : null;
+
+  if (!postId) {
+    return res.status(400).json({ error: "Invalid post id." });
+  }
+
+  if (reaction !== null && !ALBUM_REACTION_TYPES.has(reaction)) {
+    return res.status(400).json({ error: "Invalid reaction." });
+  }
+
+  try {
+    await ensurePostsSchemaReady();
+    const currentUser = await resolveCurrentUser();
+
+    const [postRows] = await db.query(
+      `
+      SELECT id
+      FROM posts
+      WHERE id = ? AND family_id = ?
+      LIMIT 1
+      `,
+      [postId, Number(currentUser.family_id)]
+    );
+
+    if (!postRows.length) {
+      return res.status(404).json({ error: "Post not found." });
+    }
+
+    if (reaction === null) {
+      await db.query(
+        `
+        DELETE FROM post_reactions
+        WHERE post_id = ? AND user_id = ? AND family_id = ?
+        `,
+        [postId, Number(currentUser.id), Number(currentUser.family_id)]
+      );
+    } else {
+      await db.query(
+        `
+        INSERT INTO post_reactions (
+          post_id,
+          family_id,
+          user_id,
+          reaction_type
+        )
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          reaction_type = VALUES(reaction_type),
+          updated_at = CURRENT_TIMESTAMP
+        `,
+        [postId, Number(currentUser.family_id), Number(currentUser.id), reaction]
+      );
+    }
+
+    const [reactionRows] = await db.query(
+      `
+      SELECT
+        pr.user_id,
+        pr.reaction_type,
+        u.name AS user_name
+      FROM post_reactions pr
+      JOIN users u ON u.id = pr.user_id
+      WHERE pr.post_id = ?
+      ORDER BY pr.updated_at ASC, pr.id ASC
+      `,
+      [postId]
+    );
+
+    return res.json({
+      postId,
+      reaction,
+      reactionComments: normalizeReactionComments(reactionRows),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 

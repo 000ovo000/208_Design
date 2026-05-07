@@ -1,10 +1,12 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(
-  /\/$/,
-  ""
-);
+import { API_BASE_URL, DEMO_MODE } from "../config";
+
+const normalizedApiBaseUrl = DEMO_MODE ? "" : API_BASE_URL.replace(/\/$/, "");
 
 export function apiUrl(path: string) {
-  if (!path) return API_BASE_URL;
+  if (!path) return normalizedApiBaseUrl;
   if (/^https?:\/\//i.test(path)) return path;
-  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  if (DEMO_MODE) {
+    return path.startsWith("/") ? path : `/${path}`;
+  }
+  return `${normalizedApiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }

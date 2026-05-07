@@ -3,35 +3,53 @@ import {
   ChevronLeft,
   ChevronRight,
   Gift,
-  MessageCircle,
-  Sparkles,
   ArrowLeft,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePet } from "../context/pet-context";
 import { weeklyCollectedDrops, type DailyDropCategory } from "../data/daily-drops";
 import {
-  selectWeeklyReward,
+  findWeeklyRewardByItemIdentity,
   type WeeklyReward,
-  type WeeklyRewardStats,
 } from "../data/weekly-rewards";
+import { DEMO_MODE } from "../config";
 import { apiUrl } from "../lib/api";
-import type { AlbumEntry, FamilyMember } from "../types";
+import {
+  getDemoCurrentUser,
+  getDemoWeeklyEchoBundle,
+  setDemoWeeklyRewardClaimed,
+} from "../lib/demo-store";
 
 type EchoPageKey = "summary" | "moments" | "keepsakes";
-
-type PetReplyKey = "gentle" | "details" | "thanks";
-
 type WeeklyEchoScene = "boards" | "gift";
-
 type GiftRevealStage = "closed" | "shaking" | "open" | "revealed";
 
-type AiEchoSummary = {
+type WeeklyEchoSummary = {
   subtitle: string;
   body: string;
 };
 
 type DropSummaryCategory = "food" | "drink" | "basic-toy";
+
+type WeeklyEchoKeepsake = {
+  category: DropSummaryCategory;
+  label: string;
+  count: number;
+  preview: string;
+};
+
+type WeeklyEchoSummaryResponse = {
+  summary?: WeeklyEchoSummary;
+  stats?: {
+    petMessages?: number;
+    photoShares?: number;
+    gentleReactions?: number;
+    moodCheckIns?: number;
+    connectedDays?: number;
+    smallMoments?: number;
+  };
+  keepsakes?: WeeklyEchoKeepsake[];
+};
 
 type WeeklyDropCategorySummary = {
   key: DropSummaryCategory;
@@ -41,14 +59,28 @@ type WeeklyDropCategorySummary = {
   preview: string;
 };
 
-const chalkFontStyle: CSSProperties = {
-  fontFamily: '"Segoe Print", "Comic Sans MS", "Bradley Hand", cursive',
+type WeeklyEchoReport = {
+  reportId: number;
+  familyId: number;
+  weekStartDate: string | null;
+  weekEndDate: string | null;
+  connectedDays: number;
+  smallMomentsCount: number;
+  petMessagesCount: number;
+  photoSharesCount: number;
+  gentleReactionsCount: number;
+  moodCheckinsCount: number;
+  featuredPetMessage: string;
+  reportText: string;
+  unlockedReward: {
+    id: string;
+    name: string;
+  } | null;
+  rewardClaimed: boolean;
 };
 
-const petReplies: Record<PetReplyKey, string> = {
-  gentle: "I kept the small moments safe for your family.",
-  details: "This week felt warm: more reactions, a few photos, and gentle mood sharing.",
-  thanks: "I can help you send a small thank-you back to your family.",
+const chalkFontStyle: CSSProperties = {
+  fontFamily: '"Segoe Print", "Comic Sans MS", "Bradley Hand", cursive',
 };
 
 const dropCategoryLabels: Record<DropSummaryCategory, string> = {
@@ -57,9 +89,7 @@ const dropCategoryLabels: Record<DropSummaryCategory, string> = {
   "basic-toy": "Basic toy",
 };
 
-const getWeeklyDropSummaryKey = (
-  category: DailyDropCategory
-): DropSummaryCategory | null => {
+const getWeeklyDropSummaryKey = (category: DailyDropCategory): DropSummaryCategory | null => {
   if (category === "food" || category === "drink") return category;
   if (category === "basic-toy" || category === "care") return "basic-toy";
   return null;
@@ -67,16 +97,15 @@ const getWeeklyDropSummaryKey = (
 
 const formatDropNamePreview = (itemNames: string[]) => {
   if (itemNames.length > 3) {
-    return `${itemNames.slice(0, 2).join(", ")}, ...`;
+    return `${itemNames.slice(0, 3).join(", ")}, ...`;
   }
   return itemNames.join(", ");
 };
 
-interface WeeklyEchoPageProps {
-  stats: WeeklyRewardStats;
-  weeklyAlbumEntries: AlbumEntry[];
-  familyMembers: FamilyMember[];
-}
+const normalizeWeeklyEchoBody = (body: string) =>
+  body
+    .replace(/The family dog carried a note:/g, "Latest note from this week:")
+    .replace(/Latest note from this week's messages:/g, "Latest note from this week:");
 
 function RewardIcon({
   reward,
@@ -107,36 +136,133 @@ function RewardIcon({
   );
 }
 
-export function WeeklyEchoPage({
-  stats,
-  weeklyAlbumEntries,
-  familyMembers,
-}: WeeklyEchoPageProps) {
-  const { currentPet, ownedWeeklyRewards, addWeeklyRewardToInventory, isWeeklyRewardOwned } = usePet();
+function formatWeeklyEchoTitle(weekStartDate: string | null, weekEndDate: string | null) {
+  if (!weekStartDate || !weekEndDate) return "Weekly Echo";
+
+  const start = new Date(`${weekStartDate}T00:00:00`);
+  const end = new Date(`${weekEndDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "Weekly Echo";
+  }
+
+  const monthFormatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+  });
+  const monthDayFormatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const startLabel = sameMonth
+    ? `${monthFormatter.format(start)} ${start.getDate()}`
+    : monthDayFormatter.format(start);
+  const endLabel = monthDayFormatter.format(end);
+
+  return `${startLabel} - ${endLabel} Weekly Echo`;
+}
+
+function buildFallbackReportText(report: WeeklyEchoReport | null) {
+  if (!report) return "Your pet is waiting to write the next weekly echo.";
+  if (report.reportText.trim()) return report.reportText;
+
+  const lines = [
+    `Your family kept ${report.connectedDays} connected day${report.connectedDays === 1 ? "" : "s"}.`,
+    `This week, your family shared ${report.smallMomentsCount} small moment${report.smallMomentsCount === 1 ? "" : "s"}.`,
+    `${report.petMessagesCount} pet messages, ${report.photoSharesCount} photo shares, ${report.gentleReactionsCount} gentle reactions, and ${report.moodCheckinsCount} mood check-ins stayed on the board.`,
+  ];
+
+  if (report.featuredPetMessage.trim()) {
+    lines.push(`Latest note from this week: "${report.featuredPetMessage.trim()}".`);
+  } else {
+    lines.push("Latest note from this week: No shared note this week yet.");
+  }
+
+  if (report.unlockedReward?.name) {
+    lines.push(`${report.unlockedReward.name} was unlocked for the family pet.`);
+  }
+
+  return lines.join("\n");
+}
+
+export function WeeklyEchoPage() {
+  const {
+    currentPet,
+    addWeeklyRewardToInventory,
+    refreshInventory,
+  } = usePet();
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   const [activePage, setActivePage] = useState(0);
-  const [replyKey, setReplyKey] = useState<PetReplyKey>("gentle");
-  const [aiSummary, setAiSummary] = useState<AiEchoSummary | null>(null);
-  const [aiSummaryStatus, setAiSummaryStatus] = useState<"loading" | "ready" | "fallback" | "error">("loading");
-  const [aiSummaryError, setAiSummaryError] = useState("");
-
   const [scene, setScene] = useState<WeeklyEchoScene>("boards");
   const [giftRevealStage, setGiftRevealStage] = useState<GiftRevealStage>("closed");
-  const weeklyKeepsake = selectWeeklyReward(stats, currentPet.species);
-  const addedToToyBox = isWeeklyRewardOwned(weeklyKeepsake.id);
-  const weeklyStats = [
-    { label: "Pet messages", value: stats.petMessages, icon: "🐾" },
-    { label: "Photo shares", value: stats.photoShares, icon: "🖼️" },
-    { label: "Gentle reactions", value: stats.gentleReactions, icon: "💗" },
-    { label: "Mood check-ins", value: stats.moodCheckIns, icon: "🫧" },
-  ];
-  const weeklyMoments = [
-    `Your family shared ${stats.photoShares} photos this week.`,
-    `${stats.petMessages} pet messages helped small moments travel home.`,
-    `${stats.gentleReactions} gentle reactions and ${stats.moodCheckIns} mood check-ins kept the week warm.`,
-  ];
-  const weeklyDropCategorySummaries = useMemo<WeeklyDropCategorySummary[]>(() => {
+  const [report, setReport] = useState<WeeklyEchoReport | null>(null);
+  const [reportError, setReportError] = useState("");
+  const [echoSummary, setEchoSummary] = useState<WeeklyEchoSummary | null>(null);
+  const [echoStats, setEchoStats] = useState<WeeklyEchoSummaryResponse["stats"] | null>(null);
+  const [echoKeepsakes, setEchoKeepsakes] = useState<WeeklyEchoKeepsake[] | null>(null);
+  const [echoSummaryStatus, setEchoSummaryStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [echoSummaryError, setEchoSummaryError] = useState("");
+  const [isAddingReward, setIsAddingReward] = useState(false);
+
+  const weeklyKeepsake = useMemo(
+    () =>
+      report?.unlockedReward
+        ? findWeeklyRewardByItemIdentity({
+            id: report.unlockedReward.id,
+            name: report.unlockedReward.name,
+          })
+        : null,
+    [report?.unlockedReward]
+  );
+
+  const echoTitle = useMemo(
+    () => formatWeeklyEchoTitle(report?.weekStartDate ?? null, report?.weekEndDate ?? null),
+    [report?.weekEndDate, report?.weekStartDate]
+  );
+
+  const fallbackStats = useMemo(
+    () => ({
+      petMessages: report?.petMessagesCount ?? 0,
+      photoShares: report?.photoSharesCount ?? 0,
+      gentleReactions: report?.gentleReactionsCount ?? 0,
+      moodCheckIns: report?.moodCheckinsCount ?? 0,
+      connectedDays: report?.connectedDays ?? 0,
+      smallMoments: report?.smallMomentsCount ?? 0,
+    }),
+    [
+      report?.connectedDays,
+      report?.gentleReactionsCount,
+      report?.moodCheckinsCount,
+      report?.petMessagesCount,
+      report?.photoSharesCount,
+      report?.smallMomentsCount,
+    ]
+  );
+
+  const boardStats = echoStats ?? fallbackStats;
+
+  const weeklyStats = useMemo(
+    () => [
+      { label: "Pet messages", value: Number(boardStats.petMessages ?? 0), icon: "🐾" },
+      { label: "Photo shares", value: Number(boardStats.photoShares ?? 0), icon: "🖼️" },
+      { label: "Gentle reactions", value: Number(boardStats.gentleReactions ?? 0), icon: "💗" },
+      { label: "Mood check-ins", value: Number(boardStats.moodCheckIns ?? 0), icon: "🫧" },
+    ],
+    [boardStats.gentleReactions, boardStats.moodCheckIns, boardStats.petMessages, boardStats.photoShares]
+  );
+
+  const weeklyMoments = useMemo(() => {
+    const featuredMessage = report?.featuredPetMessage.trim() ?? "";
+    return [
+      `Your family shared ${Number(boardStats.smallMoments ?? fallbackStats.smallMoments)} small moments in this report.`,
+      `${Number(boardStats.petMessages ?? 0)} pet messages and ${Number(boardStats.photoShares ?? 0)} photo shares helped small updates travel home.`,
+      featuredMessage
+        ? `Latest note from this week: "${featuredMessage}".`
+        : "Latest note from this week: No shared note this week yet.",
+    ];
+  }, [boardStats.petMessages, boardStats.photoShares, boardStats.smallMoments, fallbackStats.smallMoments, report?.featuredPetMessage]);
+
+  const demoWeeklyDropCategorySummaries = useMemo<WeeklyDropCategorySummary[]>(() => {
     const summaryMap = new Map<DropSummaryCategory, { count: number; itemNames: string[] }>();
 
     weeklyCollectedDrops.forEach((drop) => {
@@ -166,56 +292,93 @@ export function WeeklyEchoPage({
       })
       .filter((summary): summary is WeeklyDropCategorySummary => Boolean(summary));
   }, []);
-  const weeklyStorySignals = useMemo(
-    () => ({
-      photos: weeklyAlbumEntries.map((entry) => {
-        const member = familyMembers.find(
-          (familyMember) => String(familyMember.id) === String(entry.memberId)
-        );
 
-        return {
-          author: member?.name || "Family member",
-          uploadedAt: entry.uploadedAt,
-          dogMessage: entry.dogMessage,
-          reaction: entry.reaction,
-        };
-      }),
-      moodBeads: {
-        count: stats.moodCheckIns,
-      },
-      lightResponses: weeklyAlbumEntries
-        .filter((entry) => entry.reaction)
-        .map((entry) => ({
-          reaction: entry.reaction,
-          uploadedAt: entry.uploadedAt,
-        })),
-      unlockedDecorations: [
-        ...ownedWeeklyRewards.map((keepsake) => keepsake.name),
-        addedToToyBox ? weeklyKeepsake.name : null,
-      ].filter(Boolean),
-      currentPet: {
-        name: currentPet.name,
-        species: currentPet.species,
-      },
-    }),
-    [
-      addedToToyBox,
-      currentPet.name,
-      currentPet.species,
-      familyMembers,
-      stats.moodCheckIns,
-      weeklyAlbumEntries,
-      weeklyKeepsake.name,
-      ownedWeeklyRewards,
-    ]
-  );
+  const weeklyDropCategorySummaries =
+    Array.isArray(echoKeepsakes) && echoKeepsakes.length > 0
+      ? echoKeepsakes.map((keepsake) => ({
+          key: keepsake.category,
+          label: keepsake.label,
+          count: keepsake.count,
+          itemNames: [],
+          preview: keepsake.preview,
+        }))
+      : demoWeeklyDropCategorySummaries;
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadReport(refresh = false) {
+      setReportError("");
+
+      if (DEMO_MODE) {
+        const demoUser = getDemoCurrentUser();
+        const demoBundle = getDemoWeeklyEchoBundle(demoUser.id);
+        if (!ignore) {
+          setReport(demoBundle.report);
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          apiUrl(`/api/weekly-echo/current${refresh ? "?refresh=1" : ""}`),
+          { cache: "no-store" }
+        );
+        const data = await response.json().catch(() => null);
+        if (ignore) return;
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to load Weekly Echo.");
+        }
+
+        console.log(
+          `[weekly-echo-page] received report reportId=${Number(
+            data?.reportId ?? 0
+          )} connectedDays=${Number(data?.connectedDays ?? 0)} moodCheckins=${Number(
+            data?.moodCheckinsCount ?? 0
+          )} smallMoments=${Number(data?.smallMomentsCount ?? 0)}`
+        );
+        setReport(data);
+      } catch (error) {
+        if (ignore) return;
+        setReport(null);
+        setReportError(error instanceof Error ? error.message : "Failed to load Weekly Echo.");
+      }
+    }
+
+    void loadReport();
+
+    const handleMoodUpdated = () => {
+      void loadReport(true);
+    };
+    window.addEventListener("moods-updated", handleMoodUpdated);
+
+    return () => {
+      ignore = true;
+      window.removeEventListener("moods-updated", handleMoodUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
 
     async function loadWeeklyEchoSummary() {
-      setAiSummaryStatus("loading");
-      setAiSummaryError("");
+      setEchoSummaryStatus("loading");
+      setEchoSummaryError("");
+
+      if (DEMO_MODE) {
+        const demoUser = getDemoCurrentUser();
+        const demoBundle = getDemoWeeklyEchoBundle(demoUser.id);
+        if (ignore) return;
+        setEchoSummary({
+          ...demoBundle.summary,
+          body: normalizeWeeklyEchoBody(demoBundle.summary.body),
+        });
+        setEchoStats(demoBundle.stats);
+        setEchoKeepsakes(demoBundle.keepsakes);
+        setEchoSummaryStatus("ready");
+        return;
+      }
 
       try {
         const response = await fetch(apiUrl("/api/weekly-echo/summary"), {
@@ -224,31 +387,35 @@ export function WeeklyEchoPage({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            stats,
-            moments: weeklyMoments,
-            storySignals: weeklyStorySignals,
-            petName: currentPet.name,
+            stats: fallbackStats,
           }),
         });
 
-        const data = await response.json();
+        const data: WeeklyEchoSummaryResponse & { error?: string } = await response.json().catch(() => ({}));
         if (ignore) return;
 
         if (!response.ok && !data.summary) {
           throw new Error(data.error || "Failed to load weekly echo.");
         }
 
-        setAiSummary(data.summary);
-        setAiSummaryStatus(data.source === "ai" ? "ready" : "fallback");
-
-        if (!response.ok) {
-          setAiSummaryError("AI service is unavailable, so the board used a local weekly summary.");
-        }
+        setEchoSummary(
+          data.summary
+            ? {
+                ...data.summary,
+                body: normalizeWeeklyEchoBody(data.summary.body),
+              }
+            : null
+        );
+        setEchoStats(data.stats ?? null);
+        setEchoKeepsakes(Array.isArray(data.keepsakes) ? data.keepsakes : null);
+        setEchoSummaryStatus("ready");
       } catch (error) {
         if (ignore) return;
-        setAiSummary(null);
-        setAiSummaryStatus("error");
-        setAiSummaryError(error instanceof Error ? error.message : "Failed to load weekly echo.");
+        setEchoSummary(null);
+        setEchoStats(null);
+        setEchoKeepsakes(null);
+        setEchoSummaryStatus("error");
+        setEchoSummaryError(error instanceof Error ? error.message : "Failed to load weekly echo.");
       }
     }
 
@@ -257,27 +424,31 @@ export function WeeklyEchoPage({
     return () => {
       ignore = true;
     };
-  }, [
-    currentPet.name,
-    stats.connectedDays,
-    stats.gentleReactions,
-    stats.moodCheckIns,
-    stats.petMessages,
-    stats.photoShares,
-    weeklyStorySignals,
-  ]);
+  }, [fallbackStats]);
+
+  useEffect(() => {
+    if (report?.rewardClaimed) {
+      setGiftRevealStage("revealed");
+      return;
+    }
+    setGiftRevealStage((current) => (current === "revealed" ? "closed" : current));
+  }, [report?.rewardClaimed]);
 
   const giftBubbleText =
-    giftRevealStage === "closed"
-      ? "Tap the box to open it."
-      : giftRevealStage === "shaking"
-        ? "Opening..."
-        : giftRevealStage === "open"
-          ? "Something is inside!"
-          : "You made something warm this week!";
+    report?.rewardClaimed
+      ? "This week's gift is already opened for you."
+      : giftRevealStage === "closed"
+        ? "Tap the box to open it."
+        : giftRevealStage === "shaking"
+          ? "Opening..."
+          : giftRevealStage === "open"
+            ? "Something is inside!"
+            : "You made something warm this week!";
 
   const handleOpenGift = () => {
-    if (giftRevealStage !== "closed") return;
+    if (report?.rewardClaimed || giftRevealStage !== "closed" || !weeklyKeepsake) {
+      return;
+    }
 
     setGiftRevealStage("shaking");
 
@@ -290,29 +461,82 @@ export function WeeklyEchoPage({
     }, 1500);
   };
 
+  const handleClaimReward = async () => {
+    if (report?.rewardClaimed || !weeklyKeepsake || isAddingReward || !report?.reportId) return;
+
+    try {
+      setIsAddingReward(true);
+      if (DEMO_MODE) {
+        const demoUser = getDemoCurrentUser();
+        const added = await addWeeklyRewardToInventory(weeklyKeepsake.id);
+        if (!added) {
+          throw new Error("Failed to add weekly reward to Toy Box.");
+        }
+        if (report.weekStartDate) {
+          setDemoWeeklyRewardClaimed(demoUser.id, report.weekStartDate, weeklyKeepsake.id);
+        }
+        setReport((current) => (current ? { ...current, rewardClaimed: true } : current));
+        setGiftRevealStage("revealed");
+        setReportError("");
+        return;
+      }
+
+      const response = await fetch(apiUrl(`/api/weekly-echo/${report.reportId}/claim-reward`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const data: WeeklyEchoReport & { error?: string } = await response.json().catch(() => ({} as WeeklyEchoReport & { error?: string }));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to add weekly reward to Toy Box.");
+      }
+
+      setReport(data);
+      await refreshInventory();
+      setGiftRevealStage("revealed");
+      setReportError("");
+    } catch (error) {
+      setReportError(
+        error instanceof Error ? error.message : "Failed to add weekly reward to Toy Box."
+      );
+    } finally {
+      setIsAddingReward(false);
+    }
+  };
 
   const pages = useMemo(
     () => [
       {
         key: "summary" as EchoPageKey,
-        title: "This Week's Echo",
-        subtitle: aiSummary?.subtitle || `Your family shared ${stats.photoShares} small moments.`,
-        body: aiSummary?.body || `You stayed lightly connected on ${stats.connectedDays} days. No pressure, just a few warm traces left behind.`,
+        title: echoTitle,
+        subtitle:
+          echoSummary?.subtitle ??
+          `${report?.connectedDays ?? 0} connected day${report?.connectedDays === 1 ? "" : "s"} · ${report?.smallMomentsCount ?? 0} small moment${report?.smallMomentsCount === 1 ? "" : "s"}`,
+        body: echoSummary?.body ?? buildFallbackReportText(report),
       },
       {
         key: "moments" as EchoPageKey,
         title: "Small Moments",
-        subtitle: "Little things that mattered",
-        body: "Mom noticed your campus photo. Dad replied after dinner. Your mood beads quietly showed how the week felt.",
+        subtitle: "Latest note from this week:",
+        body: report?.featuredPetMessage.trim()
+          ? `"${report.featuredPetMessage.trim()}"`
+          : "No shared note this week yet.",
       },
       {
         key: "keepsakes" as EchoPageKey,
         title: "Shared Keepsakes",
-        subtitle: "Small surprises found this week",
+        subtitle: "Small items your pet noticed this week",
         body: "Your pet found little surprises through the week.\nSome small items fade, while keepsakes stay as family memories.",
       },
     ],
-    [aiSummary?.body, aiSummary?.subtitle, stats.connectedDays, stats.photoShares]
+    [
+      echoSummary?.body,
+      echoSummary?.subtitle,
+      echoTitle,
+      report,
+    ]
   );
 
   const scrollToPage = (index: number) => {
@@ -341,7 +565,7 @@ export function WeeklyEchoPage({
           type="button"
           onClick={() => {
             setScene("boards");
-            setGiftRevealStage("closed");
+            setGiftRevealStage(report?.rewardClaimed ? "revealed" : "closed");
           }}
           className="mb-4 flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-[#8d684d] shadow-sm"
         >
@@ -359,7 +583,7 @@ export function WeeklyEchoPage({
             Weekly Keepsake
           </p>
           <h1 className="mt-1 text-2xl font-bold text-[#3d2b22]">
-            A Gift for This Week
+            {echoTitle}
           </h1>
           <p className="mx-auto mt-2 max-w-[300px] text-sm leading-5 text-[#8a6e5a]">
             Your small family moments turned into a keepsake.
@@ -380,11 +604,22 @@ export function WeeklyEchoPage({
           </div>
 
           <div className="flex min-h-[340px] flex-col items-center justify-start pt-8">
-            {giftRevealStage !== "revealed" ? (
+            {!weeklyKeepsake ? (
+              <motion.div
+                initial={{ opacity: 0, y: 18, scale: 0.94 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.35 }}
+                className="mt-20 w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
+              >
+                <p className="text-sm leading-6 text-[#8a6e5a]">
+                  No weekly keepsake was unlocked for this report.
+                </p>
+              </motion.div>
+            ) : giftRevealStage !== "revealed" ? (
               <motion.button
                 type="button"
                 onClick={handleOpenGift}
-                disabled={giftRevealStage !== "closed"}
+                disabled={giftRevealStage !== "closed" || Boolean(report?.rewardClaimed)}
                 whileTap={giftRevealStage === "closed" ? { scale: 0.96 } : undefined}
                 className={`mt-16 flex flex-col items-center disabled:cursor-default ${
                   giftRevealStage === "closed" || giftRevealStage === "shaking"
@@ -466,35 +701,31 @@ export function WeeklyEchoPage({
                 <button
                   type="button"
                   onClick={() => {
-                    void addWeeklyRewardToInventory(weeklyKeepsake.id);
+                    void handleClaimReward();
                   }}
+                  disabled={Boolean(report?.rewardClaimed) || isAddingReward}
                   className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-bold shadow-sm transition ${
-                    addedToToyBox
+                    report?.rewardClaimed
                       ? "bg-[#ead8c8] text-[#8b6042]"
                       : "bg-[#b98559] text-white"
-                  }`}
+                  } disabled:cursor-default`}
                 >
-                  {addedToToyBox ? "Added to Toy Box" : "Add to Toy Box"}
+                  {report?.rewardClaimed
+                    ? "Already opened"
+                    : isAddingReward
+                      ? "Adding..."
+                      : "Add to Toy Box"}
                 </button>
               </motion.div>
             )}
           </div>
-        </section>
-
-        <section className="mt-4 rounded-[24px] bg-[#fffaf4] p-4 text-sm leading-6 text-[#7b604f] shadow-sm">
-          <div className="mb-2 flex items-center gap-2 font-bold text-[#5d4435]">
-            <Sparkles className="h-4 w-4 text-[#d39a5c]" />
-            Design note
-          </div>
-          This keepsake is not a random prize. It represents the small family
-          interactions collected during this week.
         </section>
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-full overflow-y-auto bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] px-5 pb-32 pt-5 text-[#4b3528]">
+    <div className="relative h-full overflow-hidden bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] px-5 pb-20 pt-4 text-[#4b3528]">
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -505,10 +736,10 @@ export function WeeklyEchoPage({
           Weekly Family Echo
         </p>
         <h1 className="mt-1 text-2xl font-bold text-[#3d2b22]">
-          A gentle family recap
+          {echoTitle}
         </h1>
         <p className="mt-1 text-sm leading-5 text-[#8a6e5a]">
-          Your pet keeps the small moments from this week and writes them on the board.
+          Your pet keeps the small moments from this report and writes them on the board.
         </p>
       </motion.div>
 
@@ -522,7 +753,9 @@ export function WeeklyEchoPage({
             {pages.map((page) => (
               <article
                 key={page.key}
-                className="h-full min-w-full snap-center px-4 py-2 text-[#fff8e8]"
+                className={`h-full min-w-full snap-center px-4 pt-2 text-[#fff8e8] ${
+                  page.key === "summary" ? "pb-6" : "pb-2"
+                }`}
               >
                 <p className="text-sm text-[#f9d98f]" style={chalkFontStyle}>
                   {page.title}
@@ -575,27 +808,21 @@ export function WeeklyEchoPage({
                       ))}
                     </div>
 
-                    {aiSummaryStatus === "loading" && (
+                    {echoSummaryStatus === "loading" && (
                       <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
                         Writing this week's echo...
                       </p>
                     )}
 
-                    {aiSummaryStatus === "fallback" && (
+                    {echoSummaryStatus === "ready" && (
                       <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
-                        Local weekly echo shown until the AI key is configured.
+                        Small moments made the week feel closer.
                       </p>
                     )}
 
-                    {aiSummaryStatus === "error" && (
+                    {(echoSummaryStatus === "error" || reportError) && (
                       <p className="mt-2 text-xs text-[#ffd4c4]" style={chalkFontStyle}>
-                        {aiSummaryError}
-                      </p>
-                    )}
-
-                    {aiSummaryError && aiSummaryStatus !== "error" && (
-                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
-                        {aiSummaryError}
+                        {echoSummaryError || reportError}
                       </p>
                     )}
                   </>
@@ -653,11 +880,12 @@ export function WeeklyEchoPage({
                       type="button"
                       onClick={() => {
                         setScene("gift");
-                        setGiftRevealStage("closed");
+                        setGiftRevealStage(report?.rewardClaimed ? "revealed" : "closed");
                       }}
-                      className="mt-2 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm"
+                      disabled={!weeklyKeepsake}
+                      className="mt-2 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm disabled:cursor-default disabled:opacity-60"
                     >
-                      Reveal This Week's Keepsake
+                      {report?.rewardClaimed ? "View This Week's Keepsake" : "Reveal This Week's Keepsake"}
                     </button>
                   </div>
                 )}
@@ -666,7 +894,7 @@ export function WeeklyEchoPage({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-4">
+        <div className="mt-4 flex -translate-y-[3px] items-center justify-center gap-4">
           <button
             type="button"
             onClick={() => scrollToPage(activePage - 1)}
@@ -701,52 +929,6 @@ export function WeeklyEchoPage({
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
-      </section>
-
-      <section className="mt-5 rounded-[28px] bg-white/80 p-4 shadow-[0_12px_28px_rgba(128,93,63,0.12)] backdrop-blur">
-        <div className="flex items-center gap-2 text-sm font-bold text-[#5d4435]">
-          <MessageCircle className="h-4 w-4 text-[#b98559]" />
-          Talk with {currentPet.name}
-        </div>
-
-        <p className="mt-2 rounded-2xl bg-[#fff5e8] px-4 py-3 text-sm leading-6 text-[#7b604f]">
-          “{petReplies[replyKey]}”
-        </p>
-
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => setReplyKey("gentle")}
-            className="rounded-2xl bg-[#f9e4d2] px-2 py-2 text-xs font-semibold text-[#8b6042]"
-          >
-            Summary
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setReplyKey("details")}
-            className="rounded-2xl bg-[#f9e4d2] px-2 py-2 text-xs font-semibold text-[#8b6042]"
-          >
-            More
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setReplyKey("thanks")}
-            className="rounded-2xl bg-[#f9e4d2] px-2 py-2 text-xs font-semibold text-[#8b6042]"
-          >
-            Thanks
-          </button>
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-[24px] bg-[#fffaf4] p-4 text-sm leading-6 text-[#7b604f] shadow-sm">
-        <div className="mb-2 flex items-center gap-2 font-bold text-[#5d4435]">
-          <Sparkles className="h-4 w-4 text-[#d39a5c]" />
-          Design note
-        </div>
-        Daily drops give the pet small everyday care. Weekly Echo turns those
-        small interactions into a gentle family memory.
       </section>
     </div>
   );

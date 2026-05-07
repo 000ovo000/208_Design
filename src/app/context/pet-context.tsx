@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { DEMO_MODE } from "../config";
 import { dailyDrops, type DailyDrop } from "../data/daily-drops";
 import { defaultPetId, getPetById, petItems, PetId } from "../data/pets";
 import {
@@ -8,13 +9,21 @@ import {
   type WeeklyReward,
 } from "../data/weekly-rewards";
 import { apiUrl } from "../lib/api";
+import {
+  getDemoInventory,
+  getScopedSelectedPetStorageKey,
+  getScopedUnlockedPetsStorageKey,
+  setDemoInventory,
+} from "../lib/demo-store";
 
-const SELECTED_PET_STORAGE_KEY = "selectedPetId";
-const UNLOCKED_PETS_STORAGE_KEY = "unlockedPetIds";
 const GUEST_SCOPE = "guest";
 
 export type DailyDropInventory = Record<string, number>;
 export type WeeklyRewardInventory = Record<string, number>;
+type AddDailyDropResult = {
+  ok: boolean;
+  reason?: "already-claimed" | "error";
+};
 
 type ActiveWeeklyRewardSlot = "room-decor";
 
@@ -51,7 +60,7 @@ type PetContextValue = {
   currentPet: ReturnType<typeof getPetById>;
   petItems: typeof petItems;
   dailyDropInventory: DailyDropInventory;
-  addDailyDropToInventory: (dropId: string, amount?: number) => Promise<boolean>;
+  addDailyDropToInventory: (dropId: string, amount?: number) => Promise<AddDailyDropResult>;
   useDailyDropItem: (dropId: string) => Promise<DailyDrop | null>;
   getDailyDropCount: (dropId: string) => number;
   lastPlacedDailyDrop: DailyDrop | null;
@@ -67,6 +76,7 @@ type PetContextValue = {
   clearWeeklyRewardItem: (rewardId: string) => Promise<boolean>;
   isWeeklyRewardOwned: (rewardId: string) => boolean;
   isWeeklyRewardActive: (rewardId: string) => boolean;
+  refreshInventory: () => Promise<void>;
 };
 
 const PetContext = createContext<PetContextValue | null>(null);
@@ -77,10 +87,6 @@ function isPetId(value: string | null): value is PetId {
 
 function isDailyDropId(value: string | null) {
   return Boolean(value && dailyDrops.some((drop) => drop.id === value));
-}
-
-function getUserScopedKey(baseKey: string, userId: string) {
-  return `kinlight:${baseKey}:${userId}`;
 }
 
 function getWeeklyRewardById(rewardId: string) {
@@ -131,9 +137,7 @@ async function resolveRewardBackendItemId(
 
 function readSelectedPetId(userId: string) {
   if (typeof window === "undefined") return defaultPetId;
-  const saved = window.localStorage.getItem(
-    getUserScopedKey(SELECTED_PET_STORAGE_KEY, userId)
-  );
+  const saved = window.localStorage.getItem(getScopedSelectedPetStorageKey(userId));
   return isPetId(saved) ? saved : defaultPetId;
 }
 
@@ -143,7 +147,7 @@ function readUnlockedPetIds(userId: string) {
 
   try {
     const saved = JSON.parse(
-      window.localStorage.getItem(getUserScopedKey(UNLOCKED_PETS_STORAGE_KEY, userId)) || "[]"
+      window.localStorage.getItem(getScopedUnlockedPetsStorageKey(userId)) || "[]"
     );
     const savedIds = Array.isArray(saved) ? saved.filter((id): id is PetId => isPetId(id)) : [];
     return Array.from(new Set([...defaultUnlocked, ...savedIds]));
@@ -184,16 +188,13 @@ export function PetProvider({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      getUserScopedKey(SELECTED_PET_STORAGE_KEY, userScope),
-      selectedPetId
-    );
+    window.localStorage.setItem(getScopedSelectedPetStorageKey(userScope), selectedPetId);
   }, [selectedPetId, userScope]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
-      getUserScopedKey(UNLOCKED_PETS_STORAGE_KEY, userScope),
+      getScopedUnlockedPetsStorageKey(userScope),
       JSON.stringify(unlockedPetIds)
     );
   }, [unlockedPetIds, userScope]);
@@ -208,6 +209,15 @@ export function PetProvider({
   };
 
   const syncInventory = useCallback(async () => {
+    if (DEMO_MODE) {
+      const inventory = getDemoInventory(userScope);
+      setDailyDropInventory(inventory.dailyDropInventory);
+      setWeeklyRewardInventory(inventory.weeklyRewardInventory);
+      setActiveWeeklyRewardIds(inventory.activeWeeklyRewardIds);
+      setRewardItemIdByRewardId({});
+      return;
+    }
+
     try {
       const [itemsRes, myItemsRes, activeItemsRes] = await Promise.all([
         fetch(apiUrl("/api/items")),
@@ -267,44 +277,78 @@ export function PetProvider({
       setActiveWeeklyRewardIds([]);
       setRewardItemIdByRewardId({});
     }
-  }, []);
+  }, [userScope]);
 
   useEffect(() => {
     void syncInventory();
   }, [syncInventory, userScope]);
 
-  const addDailyDropToInventory = async (dropId: string, amount = 1) => {
-    if (!isDailyDropId(dropId) || amount <= 0) return false;
+  const addDailyDropToInventory = async (dropId: string, amount = 1): Promise<AddDailyDropResult> => {
+    if (!isDailyDropId(dropId) || amount <= 0) return { ok: false, reason: "error" };
     const drop = dailyDrops.find((item) => item.id === dropId);
-    if (!drop) return false;
+    if (!drop) return { ok: false, reason: "error" };
+
+    if (DEMO_MODE) {
+      const nextInventory = {
+        ...getDemoInventory(userScope),
+        dailyDropInventory: {
+          ...getDemoInventory(userScope).dailyDropInventory,
+          [dropId]: (getDemoInventory(userScope).dailyDropInventory[dropId] ?? 0) + amount,
+        },
+      };
+      setDemoInventory(userScope, nextInventory);
+      setDailyDropInventory(nextInventory.dailyDropInventory);
+      return { ok: true };
+    }
 
     try {
       const itemsRes = await fetch(apiUrl("/api/items"));
-      if (!itemsRes.ok) return false;
+      if (!itemsRes.ok) return { ok: false, reason: "error" };
       const items = await itemsRes.json();
       const item = items.find((entry: { name: string }) => entry.name === drop.name);
-      if (!item?.id) return false;
+      if (!item?.id) return { ok: false, reason: "error" };
 
-      const addRes = await fetch(apiUrl("/api/my-items"), {
+      const addRes = await fetch(apiUrl("/api/daily-drop/claim"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: item.id, quantity: amount }),
+        body: JSON.stringify({ item_id: item.id }),
       });
-      if (!addRes.ok) return false;
-    } catch (error) {
-      return false;
+
+      if (!addRes.ok) {
+        if (addRes.status === 409) {
+          return { ok: false, reason: "already-claimed" };
+        }
+        return { ok: false, reason: "error" };
+      }
+    } catch {
+      return { ok: false, reason: "error" };
     }
 
     setDailyDropInventory((prev) => ({
       ...prev,
       [dropId]: (prev[dropId] ?? 0) + amount,
     }));
-    return true;
+    return { ok: true };
   };
 
   const useDailyDropItem = async (dropId: string) => {
     const drop = dailyDrops.find((item) => item.id === dropId) ?? null;
     if (!drop || (dailyDropInventory[dropId] ?? 0) <= 0) return null;
+
+    if (DEMO_MODE) {
+      const inventory = getDemoInventory(userScope);
+      const nextInventory = {
+        ...inventory,
+        dailyDropInventory: {
+          ...inventory.dailyDropInventory,
+          [dropId]: Math.max((inventory.dailyDropInventory[dropId] ?? 0) - 1, 0),
+        },
+      };
+      setDemoInventory(userScope, nextInventory);
+      setDailyDropInventory(nextInventory.dailyDropInventory);
+      setPlacedDailyDropIds((prev) => (prev.includes(dropId) ? prev : [...prev, dropId]));
+      return drop;
+    }
 
     try {
       const itemsRes = await fetch(apiUrl("/api/items"));
@@ -339,6 +383,20 @@ export function PetProvider({
       if (!reward) return false;
       if ((weeklyRewardInventory[reward.id] ?? 0) > 0) return true;
 
+      if (DEMO_MODE) {
+        const inventory = getDemoInventory(userScope);
+        const nextInventory = {
+          ...inventory,
+          weeklyRewardInventory: {
+            ...inventory.weeklyRewardInventory,
+            [reward.id]: Math.max(inventory.weeklyRewardInventory[reward.id] ?? 0, 1),
+          },
+        };
+        setDemoInventory(userScope, nextInventory);
+        setWeeklyRewardInventory(nextInventory.weeklyRewardInventory);
+        return true;
+      }
+
       try {
         const { itemId, rewardMap } = await resolveRewardBackendItemId(reward.id, rewardItemIdByRewardId);
         if (!itemId) return false;
@@ -360,13 +418,24 @@ export function PetProvider({
       }));
       return true;
     },
-    [rewardItemIdByRewardId, weeklyRewardInventory]
+    [rewardItemIdByRewardId, userScope, weeklyRewardInventory]
   );
 
   const useWeeklyRewardItem = useCallback(
     async (rewardId: string) => {
       const reward = getWeeklyRewardById(rewardId);
       if (!reward || (weeklyRewardInventory[reward.id] ?? 0) <= 0) return null;
+
+      if (DEMO_MODE) {
+        const inventory = getDemoInventory(userScope);
+        const nextInventory = {
+          ...inventory,
+          activeWeeklyRewardIds: [reward.id],
+        };
+        setDemoInventory(userScope, nextInventory);
+        setActiveWeeklyRewardIds(nextInventory.activeWeeklyRewardIds);
+        return reward;
+      }
 
       try {
         const { itemId, rewardMap } = await resolveRewardBackendItemId(reward.id, rewardItemIdByRewardId);
@@ -386,13 +455,24 @@ export function PetProvider({
       setActiveWeeklyRewardIds([reward.id]);
       return reward;
     },
-    [rewardItemIdByRewardId, syncInventory, weeklyRewardInventory]
+    [rewardItemIdByRewardId, userScope, weeklyRewardInventory]
   );
 
   const clearWeeklyRewardItem = useCallback(
     async (rewardId: string) => {
       const reward = getWeeklyRewardById(rewardId);
       if (!reward) return false;
+
+      if (DEMO_MODE) {
+        const inventory = getDemoInventory(userScope);
+        const nextInventory = {
+          ...inventory,
+          activeWeeklyRewardIds: inventory.activeWeeklyRewardIds.filter((id) => id !== reward.id),
+        };
+        setDemoInventory(userScope, nextInventory);
+        setActiveWeeklyRewardIds(nextInventory.activeWeeklyRewardIds);
+        return true;
+      }
 
       try {
         const { itemId, rewardMap } = await resolveRewardBackendItemId(reward.id, rewardItemIdByRewardId);
@@ -412,7 +492,7 @@ export function PetProvider({
       setActiveWeeklyRewardIds((prev) => prev.filter((id) => id !== reward.id));
       return true;
     },
-    [rewardItemIdByRewardId]
+    [rewardItemIdByRewardId, userScope]
   );
 
   const currentPet = getPetById(selectedPetId);
@@ -466,6 +546,7 @@ export function PetProvider({
       clearWeeklyRewardItem,
       isWeeklyRewardOwned: (rewardId: string) => (weeklyRewardInventory[rewardId] ?? 0) > 0,
       isWeeklyRewardActive: (rewardId: string) => activeWeeklyRewardIds.includes(rewardId),
+      refreshInventory: syncInventory,
     }),
     [
       selectedPetId,
@@ -481,6 +562,7 @@ export function PetProvider({
       addWeeklyRewardToInventory,
       useWeeklyRewardItem,
       clearWeeklyRewardItem,
+      syncInventory,
     ]
   );
 

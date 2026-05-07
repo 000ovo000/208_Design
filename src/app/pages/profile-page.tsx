@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
-import { Bell, Dog, Plus, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
+import { Plus, Trash2, UserRound, X } from "lucide-react";
 import { FamilyMember } from "../types";
 import { usePet } from "../context/pet-context";
+import { DEMO_MODE } from "../config";
 import { apiUrl } from "../lib/api";
+import {
+  getDemoCurrentUser,
+  getDemoFamilyMembers,
+  setDemoCurrentUser,
+} from "../lib/demo-store";
 
 interface ProfilePageProps {
   familyMembers: FamilyMember[];
@@ -51,6 +57,11 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
@@ -64,21 +75,34 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
     const refreshOnFocus = () => {
       void fetchCurrentUser();
     };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") {
         void fetchCurrentUser();
       }
     };
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, []);
 
   useEffect(() => {
     const loadFamilyMembers = async () => {
+      if (DEMO_MODE) {
+        const members = getDemoFamilyMembers();
+        setDbFamilyMembers(members);
+        onFamilyMembersChange?.(members);
+        setIsLoadingMembers(false);
+        return;
+      }
+
       try {
         const familyId = currentUser?.family_id ?? currentMember?.family_id ?? 1;
         const response = await fetch(apiUrl(`/api/family-members?family_id=${familyId}`));
@@ -103,6 +127,24 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
 
   const handleAddFamilyMember = async () => {
     if (!newMemberName.trim() || isAddingMember) return;
+
+    if (DEMO_MODE) {
+      const nextMember: DbFamilyMember = {
+        id: `demo-member-${Date.now()}`,
+        name: newMemberName.trim(),
+        email: newMemberEmail.trim() || null,
+        role: newMemberRole,
+        family_id: currentUser?.family_id ?? currentMember?.family_id ?? 1,
+      };
+      const nextMembers = [...dbFamilyMembers, nextMember];
+      setDbFamilyMembers(nextMembers);
+      onFamilyMembersChange?.(nextMembers as FamilyMember[]);
+      setNewMemberName("");
+      setNewMemberEmail("");
+      setNewMemberRole("member");
+      setIsAddMemberOpen(false);
+      return;
+    }
 
     try {
       setIsAddingMember(true);
@@ -147,6 +189,15 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
     const confirmed = window.confirm("Delete this family member?");
     if (!confirmed) return;
 
+    if (DEMO_MODE) {
+      const nextMembers = dbFamilyMembers.filter(
+        (member) => String(member.id) !== String(memberId)
+      );
+      setDbFamilyMembers(nextMembers);
+      onFamilyMembersChange?.(nextMembers as FamilyMember[]);
+      return;
+    }
+
     try {
       const response = await fetch(apiUrl(`/api/family-members/${memberId}`), {
         method: "DELETE",
@@ -173,6 +224,20 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
 
   const handleSwitchAccount = async (targetUserId: string | number) => {
     if (isSwitchingAccount) return;
+
+    if (DEMO_MODE) {
+      setIsSwitchingAccount(true);
+      try {
+        const nextUser = setDemoCurrentUser(String(targetUserId));
+        setCurrentUser(nextUser);
+        setIsSwitchAccountOpen(false);
+        window.location.reload();
+      } finally {
+        setIsSwitchingAccount(false);
+      }
+      return;
+    }
+
     const normalizedUserId = Number(targetUserId);
     if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
       alert(`Invalid target user id: ${String(targetUserId)}`);
@@ -226,11 +291,11 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
         </p>
 
         <h1 className="mt-2 text-[30px] font-semibold text-[#3d2d22]">
-          个人设置
+          Profile Settings
         </h1>
 
         <p className="mt-2 text-sm leading-6 text-[#8b705d]">
-          管理当前账号、家庭关系和小狗提醒方式。
+          Manage your current account, family members, and pet preferences.
         </p>
 
         <section className="mt-6 rounded-[30px] border border-white/80 bg-white/86 p-5 shadow-[0_14px_30px_rgba(84,62,44,0.08)]">
@@ -245,10 +310,10 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
 
             <div className="min-w-0 flex-1">
               <p className="text-lg font-semibold text-[#463326]">
-                {currentMember?.name ?? "我"}
+                {currentMember?.name ?? "Me"}
               </p>
               <p className="mt-1 text-sm text-[#8b705d]">
-                当前绑定宠物：{currentPet.name}
+                Current pet: {currentPet.name}
               </p>
             </div>
 
@@ -259,58 +324,18 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
             onClick={() => setIsSwitchAccountOpen(true)}
             className="mt-4 w-full rounded-[16px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-2 text-sm font-medium text-[#6d5645]"
           >
-            切换账号（测试）
+            Switch account
           </button>
-        </section>
-
-        <section className="mt-5 space-y-3">
-          {[
-            {
-              icon: Dog,
-              title: "家庭成员",
-              desc: isLoadingMembers
-                ? "正在从数据库读取家庭成员"
-                : `数据库中已连接 ${dbFamilyMembers.length} 位家庭成员`,
-            },
-            {
-              icon: Bell,
-              title: "通知提醒",
-              desc: "上传新图片后提醒首页狗狗同步更新",
-            },
-            {
-              icon: ShieldCheck,
-              title: "隐私设置",
-              desc: "图片按个人相册独立展示，仅显示上传时间",
-            },
-          ].map((item) => (
-            <article
-              key={item.title}
-              className="rounded-[28px] border border-white/80 bg-white/80 px-5 py-4 shadow-[0_10px_24px_rgba(84,62,44,0.06)]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f7efe7] text-[#6d5645]">
-                  <item.icon className="h-5 w-5" />
-                </div>
-
-                <div>
-                  <p className="text-base font-semibold text-[#463326]">
-                    {item.title}
-                  </p>
-                  <p className="mt-1 text-sm text-[#8b705d]">{item.desc}</p>
-                </div>
-              </div>
-            </article>
-          ))}
         </section>
 
         <section className="mt-5 rounded-[28px] border border-white/80 bg-white/80 px-5 py-4 shadow-[0_10px_24px_rgba(84,62,44,0.06)]">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-base font-semibold text-[#463326]">
-                家庭成员列表
+                Family Members
               </p>
               <p className="mt-1 text-sm text-[#8b705d]">
-                从 MySQL 数据库读取
+                Synced from MySQL
               </p>
             </div>
 
@@ -327,7 +352,7 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
             {isLoadingMembers ? (
               <p className="text-sm text-[#8b705d]">Loading...</p>
             ) : dbFamilyMembers.length === 0 ? (
-              <p className="text-sm text-[#8b705d]">暂无家庭成员</p>
+              <p className="text-sm text-[#8b705d]">No family members yet.</p>
             ) : (
               dbFamilyMembers.map((member) => {
                 const isProtectedMember =
@@ -381,10 +406,10 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-semibold text-[#463326]">
-                  添加家庭成员
+                  Add Family Member
                 </p>
                 <p className="mt-1 text-sm text-[#8b705d]">
-                  新成员会写入 MySQL 数据库。
+                  New members will be saved to MySQL.
                 </p>
               </div>
 
@@ -455,8 +480,8 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
           <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <p className="text-lg font-semibold text-[#463326]">切换当前登录账号</p>
-                <p className="mt-1 text-sm text-[#8b705d]">仅用于本地测试 CURRENT_USER。</p>
+                <p className="text-lg font-semibold text-[#463326]">Switch Account</p>
+                <p className="mt-1 text-sm text-[#8b705d]">Choose the account to use right now.</p>
               </div>
 
               <button
@@ -486,7 +511,7 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
                       <span className="block text-xs text-[#8b705d]">{member.email ?? "No email"}</span>
                     </span>
                     <span className="text-xs font-medium text-[#6d5645]">
-                      {isCurrent ? "当前" : isSwitchingAccount ? "切换中..." : "切换"}
+                      {isCurrent ? "Current" : isSwitchingAccount ? "Switching..." : "Switch"}
                     </span>
                   </button>
                 );

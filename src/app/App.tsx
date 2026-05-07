@@ -7,10 +7,14 @@ import { ProfilePage } from "./pages/profile-page";
 import { WeeklyEchoPage } from "./pages/weekly-echo-page";
 import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
-import { apiUrl } from "./lib/api";
+import { DEMO_MODE } from "./config";
 import {
-  type WeeklyRewardStats,
-} from "./data/weekly-rewards";
+  getDemoCurrentUser,
+  getDemoFamilyMembers,
+  getDemoPosts,
+} from "./lib/demo-store";
+import { normalizeFamilyMemberAvatar } from "./lib/member-avatar";
+import { apiUrl } from "./lib/api";
 import { AlbumEntry, FamilyMember, FamilyMemberId, TabKey } from "./types";
 
 type CurrentUser = {
@@ -22,11 +26,22 @@ type CurrentUser = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
-  const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(initialAlbumEntries);
-  const [dbFamilyMembers, setDbFamilyMembers] = useState<FamilyMember[]>(familyMembers);
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(
+    DEMO_MODE ? [] : initialAlbumEntries
+  );
+  const [dbFamilyMembers, setDbFamilyMembers] = useState<FamilyMember[]>(() =>
+    (DEMO_MODE ? getDemoFamilyMembers() : familyMembers).map((member) =>
+      normalizeFamilyMemberAvatar(member)
+    )
+  );
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() =>
+    DEMO_MODE ? getDemoCurrentUser() : null
+  );
   const [homeBubbleMessage, setHomeBubbleMessage] = useState("今天想让小狗帮你传什么话呢？");
   const [latestMePostEntry, setLatestMePostEntry] = useState<AlbumEntry | null>(null);
+
+  const normalizeFamilyMembers = (members: FamilyMember[]) =>
+    members.map((member) => normalizeFamilyMemberAvatar(member));
 
   const isCurrentUserMember = (member: FamilyMember, user: CurrentUser | null) => {
     if (!member || !user) return false;
@@ -38,11 +53,18 @@ export default function App() {
 
   useEffect(() => {
     const loadFamilyMembers = async () => {
+      if (DEMO_MODE) {
+        setDbFamilyMembers(normalizeFamilyMembers(getDemoFamilyMembers()));
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/family-members"));
         if (!response.ok) return;
         const data = await response.json().catch(() => []);
-        if (Array.isArray(data) && data.length) setDbFamilyMembers(data);
+        if (Array.isArray(data) && data.length) {
+          setDbFamilyMembers(normalizeFamilyMembers(data));
+        }
       } catch (error) {
         // fallback to local demo members
       }
@@ -52,6 +74,11 @@ export default function App() {
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
       try {
         const response = await fetch(apiUrl("/api/me"));
         if (!response.ok) throw new Error("Failed to fetch current user");
@@ -65,15 +92,20 @@ export default function App() {
     const refreshOnFocus = () => {
       void fetchCurrentUser();
     };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") {
         void fetchCurrentUser();
       }
     };
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, []);
@@ -83,11 +115,14 @@ export default function App() {
 
     const loadLatestMePost = async () => {
       try {
-        const response = await fetch(apiUrl("/api/posts"));
-        if (!response.ok) return;
-
-        const data = await response.json().catch(() => []);
-        const posts = Array.isArray(data) ? data : [];
+        const posts = DEMO_MODE
+          ? getDemoPosts()
+          : await (async () => {
+              const response = await fetch(apiUrl("/api/posts"));
+              if (!response.ok) return [];
+              const data = await response.json().catch(() => []);
+              return Array.isArray(data) ? data : [];
+            })();
         const fallbackCurrentMember = dbFamilyMembers[0] ?? null;
         const currentMember =
           dbFamilyMembers.find((member) => isCurrentUserMember(member, currentUser)) ??
@@ -141,30 +176,6 @@ export default function App() {
     return localLatestEntries;
   }, [albumEntries, latestMePostEntry, dbFamilyMembers]);
 
-  const weeklyAlbumEntries = useMemo(() => {
-    return albumEntries.filter((entry) => {
-      const parsed = new Date(entry.uploadedAt.replace(" ", "T"));
-      if (Number.isNaN(parsed.getTime())) return false;
-
-      const latestDate = new Date("2026-05-02T23:59:59");
-      const diffDays =
-        (latestDate.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24);
-      return diffDays <= 7;
-    });
-  }, [albumEntries]);
-
-  const weeklyStats = useMemo<WeeklyRewardStats>(() => {
-    return {
-      petMessages: weeklyAlbumEntries.filter((entry) => entry.dogMessage.trim()).length,
-      photoShares: weeklyAlbumEntries.length,
-      gentleReactions: weeklyAlbumEntries.filter((entry) => entry.reaction).length,
-      moodCheckIns: 3,
-      connectedDays: new Set(
-        weeklyAlbumEntries.map((entry) => entry.uploadedAt.split(" ")[0])
-      ).size,
-    };
-  }, [weeklyAlbumEntries]);
-
   const handleAlbumEntryCreate = (entry: AlbumEntry) => {
     setAlbumEntries((prev) => [entry, ...prev]);
     const fallbackCurrentMember = dbFamilyMembers[0] ?? null;
@@ -193,7 +204,7 @@ export default function App() {
   };
 
   const handleFamilyMembersChange = (members: FamilyMember[]) => {
-    setDbFamilyMembers(members);
+    setDbFamilyMembers(normalizeFamilyMembers(members));
   };
 
   const renderPage = () => {
@@ -222,13 +233,7 @@ export default function App() {
         return <JarPage familyMembers={dbFamilyMembers} />;
 
       case "echo":
-        return (
-          <WeeklyEchoPage
-            stats={weeklyStats}
-            weeklyAlbumEntries={weeklyAlbumEntries}
-            familyMembers={dbFamilyMembers}
-          />
-        );
+        return <WeeklyEchoPage />;
 
       case "profile":
         return (

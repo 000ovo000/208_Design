@@ -17,7 +17,10 @@ USE kinlight;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS weekly_echo_reward_claims;
+DROP TABLE IF EXISTS weekly_echo_reports;
 DROP TABLE IF EXISTS weekly_echo_summaries;
+DROP TABLE IF EXISTS post_reactions;
 DROP TABLE IF EXISTS pet_messages;
 DROP TABLE IF EXISTS care_messages;
 DROP TABLE IF EXISTS daily_drops;
@@ -102,6 +105,29 @@ CREATE TABLE posts (
   CONSTRAINT fk_posts_member_user
     FOREIGN KEY (family_member_id) REFERENCES users(id)
     ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================
+-- Album reactions
+-- =========================
+CREATE TABLE post_reactions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  post_id BIGINT NOT NULL,
+  family_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  reaction_type VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_post_reaction_user (post_id, user_id),
+  CONSTRAINT fk_post_reactions_post
+    FOREIGN KEY (post_id) REFERENCES posts(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_post_reactions_family
+    FOREIGN KEY (family_id) REFERENCES families(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_post_reactions_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================
@@ -223,20 +249,51 @@ CREATE TABLE daily_drops (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================
--- Weekly Echo summaries
+-- Weekly Echo reports
 -- =========================
-CREATE TABLE weekly_echo_summaries (
+CREATE TABLE weekly_echo_reports (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   family_id BIGINT NOT NULL,
-  week_start VARCHAR(10) NOT NULL,
-  subtitle VARCHAR(255) NOT NULL,
-  body TEXT NOT NULL,
-  source VARCHAR(30) NOT NULL DEFAULT 'ai',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_family_week (family_id, week_start),
-  CONSTRAINT fk_weekly_echo_family
+  week_start_date DATE NOT NULL,
+  week_end_date DATE NOT NULL,
+  generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  connected_days INT NOT NULL DEFAULT 0,
+  small_moments_count INT NOT NULL DEFAULT 0,
+  pet_messages_count INT NOT NULL DEFAULT 0,
+  photo_shares_count INT NOT NULL DEFAULT 0,
+  gentle_reactions_count INT NOT NULL DEFAULT 0,
+  mood_checkins_count INT NOT NULL DEFAULT 0,
+  featured_pet_message TEXT NULL,
+  unlocked_reward_id VARCHAR(100) NULL,
+  report_text TEXT NULL,
+  UNIQUE KEY uniq_family_week_range (family_id, week_start_date, week_end_date),
+  CONSTRAINT fk_weekly_echo_reports_family
     FOREIGN KEY (family_id) REFERENCES families(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================
+-- Weekly Echo reward claims
+-- =========================
+CREATE TABLE weekly_echo_reward_claims (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  report_id BIGINT NOT NULL,
+  family_id BIGINT NOT NULL,
+  claimed_by_user_id BIGINT NOT NULL,
+  reward_id VARCHAR(100) NOT NULL,
+  claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_weekly_echo_reward_claim (report_id, claimed_by_user_id),
+  KEY idx_weekly_echo_reward_claims_report (report_id),
+  KEY idx_weekly_echo_reward_claims_family (family_id, claimed_at),
+  KEY idx_weekly_echo_reward_claims_user (claimed_by_user_id, claimed_at),
+  CONSTRAINT fk_weekly_echo_reward_claims_report
+    FOREIGN KEY (report_id) REFERENCES weekly_echo_reports(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_weekly_echo_reward_claims_family
+    FOREIGN KEY (family_id) REFERENCES families(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_weekly_echo_reward_claims_user
+    FOREIGN KEY (claimed_by_user_id) REFERENCES users(id)
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -246,6 +303,8 @@ CREATE TABLE weekly_echo_summaries (
 CREATE INDEX idx_users_family_id ON users(family_id);
 CREATE INDEX idx_family_members_family_id ON family_members(family_id);
 CREATE INDEX idx_posts_family_created_at ON posts(family_id, created_at);
+CREATE INDEX idx_post_reactions_family_created ON post_reactions(family_id, created_at);
+CREATE INDEX idx_post_reactions_post ON post_reactions(post_id);
 CREATE INDEX idx_mood_entries_family_date ON mood_entries(family_id, entry_date);
 CREATE INDEX idx_mood_entries_visibility ON mood_entries(visibility);
 CREATE INDEX idx_pet_messages_receiver_read_created ON pet_messages(receiver_user_id, is_read, created_at);
@@ -292,13 +351,27 @@ INSERT INTO member_items (family_member_id, item_id, quantity) VALUES
   (2, 1, 1),
   (3, 1, 1);
 
+-- Weekly Echo mood seed data for the previous full week relative to
+-- 2026-05-07: 2026-04-26 to 2026-05-02.
+INSERT INTO mood_entries (user_id, family_id, mood, comment, entry_date, visibility) VALUES
+  (1, 1, 'anxious', 'Presentation week started and I felt a little tense.', '2026-04-26', 'full'),
+  (2, 1, 'calm', 'A quiet Sunday helped everything slow down.', '2026-04-26', 'soft'),
+  (1, 1, 'calm', 'Today felt steadier after class.', '2026-04-27', 'soft'),
+  (3, 1, 'happy', 'Dinner together made the day feel lighter.', '2026-04-28', 'full'),
+  (1, 1, 'tired', 'A long to-do list took most of my energy.', '2026-04-29', 'full'),
+  (2, 1, 'needQuiet', 'Needed a quieter evening than usual.', '2026-04-30', 'soft'),
+  (1, 1, 'happy', 'A small good thing happened and stayed with me.', '2026-05-01', 'full'),
+  (3, 1, 'homesick', 'Missed home a little after work today.', '2026-05-01', 'soft'),
+  (1, 1, 'calm', 'Saturday felt gentle and manageable.', '2026-05-02', 'soft');
+
 -- Make AUTO_INCREMENT continue after explicit seed IDs.
 ALTER TABLE families AUTO_INCREMENT = 2;
 ALTER TABLE users AUTO_INCREMENT = 6;
 ALTER TABLE family_members AUTO_INCREMENT = 6;
 ALTER TABLE items AUTO_INCREMENT = 11;
 ALTER TABLE posts AUTO_INCREMENT = 1;
-ALTER TABLE mood_entries AUTO_INCREMENT = 1;
+ALTER TABLE mood_entries AUTO_INCREMENT = 10;
 ALTER TABLE member_items AUTO_INCREMENT = 6;
 ALTER TABLE daily_drops AUTO_INCREMENT = 1;
-ALTER TABLE weekly_echo_summaries AUTO_INCREMENT = 1;
+ALTER TABLE weekly_echo_reports AUTO_INCREMENT = 1;
+ALTER TABLE weekly_echo_reward_claims AUTO_INCREMENT = 1;

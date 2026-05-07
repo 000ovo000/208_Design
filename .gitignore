@@ -3,6 +3,10 @@ dist/
 .env
 # macOS
 .DS_Store
+src/.DS_Store
+src/app/.DS_Store
 
 # local uploads
 backend/uploads/
+backend/.env
+cc4-reference/

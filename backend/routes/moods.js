@@ -5,6 +5,10 @@ const { getCurrentUserId } = require("../current-user");
 const router = express.Router();
 let moodSchemaReadyPromise = null;
 
+function isValidDateString(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
 async function resolveCurrentUser() {
   try {
     const [rows] = await db.query(
@@ -85,6 +89,27 @@ router.get("/", async (req, res) => {
   try {
     await ensureMoodsSchemaReady();
     const currentUser = await resolveCurrentUser();
+    const scope = String(req.query?.scope || "family").trim().toLowerCase() === "self" ? "self" : "family";
+    const startDate = isValidDateString(req.query?.startDate) ? String(req.query.startDate).trim() : null;
+    const endDate = isValidDateString(req.query?.endDate) ? String(req.query.endDate).trim() : null;
+    const whereClauses = ["mood_entries.family_id = ?"];
+    const params = [Number(currentUser.family_id)];
+
+    if (scope === "self") {
+      whereClauses.push("mood_entries.user_id = ?");
+      params.push(Number(currentUser.id));
+    }
+
+    if (startDate) {
+      whereClauses.push("mood_entries.entry_date >= ?");
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      whereClauses.push("mood_entries.entry_date <= ?");
+      params.push(endDate);
+    }
+
     const [rows] = await db.query(
       `
       SELECT 
@@ -99,32 +124,44 @@ router.get("/", async (req, res) => {
         mood_entries.created_at
       FROM mood_entries
       JOIN users ON mood_entries.user_id = users.id
-      WHERE mood_entries.family_id = ?
+      WHERE ${whereClauses.join(" AND ")}
       ORDER BY mood_entries.entry_date DESC
     `,
-      [Number(currentUser.family_id)]
+      params
     );
 
     const currentUserId = Number(currentUser.id);
-    const visibleRows = rows
-      .filter((row) => {
-        const ownerId = Number(row.user_id);
-        if (ownerId === currentUserId) return true;
-        const visibility = normalizeVisibility(row.visibility);
-        return visibility !== "private";
-      })
-      .map((row) => {
-        const ownerId = Number(row.user_id);
-        const visibility = normalizeVisibility(row.visibility);
-        const isOwner = ownerId === currentUserId;
-        const canViewComment = isOwner || visibility === "full";
+    const visibleRows =
+      scope === "self"
+        ? rows.map((row) => ({
+            ...row,
+            visibility: normalizeVisibility(row.visibility),
+          }))
+        : rows
+            .filter((row) => {
+              const ownerId = Number(row.user_id);
+              if (ownerId === currentUserId) return true;
+              const visibility = normalizeVisibility(row.visibility);
+              return visibility !== "private";
+            })
+            .map((row) => {
+              const ownerId = Number(row.user_id);
+              const visibility = normalizeVisibility(row.visibility);
+              const isOwner = ownerId === currentUserId;
+              const canViewComment = isOwner || visibility === "full";
 
-        return {
-          ...row,
-          visibility,
-          comment: canViewComment ? row.comment : null,
-        };
-      });
+              return {
+                ...row,
+                visibility,
+                comment: canViewComment ? row.comment : null,
+              };
+            });
+
+    console.log(
+      `[moods] scope=${scope} user=${Number(currentUser.id)} family=${Number(
+        currentUser.family_id
+      )} startDate=${startDate ?? "-"} endDate=${endDate ?? "-"} rows=${visibleRows.length}`
+    );
 
     res.json(visibleRows);
   } catch (error) {
@@ -165,6 +202,11 @@ router.post("/", async (req, res) => {
       id: result.insertId,
       visibility: normalizedVisibility,
     });
+    console.log(
+      `[moods] created id=${Number(result.insertId)} user=${Number(currentUser.id)} family=${Number(
+        currentUser.family_id
+      )} entry_date=${entry_date} visibility=${normalizedVisibility} mood=${mood}`
+    );
   } catch (error) {
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(409).json({

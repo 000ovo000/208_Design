@@ -69,6 +69,12 @@ router.post("/", async (req, res) => {
       });
     }
 
+    if (senderUserId === receiverUserId) {
+      return res.status(400).json({
+        error: "You cannot send a pet message to yourself.",
+      });
+    }
+
     const [result] = await db.query(
       `
       INSERT INTO pet_messages (
