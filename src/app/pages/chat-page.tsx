@@ -25,7 +25,6 @@ interface ChatPageProps {
   familyMembers: FamilyMember[];
   latestEntries: Record<FamilyMemberId, AlbumEntry | null>;
   bubbleMessage: string;
-  weeklyKeepsakes: WeeklyReward[];
 }
 
 type InventoryTab = "petSelection" | "food" | "toy";
@@ -92,10 +91,15 @@ type PetMessageComposerState = {
   error: string;
 } | null;
 
-type PetMessageViewerState = {
-  member: FamilyMember;
-  messages: PetMessage[];
-} | null;
+type SceneBubbleMessage = {
+  key: string;
+  text: string;
+  kind: "relay" | "moment";
+  messageId?: number | string;
+  senderUserId?: number | string;
+  createdAt?: string;
+  isUnread: boolean;
+};
 
 type VisualItem = {
   name: string;
@@ -111,6 +115,8 @@ type ScenePlacement = {
   durationMs: number | null;
   style?: CSSProperties;
 };
+
+type WeeklyRewardScenePlacement = Omit<ScenePlacement, "durationMs">;
 
 const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
   { key: "petSelection", label: "Change your pet", title: "Pet Collection", emoji: "🐾" },
@@ -212,6 +218,57 @@ const getScenePlacement = (item: DailyDrop): ScenePlacement => {
   }
 };
 
+const getWeeklyRewardScenePlacement = (
+  reward: WeeklyReward,
+  petSpecies: PetSpecies
+): WeeklyRewardScenePlacement => {
+  const base = {
+    imageClassName: "drop-shadow-[0_16px_20px_rgba(73,56,42,0.16)]",
+  };
+
+  switch (reward.id) {
+    case "pet-sofa1":
+    case "pet-sofa2":
+    case "pet-sofa3":
+    case "pet-sofa4":
+    case "pet-sofa5":
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-1/2 bottom-[-16px] z-0 flex -translate-x-1/2 items-end justify-center",
+        sizeClassName: "h-[108px] w-[170px]",
+      };
+    case "cat-climber":
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-[calc(50%-112px)] bottom-[18px] z-0 flex items-end justify-center",
+        sizeClassName: "h-[128px] w-[108px]",
+      };
+    case "cat-teaser":
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-[calc(50%+68px)] bottom-[112px] z-20 flex items-center justify-center",
+        sizeClassName: "h-[66px] w-[66px]",
+      };
+    case "carrot-toy":
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-[calc(50%+78px)] bottom-[6px] z-20 flex items-center justify-center",
+        sizeClassName: petSpecies === "dog" ? "h-[72px] w-[72px]" : "h-[60px] w-[60px]",
+      };
+    default:
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-1/2 bottom-[-8px] z-10 flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[88px] w-[120px]",
+      };
+  }
+};
+
 const SELECTED_PET_STORAGE_KEY = "selectedPetId";
 
 const getUserScopedPetKey = (userId: string | number) =>
@@ -302,6 +359,29 @@ function PlacedDailyDropSceneItem({
         imageClassName={placement.imageClassName}
         emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
         alt={drop.name}
+      />
+    </div>
+  );
+}
+
+function PlacedWeeklyRewardSceneItem({
+  reward,
+  petSpecies,
+}: {
+  reward: WeeklyReward;
+  petSpecies: PetSpecies;
+}) {
+  const placement = getWeeklyRewardScenePlacement(reward, petSpecies);
+
+  return (
+    <div className={placement.positionClassName} style={placement.style}>
+      <ItemIcon
+        item={reward}
+        source="sceneImage"
+        sizeClass={placement.sizeClassName}
+        imageClassName={placement.imageClassName}
+        emojiClassName="flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/62 leading-none shadow-[0_12px_24px_rgba(73,56,42,0.16)] backdrop-blur-sm"
+        alt={reward.name}
       />
     </div>
   );
@@ -453,7 +533,6 @@ export function ChatPage({
   familyMembers,
   latestEntries,
   bubbleMessage,
-  weeklyKeepsakes,
 }: ChatPageProps) {
   const {
     selectedPetId,
@@ -467,6 +546,11 @@ export function ChatPage({
     lastPlacedDailyDrop,
     placedDailyDrops,
     clearPlacedDailyDrop,
+    ownedWeeklyRewards,
+    activeWeeklyRewards,
+    useWeeklyRewardItem,
+    clearWeeklyRewardItem,
+    isWeeklyRewardActive,
   } = usePet();
 
   const [selectedFamilyDog, setSelectedFamilyDog] = useState<FamilyMemberId | null>(null);
@@ -490,17 +574,18 @@ export function ChatPage({
   const [latestAlbumPost, setLatestAlbumPost] = useState<Post | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [unreadCareMessages, setUnreadCareMessages] = useState<CareMessage[]>([]);
-  const [unreadPetMessages, setUnreadPetMessages] = useState<PetMessage[]>([]);
+  const [receivedPetMessages, setReceivedPetMessages] = useState<PetMessage[]>([]);
   const [bubbleAnimationTick, setBubbleAnimationTick] = useState(0);
   const [showMemberSwitcher, setShowMemberSwitcher] = useState(false);
   const [petMessageComposer, setPetMessageComposer] = useState<PetMessageComposerState>(null);
-  const [petMessageViewer, setPetMessageViewer] = useState<PetMessageViewerState>(null);
   const [isSendingPetMessage, setIsSendingPetMessage] = useState(false);
   const [isMarkingPetMessagesRead, setIsMarkingPetMessagesRead] = useState(false);
   const [hasClaimedDailyDropToday, setHasClaimedDailyDropToday] = useState(false);
   const [homeOwnerUserId, setHomeOwnerUserId] = useState<string | null>(null);
   const [debugDropToolsOpen, setDebugDropToolsOpen] = useState(false);
   const [debugBypassDailyDropClaim, setDebugBypassDailyDropClaim] = useState(false);
+  const [sceneBubbleMessages, setSceneBubbleMessages] = useState<SceneBubbleMessage[]>([]);
+  const [activeSceneBubbleKey, setActiveSceneBubbleKey] = useState<string | null>(null);
 
   const loadPosts = useCallback(async () => {
     try {
@@ -609,36 +694,167 @@ export function ChatPage({
         )[0] ?? null,
     [posts, selectedHomeMemberId, selectedMember]
   );
-  const selectedMemberLatestTextPost = useMemo(
-    () =>
-      posts
-        .filter((post) => (selectedMember ? isPostForMember(post, selectedMember) : false))
-        .sort(
-          (a, b) =>
-            new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime()
-        )[0] ?? null,
-    [posts, selectedHomeMemberId, selectedMember]
-  );
   const selectedHomePhotoUrl =
     selectedMemberLatestAlbumEntry?.imageUrl ||
     selectedMemberLatestPost?.media_url ||
     "";
-  const selectedBubble =
-    selectedMemberLatestTextPost?.content?.trim() ||
-    selectedMemberLatestAlbumEntry?.dogMessage?.trim() ||
-    (String(selectedHomeMemberId) === String(me?.id)
-      ? bubbleMessage
-      : "No message yet.");
   const activeCareMessage =
     isViewingOwnHome && unreadCareMessages.length > 0 ? unreadCareMessages[0] : null;
-  const displayedBubble = activeCareMessage?.message || selectedBubble;
   const showCareUnreadDot =
     Boolean(activeCareMessage) && unreadCareMessages.length > 1;
-  const unreadPetMessageSenders = useMemo(
-    () => new Set(unreadPetMessages.map((message) => String(message.sender_user_id))),
+
+  const getMemberLatestAlbumEntry = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      if (memberId == null) return null;
+      const entries = Object.values(latestEntries).filter(Boolean) as AlbumEntry[];
+      return (
+        entries
+          .filter(
+            (entry) => String(entry.memberId) === String(memberId) && Boolean(entry.imageUrl)
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.uploadedAt.replace(" ", "T")).getTime() -
+              new Date(a.uploadedAt.replace(" ", "T")).getTime()
+          )[0] ?? null
+      );
+    },
+    [latestEntries]
+  );
+
+  const getMemberLatestTextPost = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      if (memberId == null) return null;
+      const member = familyMembers.find((item) => String(item.id) === String(memberId));
+      return (
+        posts
+          .filter((post) => (member ? isPostForMember(post, member) : false))
+          .sort(
+            (a, b) =>
+              new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime()
+          )[0] ?? null
+      );
+    },
+    [familyMembers, posts]
+  );
+
+  const getDefaultMomentMessagesForSceneMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      const latestTextPost = getMemberLatestTextPost(memberId);
+      const latestAlbumEntry = getMemberLatestAlbumEntry(memberId);
+      const fallbackMoment =
+        String(memberId) === String(me?.id) ? bubbleMessage : "No message yet.";
+      const seen = new Set<string>();
+
+      return [
+        latestTextPost?.content?.trim() || "",
+        latestAlbumEntry?.dogMessage?.trim() || "",
+        fallbackMoment,
+      ]
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .filter((text) => {
+          if (seen.has(text)) return false;
+          seen.add(text);
+          return true;
+        })
+        .map<SceneBubbleMessage>((text, index) => ({
+          key: `moment-${String(memberId ?? "unknown")}-${index}-${text}`,
+          text,
+          kind: "moment",
+          isUnread: false,
+        }));
+    },
+    [bubbleMessage, getMemberLatestAlbumEntry, getMemberLatestTextPost, me?.id]
+  );
+
+  const getUnreadMessagesForCurrentUser = useCallback(
+    () => receivedPetMessages.filter((message) => !Boolean(message.is_read)),
+    [receivedPetMessages]
+  );
+
+  const unreadPetMessages = useMemo(
+    () => getUnreadMessagesForCurrentUser(),
+    [getUnreadMessagesForCurrentUser]
+  );
+
+  const hasUnreadMessagesForCurrentUser = unreadPetMessages.length > 0;
+
+  const getUnreadMessagesFromMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) =>
+      unreadPetMessages.filter(
+        (message) => String(message.sender_user_id) === String(memberId)
+      ),
     [unreadPetMessages]
   );
-  const hasUnreadPetMessages = unreadPetMessages.length > 0;
+
+  const hasUnreadFromMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) =>
+      getUnreadMessagesFromMember(memberId).length > 0,
+    [getUnreadMessagesFromMember]
+  );
+
+  const getBubbleMessagesForSceneMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      const unreadMessages = getUnreadMessagesFromMember(memberId).map<SceneBubbleMessage>(
+        (message) => ({
+          key: `relay-${message.id}`,
+          text: message.message,
+          kind: "relay",
+          messageId: message.id,
+          senderUserId: message.sender_user_id,
+          createdAt: message.created_at,
+          isUnread: true,
+        })
+      );
+      const readMessages = receivedPetMessages
+        .filter(
+          (message) =>
+            Boolean(message.is_read) &&
+            String(message.sender_user_id) === String(memberId)
+        )
+        .map<SceneBubbleMessage>((message) => ({
+          key: `relay-${message.id}`,
+          text: message.message,
+          kind: "relay",
+          messageId: message.id,
+          senderUserId: message.sender_user_id,
+          createdAt: message.created_at,
+          isUnread: false,
+        }));
+
+      return [
+        ...unreadMessages,
+        ...readMessages.filter(
+          (message) => !unreadMessages.some((unread) => unread.key === message.key)
+        ),
+        ...getDefaultMomentMessagesForSceneMember(memberId),
+      ];
+    },
+    [getDefaultMomentMessagesForSceneMember, getUnreadMessagesFromMember, receivedPetMessages]
+  );
+
+  const displayedBubbleMessage = useMemo(() => {
+    if (activeCareMessage) {
+      return {
+        key: `care-${activeCareMessage.id}`,
+        text: activeCareMessage.message,
+        kind: "moment" as const,
+        isUnread: false,
+      };
+    }
+
+    const activeMessage =
+      sceneBubbleMessages.find((message) => message.key === activeSceneBubbleKey) ??
+      sceneBubbleMessages[0] ??
+      null;
+
+    return activeMessage;
+  }, [activeCareMessage, activeSceneBubbleKey, sceneBubbleMessages]);
+
+  const displayedBubble = displayedBubbleMessage?.text || "No message yet.";
+  const showUnreadRelayBubbleDot =
+    !activeCareMessage && Boolean(displayedBubbleMessage?.isUnread);
 
   const availableDailyDrops = useMemo(() => {
     return getDailyDropsForPet(currentPet.species);
@@ -764,6 +980,36 @@ export function ChatPage({
   }, [orderedHomeMembers, currentMember, selectedHomeMemberId]);
 
   useEffect(() => {
+    const nextQueue = getBubbleMessagesForSceneMember(selectedHomeMember?.id);
+    setSceneBubbleMessages(nextQueue);
+    setActiveSceneBubbleKey(nextQueue[0]?.key ?? null);
+  }, [selectedHomeMember?.id]);
+
+  useEffect(() => {
+    if (!selectedHomeMember?.id) return;
+
+    const nextQueue = getBubbleMessagesForSceneMember(selectedHomeMember.id);
+    setSceneBubbleMessages((prev) => {
+      if (!prev.length) return nextQueue;
+
+      const nextByKey = new Map(nextQueue.map((message) => [message.key, message]));
+      const preserved = prev
+        .map((message) => nextByKey.get(message.key))
+        .filter((message): message is SceneBubbleMessage => Boolean(message));
+      const appended = nextQueue.filter(
+        (message) => !preserved.some((item) => item.key === message.key)
+      );
+      return [...preserved, ...appended];
+    });
+    setActiveSceneBubbleKey((current) => {
+      if (current && nextQueue.some((message) => message.key === current)) {
+        return current;
+      }
+      return nextQueue[0]?.key ?? null;
+    });
+  }, [getBubbleMessagesForSceneMember, receivedPetMessages, selectedHomeMember?.id]);
+
+  useEffect(() => {
     setTodayDrop((current) =>
       availableDailyDrops.some((drop) => drop.id === current.id)
         ? current
@@ -879,14 +1125,14 @@ export function ChatPage({
     }
   }, [currentUser?.id]);
 
-  const loadUnreadPetMessages = useCallback(async () => {
+  const loadPetMessages = useCallback(async () => {
     if (!currentUser?.id) {
-      setUnreadPetMessages([]);
+      setReceivedPetMessages([]);
       return;
     }
 
     try {
-      const response = await fetch(apiUrl("/api/pet-messages/unread"));
+      const response = await fetch(apiUrl("/api/pet-messages"));
       const data = await response.json().catch(() => []);
 
       if (!response.ok) {
@@ -894,7 +1140,7 @@ export function ChatPage({
         return;
       }
 
-      setUnreadPetMessages(Array.isArray(data) ? data : []);
+      setReceivedPetMessages(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to connect backend:", error);
     }
@@ -905,8 +1151,8 @@ export function ChatPage({
   }, [loadUnreadCareMessages]);
 
   useEffect(() => {
-    void loadUnreadPetMessages();
-  }, [loadUnreadPetMessages]);
+    void loadPetMessages();
+  }, [loadPetMessages]);
 
   useEffect(() => {
     const refreshOnVisible = () => {
@@ -934,14 +1180,14 @@ export function ChatPage({
   useEffect(() => {
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") {
-        void loadUnreadPetMessages();
+        void loadPetMessages();
       }
     };
     const refreshOnFocus = () => {
-      void loadUnreadPetMessages();
+      void loadPetMessages();
     };
     const onHomeDataUpdated = () => {
-      void loadUnreadPetMessages();
+      void loadPetMessages();
     };
 
     window.addEventListener("focus", refreshOnFocus);
@@ -952,7 +1198,7 @@ export function ChatPage({
       document.removeEventListener("visibilitychange", refreshOnVisible);
       window.removeEventListener("home-data-updated", onHomeDataUpdated);
     };
-  }, [loadUnreadPetMessages]);
+  }, [loadPetMessages]);
 
   const markPetMessagesAsRead = useCallback(
     async (messages: PetMessage[]) => {
@@ -969,10 +1215,15 @@ export function ChatPage({
           )
         );
 
-        setUnreadPetMessages((prev) =>
-          prev.filter(
-            (message) =>
-              !messages.some((target) => String(target.id) === String(message.id))
+        setReceivedPetMessages((prev) =>
+          prev.map((message) =>
+            messages.some((target) => String(target.id) === String(message.id))
+              ? {
+                  ...message,
+                  is_read: true,
+                  read_at: new Date().toISOString(),
+                }
+              : message
           )
         );
       } catch (error) {
@@ -984,28 +1235,42 @@ export function ChatPage({
     [isMarkingPetMessagesRead]
   );
 
+  const markMessageAsRead = useCallback(
+    async (messageId: number | string) => {
+      const targetMessage = receivedPetMessages.find(
+        (message) => String(message.id) === String(messageId) && !Boolean(message.is_read)
+      );
+      if (!targetMessage) return;
+
+      await markPetMessagesAsRead([targetMessage]);
+    },
+    [markPetMessagesAsRead, receivedPetMessages]
+  );
+
+  useEffect(() => {
+    if (
+      activeCareMessage ||
+      !displayedBubbleMessage?.isUnread ||
+      displayedBubbleMessage.kind !== "relay" ||
+      displayedBubbleMessage.messageId == null
+    ) {
+      return;
+    }
+
+    void markMessageAsRead(displayedBubbleMessage.messageId);
+  }, [activeCareMessage, displayedBubbleMessage, markMessageAsRead]);
+
   const handleOpenMemberScene = (member: FamilyMember) => {
     setSelectedHomeMemberId(member.id);
     setShowMemberSwitcher(false);
   };
 
   const handleOpenPetMessageAction = (member: FamilyMember) => {
-    const messages = unreadPetMessages.filter(
-      (message) => String(message.sender_user_id) === String(member.id)
-    );
-
-    if (messages.length > 0) {
-      setPetMessageViewer({ member, messages });
-      setPetMessageComposer(null);
-      return;
-    }
-
     setPetMessageComposer({
       member,
       text: "",
       error: "",
     });
-    setPetMessageViewer(null);
   };
 
   const handleSendPetMessage = async () => {
@@ -1042,6 +1307,7 @@ export function ChatPage({
       }
 
       setPetMessageComposer(null);
+      setPetFeedback(`Your message to ${petMessageComposer.member.name} is on the way.`);
       window.dispatchEvent(new Event("home-data-updated"));
     } catch (error) {
       console.error("Failed to send pet message:", error);
@@ -1053,17 +1319,18 @@ export function ChatPage({
     }
   };
 
-  const handleClosePetMessageViewer = async () => {
-    if (!petMessageViewer) return;
-    const messages = petMessageViewer.messages;
-    setPetMessageViewer(null);
-    await markPetMessagesAsRead(messages);
-  };
-
   const handleBubbleClick = async () => {
     setShowMemberSwitcher(false);
 
     if (!activeCareMessage) {
+      if (sceneBubbleMessages.length > 1) {
+        const currentIndex = Math.max(
+          0,
+          sceneBubbleMessages.findIndex((message) => message.key === activeSceneBubbleKey)
+        );
+        const nextIndex = (currentIndex + 1) % sceneBubbleMessages.length;
+        setActiveSceneBubbleKey(sceneBubbleMessages[nextIndex]?.key ?? null);
+      }
       setBubbleAnimationTick((current) => current + 1);
       return;
     }
@@ -1180,6 +1447,10 @@ export function ChatPage({
       ),
     [getDailyDropCount, localDailyDropInventory]
   );
+  const activeRoomDecor = useMemo(
+    () => (isViewingOwnHome ? activeWeeklyRewards : []),
+    [activeWeeklyRewards, isViewingOwnHome]
+  );
 
   const activeInventoryTitle = inventoryTabs.find(
     (item) => item.key === activeInventory
@@ -1291,6 +1562,25 @@ export function ChatPage({
     setActiveInventory(null);
   };
 
+  const useWeeklyReward = async (reward: WeeklyReward) => {
+    setShowMemberSwitcher(false);
+
+    if (isWeeklyRewardActive(reward.id)) {
+      const cleared = await clearWeeklyRewardItem(reward.id);
+      if (cleared) {
+        setPetFeedback(`${reward.name} was removed from the room scene.`);
+        setActiveInventory(null);
+      }
+      return;
+    }
+
+    const usedReward = await useWeeklyRewardItem(reward.id);
+    if (!usedReward) return;
+
+    setPetFeedback(`${usedReward.name} is now visible in Home.`);
+    setActiveInventory(null);
+  };
+
   const renderDropIcon = (drop: DailyDrop, sizeClass = "h-11 w-11") => {
     return <ItemIcon item={drop} sizeClass={sizeClass} />;
   };
@@ -1373,7 +1663,7 @@ export function ChatPage({
                 showMemberSwitcher ? "rotate-180" : ""
               }`}
             />
-            {hasUnreadPetMessages && (
+            {hasUnreadMessagesForCurrentUser && (
               <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#e76f51]" />
             )}
           </button>
@@ -1389,6 +1679,7 @@ export function ChatPage({
               <div className="space-y-1">
                 {orderedHomeMembers.map((member) => {
                   const isSelected = String(member.id) === String(selectedHomeMemberId);
+                  const showUnreadDot = hasUnreadFromMember(member.id);
                   return (
                     <div
                       key={member.id}
@@ -1414,7 +1705,10 @@ export function ChatPage({
                           </div>
                         </div>
                       </button>
-                      <div className="flex items-center gap-2">
+                      <div className="relative flex items-center gap-2">
+                        {showUnreadDot && (
+                          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#e76f51]" />
+                        )}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -1431,14 +1725,10 @@ export function ChatPage({
                             event.stopPropagation();
                             handleOpenPetMessageAction(member);
                           }}
-                          className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#fff1ea] text-[#c27c57]"
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#fff1ea] text-[#c27c57]"
                         >
                           <Send className="h-4 w-4" />
-                          {unreadPetMessageSenders.has(String(member.id)) && (
-                            <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[#e76f51]" />
-                          )}
                         </button>
-                        {isSelected && <div className="h-2 w-2 rounded-full bg-[#f2a07f]" />}
                       </div>
                     </div>
                   );
@@ -1662,9 +1952,9 @@ export function ChatPage({
                 className="absolute bottom-[calc(100%-32px)] left-1/2 z-10 w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white px-5 py-3 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
               >
                 <AnimatePresence mode="wait" initial={false}>
-                  {showCareUnreadDot ? (
+                  {showCareUnreadDot || showUnreadRelayBubbleDot ? (
                     <motion.span
-                      key="care-dot"
+                      key={showUnreadRelayBubbleDot ? "relay-dot" : "care-dot"}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
@@ -1690,6 +1980,14 @@ export function ChatPage({
 
                 <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white" />
               </motion.button>
+
+              {activeRoomDecor.map((reward) => (
+                <PlacedWeeklyRewardSceneItem
+                  key={reward.id}
+                  reward={reward}
+                  petSpecies={selectedHomePet.species}
+                />
+              ))}
 
               {displayedPlacedDailyDrops.map((drop) => {
                 const isLocalPlacedDrop = localPlacedDailyDrops.some(
@@ -1824,7 +2122,7 @@ export function ChatPage({
 
             {activeInventory === "toy" && (
               <div className="space-y-2">
-                {toyInventory.length === 0 && weeklyKeepsakes.length === 0 && (
+                {toyInventory.length === 0 && ownedWeeklyRewards.length === 0 && (
                   <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
                     No toys or care items yet. Collect a Daily Drop first.
                   </p>
@@ -1861,13 +2159,12 @@ export function ChatPage({
                   );
                 })}
 
-                {weeklyKeepsakes.map((keepsake) => (
+                {ownedWeeklyRewards.map((keepsake) => (
                   <button
                     key={keepsake.id}
                     type="button"
                     onClick={() => {
-                      setShowMemberSwitcher(false);
-                      setPetFeedback(`${keepsake.name} is now in the Toy Box.`);
+                      void useWeeklyReward(keepsake);
                     }}
                     className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
                   >
@@ -1883,7 +2180,7 @@ export function ChatPage({
                       </span>
                     </span>
                     <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                      Weekly
+                      {isWeeklyRewardActive(keepsake.id) ? "In room" : "Use"}
                     </span>
                   </button>
                 ))}
@@ -1959,52 +2256,6 @@ export function ChatPage({
         </div>
       )}
 
-      {petMessageViewer && (
-        <div className="absolute inset-0 z-[999] flex items-center justify-center bg-black/20 px-5">
-          <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-lg font-semibold text-[#463326]">
-                  Messages from {petMessageViewer.member.name}
-                </p>
-                <p className="mt-1 text-sm text-[#8b705d]">
-                  查看后这些未读消息会标记为已读。
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleClosePetMessageViewer()}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="max-h-[260px] space-y-3 overflow-y-auto">
-              {petMessageViewer.messages.map((message) => (
-                <div
-                  key={message.id}
-                  className="rounded-[18px] bg-[#f7efe7] px-4 py-3 text-sm leading-6 text-[#463326]"
-                >
-                  <p>{message.message}</p>
-                  <p className="mt-2 text-[11px] text-[#9a8573]">{message.created_at}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => void handleClosePetMessageViewer()}
-                disabled={isMarkingPetMessagesRead}
-                className="rounded-full bg-[#6d5645] px-4 py-2 text-sm font-medium text-white disabled:bg-[#c7b7aa]"
-              >
-                {isMarkingPetMessagesRead ? "Closing..." : "Close"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

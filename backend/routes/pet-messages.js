@@ -110,6 +110,37 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.get("/", async (req, res) => {
+  try {
+    await ensurePetMessagesSchemaReady();
+    const currentUser = await resolveCurrentUser();
+
+    const [rows] = await db.query(
+      `
+      SELECT
+        pet_messages.id,
+        pet_messages.sender_user_id,
+        pet_messages.receiver_user_id,
+        pet_messages.family_id,
+        pet_messages.message,
+        pet_messages.is_read,
+        pet_messages.created_at,
+        pet_messages.read_at,
+        sender.name AS sender_name
+      FROM pet_messages
+      JOIN users sender ON sender.id = pet_messages.sender_user_id
+      WHERE pet_messages.receiver_user_id = ?
+      ORDER BY pet_messages.created_at ASC, pet_messages.id ASC
+      `,
+      [Number(currentUser.id)]
+    );
+
+    return res.json(rows);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 router.get("/unread", async (req, res) => {
   try {
     await ensurePetMessagesSchemaReady();

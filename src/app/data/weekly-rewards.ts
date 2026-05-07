@@ -5,6 +5,7 @@ export type WeeklyRewardPetType = "cat" | "dog" | "both";
 export type WeeklyReward = {
   id: string;
   kind: WeeklyRewardKind;
+  category: "weekly-reward";
   name: string;
   emoji: string;
   image?: string;
@@ -20,6 +21,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "pet-sofa1",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Pet Sofa 1",
     emoji: "🛋️",
     image: "/images/weekly-reward/both/pet-sofa1.png",
@@ -32,6 +34,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "pet-sofa2",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Pet Sofa 2",
     emoji: "🛋️",
     image: "/images/weekly-reward/both/pet-sofa2.png",
@@ -44,6 +47,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "pet-sofa3",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Pet Sofa 3",
     emoji: "🛋️",
     image: "/images/weekly-reward/both/pet-sofa3.png",
@@ -56,6 +60,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "pet-sofa4",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Pet Sofa 4",
     emoji: "🛋️",
     image: "/images/weekly-reward/both/pet-sofa4.png",
@@ -68,6 +73,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "pet-sofa5",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Pet Sofa 5",
     emoji: "🛋️",
     image: "/images/weekly-reward/both/pet-sofa5.png",
@@ -82,10 +88,11 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "cat-climber",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Cat Climber",
     emoji: "🌳",
-    image: "/images/weekly-reward/cat/cat-climber.png",
-    sceneImage: "/images/weekly-reward/cat/cat-climber.png",
+    image: "/images/weekly-reward/cat/cat-climber2.png",
+    sceneImage: "/images/weekly-reward/cat/cat-climber2.png",
     petType: "cat",
     reason: "From a lively week of small family updates.",
     description: "A premium climbing item that makes the cat's room feel more playful.",
@@ -94,6 +101,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "cat-teaser",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Cat Teaser",
     emoji: "🪶",
     image: "/images/weekly-reward/cat/cat-teaser.png",
@@ -107,6 +115,7 @@ export const weeklyRewards: WeeklyReward[] = [
   {
     id: "carrot-toy",
     kind: "premium-toy",
+    category: "weekly-reward",
     name: "Carrot Toy",
     emoji: "🥕",
     image: "/images/weekly-reward/dog/carrot-toy.png",
@@ -129,6 +138,57 @@ export type WeeklyRewardStats = {
 export const getWeeklyRewardsForPet = (petType: Exclude<WeeklyRewardPetType, "both">) => {
   return weeklyRewards.filter((reward) => reward.petType === "both" || reward.petType === petType);
 };
+
+export const normalizeWeeklyRewardKey = (value: string | null | undefined) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+function buildWeeklyRewardAliases(reward: WeeklyReward) {
+  const aliases = new Set<string>([
+    reward.id,
+    reward.name,
+    reward.id.replace(/(\D)(\d+)$/, "$1-$2"),
+    reward.name.replace(/\s+/g, "-"),
+    reward.name.replace(/\s+/g, ""),
+  ]);
+
+  const sofaNumber = reward.name.match(/Pet Sofa\s*(\d+)/i)?.[1];
+  if (sofaNumber) {
+    aliases.add(`sofa${sofaNumber}`);
+    aliases.add(`toy-sofa-${sofaNumber}`);
+    aliases.add(`pet-sofa-${sofaNumber}`);
+  }
+
+  return Array.from(aliases)
+    .map((alias) => normalizeWeeklyRewardKey(alias))
+    .filter(Boolean);
+}
+
+const weeklyRewardAliasMap = new Map<string, WeeklyReward>();
+
+weeklyRewards.forEach((reward) => {
+  buildWeeklyRewardAliases(reward).forEach((alias) => {
+    weeklyRewardAliasMap.set(alias, reward);
+  });
+});
+
+export function findWeeklyRewardByItemIdentity(identity: {
+  id?: string | null;
+  name?: string | null;
+}) {
+  const keys = [identity.id, identity.name]
+    .map((value) => normalizeWeeklyRewardKey(value))
+    .filter(Boolean);
+
+  for (const key of keys) {
+    const reward = weeklyRewardAliasMap.get(key);
+    if (reward) return reward;
+  }
+
+  return null;
+}
 
 export function selectWeeklyReward(
   stats: WeeklyRewardStats,

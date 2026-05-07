@@ -9,8 +9,6 @@ import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
 import { apiUrl } from "./lib/api";
 import {
-  weeklyRewards,
-  type WeeklyReward,
   type WeeklyRewardStats,
 } from "./data/weekly-rewards";
 import { AlbumEntry, FamilyMember, FamilyMemberId, TabKey } from "./types";
@@ -27,7 +25,6 @@ export default function App() {
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(initialAlbumEntries);
   const [dbFamilyMembers, setDbFamilyMembers] = useState<FamilyMember[]>(familyMembers);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [weeklyKeepsakes, setWeeklyKeepsakes] = useState<WeeklyReward[]>([]);
   const [homeBubbleMessage, setHomeBubbleMessage] = useState("今天想让小狗帮你传什么话呢？");
   const [latestMePostEntry, setLatestMePostEntry] = useState<AlbumEntry | null>(null);
 
@@ -168,23 +165,6 @@ export default function App() {
     };
   }, [weeklyAlbumEntries]);
 
-  const definedWeeklyRewardIds = useMemo(
-    () => new Set(weeklyRewards.map((reward) => reward.id)),
-    []
-  );
-  const displayedWeeklyKeepsakes = useMemo(
-    () => weeklyKeepsakes.filter((reward) => definedWeeklyRewardIds.has(reward.id)),
-    [definedWeeklyRewardIds, weeklyKeepsakes]
-  );
-
-  const handleWeeklyKeepsakeAdd = (reward: WeeklyReward) => {
-    if (!definedWeeklyRewardIds.has(reward.id)) return;
-
-    setWeeklyKeepsakes((prev) =>
-      prev.some((item) => item.id === reward.id) ? prev : [...prev, reward]
-    );
-  };
-
   const handleAlbumEntryCreate = (entry: AlbumEntry) => {
     setAlbumEntries((prev) => [entry, ...prev]);
     const fallbackCurrentMember = dbFamilyMembers[0] ?? null;
@@ -224,7 +204,6 @@ export default function App() {
             familyMembers={dbFamilyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
-            weeklyKeepsakes={displayedWeeklyKeepsakes}
           />
         );
 
@@ -248,9 +227,6 @@ export default function App() {
             stats={weeklyStats}
             weeklyAlbumEntries={weeklyAlbumEntries}
             familyMembers={dbFamilyMembers}
-            weeklyKeepsakes={displayedWeeklyKeepsakes}
-            onAddKeepsake={handleWeeklyKeepsakeAdd}
-            addedKeepsakeIds={displayedWeeklyKeepsakes.map((item) => item.id)}
           />
         );
 
@@ -268,7 +244,6 @@ export default function App() {
             familyMembers={dbFamilyMembers}
             latestEntries={latestEntries}
             bubbleMessage={homeBubbleMessage}
-            weeklyKeepsakes={displayedWeeklyKeepsakes}
           />
         );
     }

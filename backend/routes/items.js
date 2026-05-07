@@ -18,6 +18,49 @@ const DAILY_DROP_SEEDS = [
   { name: "Plush Bear", category: "toy", icon: "🧸" },
 ];
 
+const WEEKLY_REWARD_SEEDS = [
+  {
+    name: "Pet Sofa 1",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/both/pet-sofa1.png",
+  },
+  {
+    name: "Pet Sofa 2",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/both/pet-sofa2.png",
+  },
+  {
+    name: "Pet Sofa 3",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/both/pet-sofa3.png",
+  },
+  {
+    name: "Pet Sofa 4",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/both/pet-sofa4.png",
+  },
+  {
+    name: "Pet Sofa 5",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/both/pet-sofa5.png",
+  },
+  {
+    name: "Cat Climber",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/cat/cat-climber2.png",
+  },
+  {
+    name: "Cat Teaser",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/cat/cat-teaser.png",
+  },
+  {
+    name: "Carrot Toy",
+    category: "weekly-reward",
+    icon: "/images/weekly-reward/dog/carrot-toy.png",
+  },
+];
+
 async function resolveCurrentUser() {
   try {
     const [rows] = await db.query(
@@ -95,7 +138,20 @@ async function ensureInventorySchemaReady() {
         )
       `);
 
-      for (const { name, category, icon } of DAILY_DROP_SEEDS) {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS member_active_items (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          family_member_id INT NOT NULL,
+          item_id INT NOT NULL,
+          slot VARCHAR(50) NOT NULL DEFAULT 'room-decor',
+          activated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_member_slot (family_member_id, slot),
+          INDEX idx_member_active_items_member (family_member_id),
+          INDEX idx_member_active_items_item (item_id)
+        )
+      `);
+
+      for (const { name, category, icon } of [...DAILY_DROP_SEEDS, ...WEEKLY_REWARD_SEEDS]) {
         await db.query(
           `
           INSERT INTO items (name, category, icon, price)
@@ -180,6 +236,35 @@ router.get("/my-items", async (req, res) => {
   }
 });
 
+router.get("/my-items/active", async (req, res) => {
+  try {
+    await ensureInventorySchemaReady();
+    const currentUser = await resolveCurrentUser();
+
+    const [rows] = await db.query(
+      `
+      SELECT
+        mai.id,
+        mai.item_id,
+        mai.slot,
+        mai.activated_at,
+        i.name,
+        i.category,
+        i.icon
+      FROM member_active_items mai
+      JOIN items i ON mai.item_id = i.id
+      WHERE mai.family_member_id = ?
+      ORDER BY mai.activated_at ASC, mai.id ASC
+      `,
+      [Number(currentUser.id)]
+    );
+
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/my-items", async (req, res) => {
   try {
     await ensureInventorySchemaReady();
@@ -244,6 +329,87 @@ router.patch("/my-items/use", async (req, res) => {
     }
 
     res.json({ message: "Item used.", item_id: itemId, quantity_used: quantity, remaining });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch("/my-items/active", async (req, res) => {
+  try {
+    await ensureInventorySchemaReady();
+    const currentUser = await resolveCurrentUser();
+    const itemId = Number(req.body?.item_id);
+    const active = req.body?.active !== false;
+    const slot = typeof req.body?.slot === "string" && req.body.slot.trim()
+      ? req.body.slot.trim()
+      : "room-decor";
+
+    if (!itemId) {
+      return res.status(400).json({ error: "item_id is required." });
+    }
+
+    if (!active) {
+      await db.query(
+        `
+        DELETE FROM member_active_items
+        WHERE family_member_id = ? AND item_id = ? AND slot = ?
+        `,
+        [Number(currentUser.id), itemId, slot]
+      );
+
+      return res.json({ message: "Item deactivated.", item_id: itemId, active: false, slot });
+    }
+
+    const [itemRows] = await db.query(
+      `
+      SELECT i.id
+      FROM items i
+      JOIN member_items mi ON mi.item_id = i.id
+      WHERE mi.family_member_id = ? AND i.id = ?
+      LIMIT 1
+      `,
+      [Number(currentUser.id), itemId]
+    );
+
+    if (itemRows.length === 0) {
+      return res.status(400).json({ error: "Item is not owned by the current user." });
+    }
+
+    await db.query(
+      `
+      INSERT INTO member_active_items (family_member_id, item_id, slot, activated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON DUPLICATE KEY UPDATE
+        item_id = VALUES(item_id),
+        activated_at = CURRENT_TIMESTAMP
+      `,
+      [Number(currentUser.id), itemId, slot]
+    );
+
+    const [rows] = await db.query(
+      `
+      SELECT
+        mai.id,
+        mai.item_id,
+        mai.slot,
+        mai.activated_at,
+        i.name,
+        i.category,
+        i.icon
+      FROM member_active_items mai
+      JOIN items i ON mai.item_id = i.id
+      WHERE mai.family_member_id = ? AND mai.slot = ?
+      LIMIT 1
+      `,
+      [Number(currentUser.id), slot]
+    );
+
+    res.json({
+      message: "Item activated.",
+      active: true,
+      slot,
+      item: rows[0] ?? null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
