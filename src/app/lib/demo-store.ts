@@ -1,4 +1,10 @@
 import { DEMO_MODE } from "../config";
+import { getAppNowDateTimeString } from "./app-date";
+import {
+  getDemoCareMessageText,
+  resolveDemoCareMessageType,
+  type DemoCareMessageType,
+} from "./care-message";
 import {
   demoAlbumPosts,
   demoCareMessages,
@@ -10,6 +16,7 @@ import {
   demoPetSelectionSeedByUser,
   demoWeeklyEchoSummary,
   type DemoAlbumPost,
+  type DemoAlbumReactionComment,
   type DemoCareMessage,
   type DemoCurrentUser,
   type DemoInventoryState,
@@ -26,7 +33,7 @@ const DEMO_PET_MESSAGES_KEY = "kinlight:demo:pet-messages";
 const DEMO_CARE_MESSAGES_KEY = "kinlight:demo:care-messages";
 const DEMO_REACTION_COMMENTS_KEY = "kinlight:demo:album-reaction-comments";
 
-export const DEMO_DATA_VERSION = "kinlight-seed-mood-2026-05-08-v2";
+export const DEMO_DATA_VERSION = "kinlight-demo-fixed-2026-05-08-inventory-dailydrop-echo-v2";
 
 function hasWindow() {
   return typeof window !== "undefined";
@@ -257,7 +264,7 @@ export function createDemoPost(input: {
   ensureDemoDataInitialized();
   const member = findDemoFamilyMember(input.userId);
   const avatar = getFamilyMemberAvatar(input.userId);
-  const createdAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const createdAt = getAppNowDateTimeString();
   const nextPost: DemoAlbumPost = {
     id: `demo-post-${Date.now()}`,
     user_id: member.user_id ?? member.id,
@@ -286,14 +293,41 @@ export function deleteDemoPost(postId: string) {
   ensureDemoDataInitialized();
   const nextPosts = getDemoPosts().filter((post) => String(post.id) !== String(postId));
   writeJson(DEMO_POSTS_KEY, nextPosts);
+
+  const nextReactionComments = readJson<Record<string, DemoAlbumReactionComment[]>>(
+    DEMO_REACTION_COMMENTS_KEY
+  );
+  if (nextReactionComments && typeof nextReactionComments === "object") {
+    delete nextReactionComments[String(postId)];
+    writeJson(DEMO_REACTION_COMMENTS_KEY, nextReactionComments);
+  }
 }
 
-export function updateDemoPostReaction(postId: string, reaction: AlbumReaction) {
+export function updateDemoPostReaction(
+  postId: string,
+  reaction: AlbumReaction,
+  reactionComments: DemoAlbumReactionComment[] = []
+) {
   ensureDemoDataInitialized();
+  const normalizedPostId = String(postId);
+  const nextReactionComments = Array.isArray(reactionComments) ? clone(reactionComments) : [];
   const nextPosts = getDemoPosts().map((post) =>
-    String(post.id) === String(postId) ? { ...post, reaction } : post
+    String(post.id) === normalizedPostId
+      ? {
+          ...post,
+          reaction,
+          reaction_comments: nextReactionComments,
+        }
+      : post
   );
   writeJson(DEMO_POSTS_KEY, nextPosts);
+
+  const storedReactionComments =
+    readJson<Record<string, DemoAlbumReactionComment[]>>(DEMO_REACTION_COMMENTS_KEY) ?? {};
+  writeJson(DEMO_REACTION_COMMENTS_KEY, {
+    ...storedReactionComments,
+    [normalizedPostId]: nextReactionComments,
+  });
 }
 
 export function getDemoMoodEntries(scope: "self" | "family", currentUserId?: FamilyMemberId | null) {
@@ -325,7 +359,7 @@ export function addDemoMoodEntry(input: {
     comment: input.comment?.trim() || "",
     visibility: input.visibility,
     entry_date: input.entryDate,
-    created_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+    created_at: getAppNowDateTimeString(),
   };
 
   const nextEntries = [nextEntry, ...seedArray(DEMO_MOOD_ENTRIES_KEY, demoMoodEntries)];
@@ -354,7 +388,7 @@ export function createDemoPetMessage(input: {
     family_id: Number(input.familyId ?? 1),
     message: input.message.trim(),
     is_read: false,
-    created_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+    created_at: getAppNowDateTimeString(),
     read_at: null,
     sender_name: getFamilyMemberName(input.senderUserId),
   };
@@ -367,7 +401,7 @@ export function createDemoPetMessage(input: {
 export function markDemoPetMessagesRead(messageIds: Array<string | number>) {
   ensureDemoDataInitialized();
   const ids = new Set(messageIds.map((id) => String(id)));
-  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const now = getAppNowDateTimeString();
   const nextMessages = seedArray(DEMO_PET_MESSAGES_KEY, demoPetMessages).map((message) =>
     ids.has(String(message.id))
       ? {
@@ -381,19 +415,36 @@ export function markDemoPetMessagesRead(messageIds: Array<string | number>) {
   return nextMessages;
 }
 
-function getCareMessageText(senderName: string, careType: string) {
-  if (careType === "tea") return `${senderName} sent a gentle check-in and a little tea break.`;
-  if (careType === "pet") return `${senderName} sent some quiet company for today.`;
-  return `${senderName} sent you a warm hug today.`;
-}
-
 export function getDemoCareMessages(receiverUserId: FamilyMemberId, unreadOnly = false) {
   ensureDemoDataInitialized();
   const messages = sortByCreatedAtDescending(seedArray(DEMO_CARE_MESSAGES_KEY, demoCareMessages)).filter(
     (message) => String(message.receiver_user_id) === String(receiverUserId)
   );
 
-  return unreadOnly ? messages.filter((message) => !Boolean(message.is_read)) : messages;
+  const normalizedMessages = messages.map((message) => {
+    const senderName = message.sender_name?.trim() || getFamilyMemberName(message.sender_user_id);
+    const messageType = resolveDemoCareMessageType({
+      careType: message.care_type,
+      messageType: message.message_type,
+      message: message.message,
+    });
+
+    return {
+      ...message,
+      sender_name: senderName,
+      message_type: messageType ?? undefined,
+      message: getDemoCareMessageText({
+        senderName,
+        careType: message.care_type,
+        messageType: message.message_type,
+        message: message.message,
+      }),
+    };
+  });
+
+  return unreadOnly
+    ? normalizedMessages.filter((message) => !Boolean(message.is_read))
+    : normalizedMessages;
 }
 
 export function createDemoCareMessage(input: {
@@ -402,18 +453,36 @@ export function createDemoCareMessage(input: {
   familyId?: number;
   senderName?: string;
   careType: string;
+  messageType?: DemoCareMessageType;
+  message?: string;
 }) {
   ensureDemoDataInitialized();
   const senderName = input.senderName?.trim() || getFamilyMemberName(input.senderUserId);
+  const messageType =
+    input.messageType ??
+    resolveDemoCareMessageType({
+      careType: input.careType,
+      message: input.message,
+    }) ??
+    "care";
   const nextMessage: DemoCareMessage = {
     id: `demo-care-message-${Date.now()}`,
     sender_user_id: String(input.senderUserId),
     receiver_user_id: String(input.receiverUserId),
     family_id: Number(input.familyId ?? 1),
     care_type: input.careType,
-    message: getCareMessageText(senderName, input.careType),
+    message_type: messageType,
+    message:
+      messageType === "custom"
+        ? input.message?.trim() || ""
+        : getDemoCareMessageText({
+            senderName,
+            careType: input.careType,
+            messageType,
+            message: input.message,
+          }),
     is_read: false,
-    created_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+    created_at: getAppNowDateTimeString(),
     read_at: null,
     sender_name: senderName,
   };
@@ -425,7 +494,7 @@ export function createDemoCareMessage(input: {
 
 export function markDemoCareMessageRead(messageId: string | number) {
   ensureDemoDataInitialized();
-  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const now = getAppNowDateTimeString();
   const nextMessages = seedArray(DEMO_CARE_MESSAGES_KEY, demoCareMessages).map((message) =>
     String(message.id) === String(messageId)
       ? {

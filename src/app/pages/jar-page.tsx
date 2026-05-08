@@ -4,6 +4,8 @@ import { MoodCalendar } from "../components/mood-calendar";
 import { usePet } from "../context/pet-context";
 import { DEMO_MODE } from "../config";
 import { apiUrl } from "../lib/api";
+import { getAppNowDateTimeString, getAppTodayParts } from "../lib/app-date";
+import type { DemoCareMessageType } from "../lib/care-message";
 import {
   addDemoMoodEntry,
   createDemoCareMessage,
@@ -63,6 +65,7 @@ type CandyEntry = {
   ownerId: FamilyMemberId;
   ownerName: string;
   ownerRoleKey: UserRole | null;
+  createdAt: string;
   monthKey: string;
   day: number;
   mood: MoodKey;
@@ -90,12 +93,7 @@ type CandyMessageDialogState = {
   candy: CandyEntry | null;
 };
 
-const DEMO_YEAR = 2026;
-const REAL_TODAY = new Date();
-const DEMO_TODAY_MONTH =
-  REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getMonth() + 1 : 5;
-const DEMO_TODAY_DAY =
-  REAL_TODAY.getFullYear() === DEMO_YEAR ? REAL_TODAY.getDate() : 1;
+const { year: TODAY_YEAR, month: TODAY_MONTH, day: TODAY_DAY } = getAppTodayParts();
 const LATEST_PARENT_INTERACTION_KEY = getScopedLatestParentInteractionStorageKey();
 const PARENT_INTERACTIONS_KEY = getScopedParentInteractionsStorageKey();
 
@@ -251,6 +249,8 @@ function createCandyEntry({
   ownerId,
   ownerName,
   ownerRoleKey,
+  createdAt,
+  year,
   month,
   day,
   mood,
@@ -263,6 +263,8 @@ function createCandyEntry({
   ownerId: FamilyMemberId;
   ownerName: string;
   ownerRoleKey: UserRole | null;
+  createdAt: string;
+  year: number;
   month: number;
   day: number;
   mood: MoodKey;
@@ -276,7 +278,8 @@ function createCandyEntry({
     ownerId,
     ownerName,
     ownerRoleKey,
-    monthKey: getMonthKey(DEMO_YEAR, month),
+    createdAt,
+    monthKey: getMonthKey(year, month),
     day,
     mood,
     color: moodColorMap[mood],
@@ -299,6 +302,64 @@ function buildRecordMapForOwnerMonth(
     }
   });
   return result;
+}
+
+function isSameCandyDay(
+  left: Pick<CandyEntry, "ownerId" | "monthKey" | "day">,
+  right: Pick<CandyEntry, "ownerId" | "monthKey" | "day">
+) {
+  return (
+    String(left.ownerId) === String(right.ownerId) &&
+    left.monthKey === right.monthKey &&
+    left.day === right.day
+  );
+}
+
+function mergeCandyEntries(baseEntries: CandyEntry[], optimisticEntries: CandyEntry[]) {
+  const nextEntries = [...baseEntries];
+
+  optimisticEntries.forEach((optimisticEntry) => {
+    const existingIndex = nextEntries.findIndex((entry) =>
+      isSameCandyDay(entry, optimisticEntry)
+    );
+
+    if (existingIndex >= 0) {
+      nextEntries[existingIndex] = optimisticEntry;
+      return;
+    }
+
+    nextEntries.push(optimisticEntry);
+  });
+
+  return nextEntries;
+}
+
+function pruneConfirmedCandyEntries(
+  optimisticEntries: CandyEntry[],
+  confirmedEntries: CandyEntry[]
+) {
+  return optimisticEntries.filter(
+    (optimisticEntry) =>
+      !confirmedEntries.some((confirmedEntry) =>
+        isSameCandyDay(optimisticEntry, confirmedEntry)
+      )
+  );
+}
+
+function mergeFetchedCandyEntries(currentEntries: CandyEntry[], fetchedEntries: CandyEntry[]) {
+  const nextEntries = [...fetchedEntries];
+
+  currentEntries.forEach((currentEntry) => {
+    const existsInFetched = fetchedEntries.some((fetchedEntry) =>
+      isSameCandyDay(fetchedEntry, currentEntry)
+    );
+
+    if (!existsInFetched) {
+      nextEntries.push(currentEntry);
+    }
+  });
+
+  return nextEntries;
 }
 
 function getMoodMapFromRecords(records: Record<number, CandyEntry>) {
@@ -351,42 +412,57 @@ function getPetState(moodMap: Record<number, MoodKey>, currentUser: UserRole) {
   return stateMap[latestMood];
 }
 
-function getRandomAvailableSlot(usedEntries: CandyEntry[]) {
-  const usedPositions = usedEntries.map((entry) => ({
-    x: parseFloat(entry.x),
-    y: parseFloat(entry.y),
-  }));
+function getCandyIdentity(entry: Pick<CandyEntry, "ownerId" | "monthKey" | "day">) {
+  return `${String(entry.ownerId)}:${entry.monthKey}:${entry.day}`;
+}
 
-  const minDistance = 8;
+function parseCandyCreatedAt(entry: Pick<CandyEntry, "createdAt" | "monthKey" | "day">) {
+  const createdAtTimestamp = new Date(entry.createdAt.replace(" ", "T")).getTime();
+  if (!Number.isNaN(createdAtTimestamp)) return createdAtTimestamp;
 
-  const validSlots = extraCandySlots.filter((slot) => {
-    const sx = parseFloat(slot.x);
-    const sy = parseFloat(slot.y);
+  const [year, month] = entry.monthKey.split("-").map(Number);
+  return new Date(year, month - 1, entry.day).getTime();
+}
 
-    const tooCloseToAdded = usedPositions.some((used) => {
-      const dx = sx - used.x;
-      const dy = sy - used.y;
-      return Math.sqrt(dx * dx + dy * dy) < minDistance;
-    });
+function compareCandyEntriesForSlotting(left: CandyEntry, right: CandyEntry) {
+  const createdAtDiff = parseCandyCreatedAt(left) - parseCandyCreatedAt(right);
+  if (createdAtDiff !== 0) return createdAtDiff;
 
-    return !tooCloseToAdded;
+  const monthKeyDiff = left.monthKey.localeCompare(right.monthKey);
+  if (monthKeyDiff !== 0) return monthKeyDiff;
+
+  const dayDiff = left.day - right.day;
+  if (dayDiff !== 0) return dayDiff;
+
+  const ownerDiff = String(left.ownerId).localeCompare(String(right.ownerId));
+  if (ownerDiff !== 0) return ownerDiff;
+
+  return left.id.localeCompare(right.id);
+}
+
+function assignStableCandySlots(entries: CandyEntry[]) {
+  const sortedEntries = [...entries].sort(compareCandyEntriesForSlotting);
+
+  return sortedEntries.map((entry, index) => {
+    const slot = extraCandySlots[index % extraCandySlots.length];
+
+    return {
+      ...entry,
+      color: moodColorMap[entry.mood],
+      x: slot.x,
+      y: slot.y,
+    };
   });
-
-  if (validSlots.length === 0) {
-    return extraCandySlots[Math.floor(Math.random() * extraCandySlots.length)];
-  }
-
-  return validSlots[Math.floor(Math.random() * validSlots.length)];
 }
 
 function getTodaySharedEntryForOwner(entries: CandyEntry[], ownerId: FamilyMemberId) {
-  const todayMonthKey = getMonthKey(DEMO_YEAR, DEMO_TODAY_MONTH);
+  const todayMonthKey = getMonthKey(TODAY_YEAR, TODAY_MONTH);
   return (
     entries.find(
       (entry) =>
         String(entry.ownerId) === String(ownerId) &&
         entry.monthKey === todayMonthKey &&
-        entry.day === DEMO_TODAY_DAY &&
+        entry.day === TODAY_DAY &&
         entry.shareMode !== "private"
     ) ?? null
   );
@@ -571,6 +647,14 @@ function getCareTypeFromReaction(reaction: Exclude<FamilyReaction, null>) {
   return "hug";
 }
 
+function getDemoMessageTypeFromReaction(
+  reaction: Exclude<FamilyReaction, null>
+): DemoCareMessageType {
+  if (reaction === "tea") return "care";
+  if (reaction === "pet") return "love";
+  return "hug";
+}
+
 function getParentInteractionMessage(fromName: string, interaction: ParentInteraction) {
   if (interaction === "love") return `${fromName} sent you some love today \u{1F497}`;
   if (interaction === "hug") return `${fromName} sent you a warm hug today \u{1F917}`;
@@ -660,43 +744,46 @@ function getOwnerFromDbUserName(userName: string): UserRole {
 
 function getMonthDayFromDbDate(dateValue: string) {
   const datePart = dateValue.slice(0, 10);
-  const [, month, day] = datePart.split("-").map(Number);
+  const [year, month, day] = datePart.split("-").map(Number);
 
   return {
+    year,
     month,
     day,
   };
 }
 
+function buildCandyEntryFromDbMoodEntry(dbEntry: DbMoodEntry) {
+  const mood = normalizeDbMoodToMoodKey(dbEntry.mood);
+  if (!mood) return null;
+
+  const { year, month, day } = getMonthDayFromDbDate(dbEntry.entry_date);
+  const ownerRoleKey = getUserRoleFromName(dbEntry.user_name);
+
+  return createCandyEntry({
+    id: `db-${dbEntry.id}`,
+    ownerId: dbEntry.user_id,
+    ownerName: dbEntry.user_name,
+    ownerRoleKey,
+    createdAt: dbEntry.created_at,
+    year,
+    month,
+    day,
+    mood,
+    note: dbEntry.comment ?? "",
+    shareMode:
+      dbEntry.visibility === "soft" || dbEntry.visibility === "full"
+        ? dbEntry.visibility
+        : "private",
+    x: "0%",
+    y: "0%",
+  });
+}
+
 function convertDbMoodEntriesToCandyEntries(dbEntries: DbMoodEntry[]): CandyEntry[] {
   return dbEntries
-    .map((entry) => ({
-      entry,
-      mood: normalizeDbMoodToMoodKey(entry.mood),
-    }))
-    .filter((item): item is { entry: DbMoodEntry; mood: MoodKey } => Boolean(item.mood))
-    .map(({ entry, mood }, index) => {
-      const { month, day } = getMonthDayFromDbDate(entry.entry_date);
-      const slot = extraCandySlots[index % extraCandySlots.length];
-      const ownerRoleKey = getUserRoleFromName(entry.user_name);
-
-      return createCandyEntry({
-        id: `db-${entry.id}`,
-        ownerId: entry.user_id,
-        ownerName: entry.user_name,
-        ownerRoleKey,
-        month,
-        day,
-        mood,
-        note: entry.comment ?? "",
-        shareMode:
-          entry.visibility === "soft" || entry.visibility === "full"
-            ? entry.visibility
-            : "private",
-        x: slot.x,
-        y: slot.y,
-      });
-    });
+    .map((entry) => buildCandyEntryFromDbMoodEntry(entry))
+    .filter((entry): entry is CandyEntry => Boolean(entry));
 }
 
 function buildMoodApiPath(scope: "self" | "family", startDate?: string, endDate?: string) {
@@ -1228,7 +1315,7 @@ function MainJarView({
           <div className="absolute right-[8px] top-[66px] z-[10] flex flex-col items-end gap-1.5 shrink-0">
             {canRecordMood && (
               <>
-                <div className="flex w-[78px] max-w-[23vw] flex-col items-center">
+                <div className="flex w-[78px] flex-col items-center">
                   <button
                     type="button"
                     aria-label="Care for someone"
@@ -1245,7 +1332,7 @@ function MainJarView({
                   </span>
                 </div>
 
-                <div className="flex w-[78px] max-w-[23vw] flex-col items-center">
+                <div className="flex w-[78px] flex-col items-center">
                   <button
                     type="button"
                     aria-label="See mood calendar"
@@ -1447,7 +1534,7 @@ export function JarPage({
   const { currentPet } = usePet();
   const [note, setNote] = useState("");
   const [realCurrentUser, setRealCurrentUser] = useState<CurrentUser | null>(null);
-  const [currentMonth, setCurrentMonth] = useState(DEMO_TODAY_MONTH);
+  const [currentMonth, setCurrentMonth] = useState(TODAY_MONTH);
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
   const [shareMode, setShareMode] = useState<ShareMode>("full");
   const [ownEntries, setOwnEntries] = useState<CandyEntry[]>([]);
@@ -1470,14 +1557,14 @@ export function JarPage({
 
   const [editor, setEditor] = useState<EditorState>({
     open: false,
-    month: DEMO_TODAY_MONTH,
+    month: TODAY_MONTH,
     day: null,
   });
 
   const [existingDayDialog, setExistingDayDialog] =
     useState<ExistingDayDialogState>({
       open: false,
-      month: DEMO_TODAY_MONTH,
+      month: TODAY_MONTH,
       day: null,
     });
 
@@ -1491,6 +1578,9 @@ export function JarPage({
   );
 
   const timersRef = useRef<number[]>([]);
+
+  const displayedOwnEntries = ownEntries;
+  const displayedFamilyVisibleEntries = familyVisibleEntries;
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
@@ -1573,8 +1663,10 @@ export function JarPage({
         getDemoMoodEntries("family", currentUserId) as DbMoodEntry[]
       );
 
-      setOwnEntries(nextOwnEntries);
-      setFamilyVisibleEntries(nextFamilyVisibleEntries);
+      setOwnEntries((prev) => mergeFetchedCandyEntries(prev, nextOwnEntries));
+      setFamilyVisibleEntries((prev) =>
+        mergeFetchedCandyEntries(prev, nextFamilyVisibleEntries)
+      );
       return;
     }
 
@@ -1595,8 +1687,6 @@ export function JarPage({
           ownData,
           familyData,
         });
-        setOwnEntries([]);
-        setFamilyVisibleEntries([]);
         return;
       }
 
@@ -1611,12 +1701,12 @@ export function JarPage({
         )}`
       );
 
-      setOwnEntries(nextOwnEntries);
-      setFamilyVisibleEntries(nextFamilyVisibleEntries);
+      setOwnEntries((prev) => mergeFetchedCandyEntries(prev, nextOwnEntries));
+      setFamilyVisibleEntries((prev) =>
+        mergeFetchedCandyEntries(prev, nextFamilyVisibleEntries)
+      );
     } catch (error) {
       console.error("Failed to connect backend:", error);
-      setOwnEntries([]);
-      setFamilyVisibleEntries([]);
     }
   };
 
@@ -1649,31 +1739,36 @@ export function JarPage({
     });
   };
 
-  const currentMonthKey = getMonthKey(DEMO_YEAR, currentMonth);
+  const currentMonthKey = getMonthKey(TODAY_YEAR, currentMonth);
   const currentProfile = profileMap[currentUser];
   const currentUserName = currentFamilyMember?.name ?? currentProfile.name;
   const ownRecordMap = useMemo(
-    () => buildRecordMapForOwnerMonth(ownEntries, currentUserMemberId ?? "me", currentMonthKey),
-    [ownEntries, currentUserMemberId, currentMonthKey]
+    () =>
+      buildRecordMapForOwnerMonth(
+        displayedOwnEntries,
+        currentUserMemberId ?? "me",
+        currentMonthKey
+      ),
+    [displayedOwnEntries, currentUserMemberId, currentMonthKey]
   );
   const ownMoodMap = useMemo(() => getMoodMapFromRecords(ownRecordMap), [ownRecordMap]);
 
   const editorDayLabel =
     editor.day !== null
-      ? `${monthNames[editor.month - 1]} ${editor.day}, ${DEMO_YEAR}`
+      ? `${monthNames[editor.month - 1]} ${editor.day}, ${TODAY_YEAR}`
       : "";
 
   const existingDayLabel =
     existingDayDialog.day !== null
-      ? `${monthNames[existingDayDialog.month - 1]} ${existingDayDialog.day}, ${DEMO_YEAR}`
+      ? `${monthNames[existingDayDialog.month - 1]} ${existingDayDialog.day}, ${TODAY_YEAR}`
       : "";
 
   const existingDayEntry =
     existingDayDialog.day !== null
       ? buildRecordMapForOwnerMonth(
-          ownEntries,
+          displayedOwnEntries,
           currentUserMemberId ?? "me",
-          getMonthKey(DEMO_YEAR, existingDayDialog.month)
+          getMonthKey(TODAY_YEAR, existingDayDialog.month)
         )[existingDayDialog.day] ?? null
       : null;
 
@@ -1705,9 +1800,9 @@ export function JarPage({
   const selectedCareTargetEntry = useMemo(
     () =>
       selectedCareTarget
-        ? getTodaySharedEntryForOwner(familyVisibleEntries, selectedCareTarget.id)
+        ? getTodaySharedEntryForOwner(displayedFamilyVisibleEntries, selectedCareTarget.id)
         : null,
-    [familyVisibleEntries, selectedCareTarget]
+    [displayedFamilyVisibleEntries, selectedCareTarget]
   );
 
   const currentRolePet = useMemo(
@@ -1749,6 +1844,7 @@ export function JarPage({
         familyId: Number(realCurrentUser?.family_id ?? 1),
         senderName: currentUserName,
         careType: getCareTypeFromReaction(reaction),
+        messageType: getDemoMessageTypeFromReaction(reaction),
       });
       window.dispatchEvent(new Event("home-data-updated"));
       return;
@@ -1778,8 +1874,11 @@ export function JarPage({
   };
 
   const visibleJarEntries = useMemo(
-    () => familyVisibleEntries,
-    [familyVisibleEntries]
+    () =>
+      assignStableCandySlots(
+        mergeCandyEntries(displayedFamilyVisibleEntries, displayedOwnEntries)
+      ),
+    [displayedFamilyVisibleEntries, displayedOwnEntries]
   );
 
   const isAnyOverlayOpen =
@@ -1791,7 +1890,7 @@ export function JarPage({
   const candyMessageLabel = candyMessageDialog.candy
     ? `${monthNames[Number(candyMessageDialog.candy.monthKey.split("-")[1]) - 1]} ${
         candyMessageDialog.candy.day
-      }, ${DEMO_YEAR}`
+      }, ${Number(candyMessageDialog.candy.monthKey.split("-")[0])}`
     : "";
 
   const clearTimers = () => {
@@ -1833,79 +1932,69 @@ export function JarPage({
     });
   }
 
-  function addCandyEntry({
-    month,
-    day,
-    mood,
-    note,
-    shareMode,
-    withDrop,
-  }: {
-    month: number;
-    day: number;
-    mood: MoodKey;
-    note: string;
-    shareMode: ShareMode;
-    withDrop: boolean;
-  }) {
-    const ownerId = currentUserMemberId ?? "me";
-    const ownerName = currentFamilyMember?.name ?? currentProfile.name;
-    const ownerRoleKey = currentUser;
-
-    const monthKey = getMonthKey(DEMO_YEAR, month);
-    const nextSlot = getRandomAvailableSlot(familyVisibleEntries);
-    if (!nextSlot) return;
-
-    const newEntry: CandyEntry = {
-      id: `${ownerId}-${monthKey}-${day}-${Date.now()}-${Math.random()}`,
-      ownerId,
-      ownerName,
-      ownerRoleKey,
-      monthKey,
-      day,
-      mood,
-      color: moodColorMap[mood],
-      x: nextSlot.x,
-      y: nextSlot.y,
-      note,
-      shareMode,
-    };
-
+  function addCandyEntry(newEntry: CandyEntry) {
     setFamilyReaction(null);
     setFamilyReactionTarget(null);
+
+    const projectedJarEntries = assignStableCandySlots(
+      mergeCandyEntries(visibleJarEntries, [newEntry])
+    );
+    const nextSlot =
+      projectedJarEntries.find((entry) => entry.id === newEntry.id) ?? newEntry;
 
     const addOrReplaceEntry = (prev: CandyEntry[]) => [
       ...prev.filter(
         (entry) =>
           !(
-            String(entry.ownerId) === String(ownerId) &&
-            entry.monthKey === monthKey &&
-            entry.day === day
+            String(entry.ownerId) === String(newEntry.ownerId) &&
+            entry.monthKey === newEntry.monthKey &&
+            entry.day === newEntry.day
           )
       ),
-      newEntry,
+      {
+        ...newEntry,
+        color: moodColorMap[newEntry.mood],
+      },
     ];
 
-    if (!withDrop) {
-      setOwnEntries(addOrReplaceEntry);
-      setFamilyVisibleEntries(addOrReplaceEntry);
-      return;
-    }
+    const addOrReplaceSharedEntry = (prev: CandyEntry[]) => {
+      const nextEntries = prev.filter(
+        (entry) =>
+          !(
+            String(entry.ownerId) === String(newEntry.ownerId) &&
+            entry.monthKey === newEntry.monthKey &&
+            entry.day === newEntry.day
+          )
+      );
+
+      return newEntry.shareMode === "private"
+        ? nextEntries
+        : [
+            ...nextEntries,
+            {
+              ...newEntry,
+              color: moodColorMap[newEntry.mood],
+            },
+          ];
+    };
 
     clearTimers();
-    setDroppingTarget(nextSlot);
+    setDroppingTarget({
+      x: nextSlot.x,
+      y: nextSlot.y,
+    });
 
     const t1 = window.setTimeout(() => {
       setLidOpen(true);
     }, 80);
 
     const t2 = window.setTimeout(() => {
-      setDroppingMood(mood);
+      setDroppingMood(newEntry.mood);
     }, 520);
 
     const t3 = window.setTimeout(() => {
       setOwnEntries(addOrReplaceEntry);
-      setFamilyVisibleEntries(addOrReplaceEntry);
+      setFamilyVisibleEntries(addOrReplaceSharedEntry);
     }, 1450);
 
     const t4 = window.setTimeout(() => {
@@ -1927,7 +2016,7 @@ export function JarPage({
 
     const familyId = Number(realCurrentUser?.family_id ?? 1);
 
-    const entryDate = `${DEMO_YEAR}-${String(editor.month).padStart(2, "0")}-${String(
+    const entryDate = `${TODAY_YEAR}-${String(editor.month).padStart(2, "0")}-${String(
       editor.day
     ).padStart(2, "0")}`;
 
@@ -1935,7 +2024,7 @@ export function JarPage({
       setIsSavingMood(true);
 
       if (DEMO_MODE) {
-        addDemoMoodEntry({
+        const createdEntry = addDemoMoodEntry({
           userId: realCurrentUser.id,
           familyId,
           mood: selectedMood,
@@ -1943,6 +2032,14 @@ export function JarPage({
           visibility: shareMode,
           entryDate,
         });
+
+        const nextCandyEntry = buildCandyEntryFromDbMoodEntry(createdEntry);
+        if (!nextCandyEntry) {
+          alert("Failed to create mood candy.");
+          return;
+        }
+
+        addCandyEntry(nextCandyEntry);
       } else {
         const response = await fetch(apiUrl("/api/moods"), {
           method: "POST",
@@ -1966,16 +2063,29 @@ export function JarPage({
           alert(result.error || "Failed to save mood.");
           return;
         }
+
+        const nextCandyEntry = buildCandyEntryFromDbMoodEntry({
+          id: result.id ?? `local-${realCurrentUser.id}-${entryDate}`,
+          user_id: realCurrentUser.id,
+          user_name: currentUserName,
+          mood: selectedMood,
+          comment: note,
+          visibility:
+            result.visibility === "soft" || result.visibility === "full"
+              ? result.visibility
+              : shareMode,
+          entry_date: entryDate,
+          created_at: getAppNowDateTimeString(),
+        });
+
+        if (!nextCandyEntry) {
+          alert("Failed to create mood candy.");
+          return;
+        }
+
+        addCandyEntry(nextCandyEntry);
       }
 
-      addCandyEntry({
-        month: editor.month,
-        day: editor.day,
-        mood: selectedMood,
-        note,
-        shareMode,
-        withDrop: true,
-      });
       console.log(
         `[jar] saved mood user=${String(realCurrentUser.id)} date=${entryDate} mood=${selectedMood} visibility=${shareMode}`
       );
@@ -2014,23 +2124,23 @@ export function JarPage({
   };
 
   const handleTodayPlusClick = () => {
-    const todayMonthKey = getMonthKey(DEMO_YEAR, DEMO_TODAY_MONTH);
+    const todayMonthKey = getMonthKey(TODAY_YEAR, TODAY_MONTH);
     const todayOwnMap = buildRecordMapForOwnerMonth(
-      ownEntries,
+      displayedOwnEntries,
       currentUserMemberId ?? "me",
       todayMonthKey
     );
-    const hasTodayRecord = Boolean(todayOwnMap[DEMO_TODAY_DAY]);
+    const hasTodayRecord = Boolean(todayOwnMap[TODAY_DAY]);
 
     if (!hasTodayRecord) {
-      openNewRecordEditor(DEMO_TODAY_DAY, DEMO_TODAY_MONTH);
+      openNewRecordEditor(TODAY_DAY, TODAY_MONTH);
       return;
     }
 
     setExistingDayDialog({
       open: true,
-      month: DEMO_TODAY_MONTH,
-      day: DEMO_TODAY_DAY,
+      month: TODAY_MONTH,
+      day: TODAY_DAY,
     });
   };
 
@@ -2172,7 +2282,7 @@ export function JarPage({
                       </p>
                     </div>
                     <MoodCalendar
-                      year={DEMO_YEAR}
+                      year={TODAY_YEAR}
                       month={currentMonth}
                       moodMap={ownMoodMap}
                       onPrev={() => setCurrentMonth(Math.max(1, currentMonth - 1))}

@@ -203,6 +203,7 @@ export function WeeklyEchoPage() {
   const [echoSummaryStatus, setEchoSummaryStatus] = useState<"loading" | "ready" | "error">("loading");
   const [echoSummaryError, setEchoSummaryError] = useState("");
   const [isAddingReward, setIsAddingReward] = useState(false);
+  const [demoRefreshToken, setDemoRefreshToken] = useState(0);
 
   const weeklyKeepsake = useMemo(
     () =>
@@ -305,6 +306,19 @@ export function WeeklyEchoPage() {
       : demoWeeklyDropCategorySummaries;
 
   useEffect(() => {
+    if (!DEMO_MODE) return;
+
+    const handleDemoUserChanged = () => {
+      setDemoRefreshToken((current) => current + 1);
+    };
+
+    window.addEventListener("demo-user-changed", handleDemoUserChanged);
+    return () => {
+      window.removeEventListener("demo-user-changed", handleDemoUserChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     let ignore = false;
 
     async function loadReport(refresh = false) {
@@ -357,7 +371,7 @@ export function WeeklyEchoPage() {
       ignore = true;
       window.removeEventListener("moods-updated", handleMoodUpdated);
     };
-  }, []);
+  }, [demoRefreshToken]);
 
   useEffect(() => {
     let ignore = false;
@@ -424,7 +438,7 @@ export function WeeklyEchoPage() {
     return () => {
       ignore = true;
     };
-  }, [fallbackStats]);
+  }, [demoRefreshToken, fallbackStats]);
 
   useEffect(() => {
     if (report?.rewardClaimed) {
@@ -560,376 +574,386 @@ export function WeeklyEchoPage() {
 
   if (scene === "gift") {
     return (
-      <div className="relative min-h-full overflow-y-auto bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] px-5 pb-32 pt-5 text-[#4b3528]">
-        <button
-          type="button"
-          onClick={() => {
-            setScene("boards");
-            setGiftRevealStage(report?.rewardClaimed ? "revealed" : "closed");
-          }}
-          className="mb-4 flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-[#8d684d] shadow-sm"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Weekly Echo
-        </button>
+      <div className="relative h-full overflow-hidden bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] text-[#4b3528]">
+        <div className="flex h-full min-h-0 flex-col px-5 pb-24 pt-5">
+          <div className="shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setScene("boards");
+                setGiftRevealStage(report?.rewardClaimed ? "revealed" : "closed");
+              }}
+              className="mb-4 flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-[#8d684d] shadow-sm"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Weekly Echo
+            </button>
 
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className="text-center"
-        >
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#b8895f]">
-            Weekly Keepsake
-          </p>
-          <h1 className="mt-1 text-2xl font-bold text-[#3d2b22]">
-            {echoTitle}
-          </h1>
-          <p className="mx-auto mt-2 max-w-[300px] text-sm leading-5 text-[#8a6e5a]">
-            Your small family moments turned into a keepsake.
-          </p>
-        </motion.div>
-
-        <section className="relative mt-2 min-h-[430px] rounded-[32px] bg-[#fff2df] px-5 pb-6 pt-8 shadow-[0_18px_35px_rgba(128,93,63,0.16)]">
-          <div className="absolute left-5 top-0 flex items-start gap-3">
-            <img
-              src={currentPet.image}
-              alt={currentPet.name}
-              className="relative z-10 h-28 w-28 shrink-0 object-contain drop-shadow-[0_8px_12px_rgba(93,62,37,0.18)]"
-            />
-
-            <div className="mt-2 max-w-[160px] rounded-2xl bg-white px-3 py-2 text-left text-xs leading-4 text-[#7b604f] shadow-sm">
-              {giftBubbleText}
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+              className="text-center"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#b8895f]">
+                Weekly Keepsake
+              </p>
+              <h1 className="mt-1 text-2xl font-bold text-[#3d2b22]">
+                {echoTitle}
+              </h1>
+              <p className="mx-auto mt-2 max-w-[300px] text-sm leading-5 text-[#8a6e5a]">
+                Your small family moments turned into a keepsake.
+              </p>
+            </motion.div>
           </div>
 
-          <div className="flex min-h-[340px] flex-col items-center justify-start pt-8">
-            {!weeklyKeepsake ? (
-              <motion.div
-                initial={{ opacity: 0, y: 18, scale: 0.94 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.35 }}
-                className="mt-20 w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
-              >
-                <p className="text-sm leading-6 text-[#8a6e5a]">
-                  No weekly keepsake was unlocked for this report.
-                </p>
-              </motion.div>
-            ) : giftRevealStage !== "revealed" ? (
-              <motion.button
-                type="button"
-                onClick={handleOpenGift}
-                disabled={giftRevealStage !== "closed" || Boolean(report?.rewardClaimed)}
-                whileTap={giftRevealStage === "closed" ? { scale: 0.96 } : undefined}
-                className={`mt-16 flex flex-col items-center disabled:cursor-default ${
-                  giftRevealStage === "closed" || giftRevealStage === "shaking"
-                    ? "translate-y-[48px]"
-                    : ""
-                }`}
-              >
-                <motion.img
-                  key={giftRevealStage === "open" ? "open-box" : "closed-box"}
-                  src={
-                    giftRevealStage === "open"
-                      ? "/images/weekly-echo/gift-box-open.png"
-                      : "/images/weekly-echo/gift-box-closed.png"
-                  }
-                  alt={
-                    giftRevealStage === "open"
-                      ? "Opened weekly gift box"
-                      : "Closed weekly gift box"
-                  }
-                  className={`object-contain drop-shadow-[0_14px_20px_rgba(128,93,63,0.2)] ${
-                    giftRevealStage === "open" ? "w-52" : "w-44"
-                  } ${giftRevealStage === "open" ? "-translate-y-[24px]" : ""}`}
-                  animate={
-                    giftRevealStage === "shaking"
-                      ? {
-                          rotate: [0, -4, 4, -4, 4, 0],
-                          scale: [1, 1.04, 1.03, 1.04, 1],
-                        }
-                      : giftRevealStage === "closed"
-                        ? { y: [0, -4, 0] }
-                        : { opacity: [0, 1], scale: [0.96, 1] }
-                  }
-                  transition={
-                    giftRevealStage === "closed"
-                      ? { duration: 1.4, repeat: Infinity }
-                      : { duration: 0.65 }
-                  }
+          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto pb-6">
+            <section className="relative mt-2 min-h-[430px] rounded-[32px] bg-[#fff2df] px-5 pb-6 pt-8 shadow-[0_18px_35px_rgba(128,93,63,0.16)]">
+              <div className="absolute left-5 top-0 flex items-start gap-3">
+                <img
+                  src={currentPet.image}
+                  alt={currentPet.name}
+                  className="relative z-10 h-28 w-28 shrink-0 object-contain drop-shadow-[0_8px_12px_rgba(93,62,37,0.18)]"
                 />
 
-                <p
-                  className={`mt-4 rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-[#8b6042] shadow-sm ${
-                    giftRevealStage === "open" ? "translate-y-[48px]" : ""
-                  }`}
-                >
-                  {giftRevealStage === "closed"
-                    ? "Tap to open"
-                    : giftRevealStage === "shaking"
-                      ? "Opening..."
-                      : "Gift opened"}
-                </p>
-              </motion.button>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 18, scale: 0.94 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.35 }}
-                className="w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
-              >
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#fff1d6] text-4xl">
-                  <RewardIcon reward={weeklyKeepsake} />
+                <div className="mt-2 max-w-[160px] rounded-2xl bg-white px-3 py-2 text-left text-xs leading-4 text-[#7b604f] shadow-sm">
+                  {giftBubbleText}
                 </div>
+              </div>
 
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
-                  You unlocked
-                </p>
+              <div className="flex min-h-[340px] flex-col items-center justify-start pt-8">
+                {!weeklyKeepsake ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 18, scale: 0.94 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.35 }}
+                    className="mt-20 w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
+                  >
+                    <p className="text-sm leading-6 text-[#8a6e5a]">
+                      No weekly keepsake was unlocked for this report.
+                    </p>
+                  </motion.div>
+                ) : giftRevealStage !== "revealed" ? (
+                  <motion.button
+                    type="button"
+                    onClick={handleOpenGift}
+                    disabled={giftRevealStage !== "closed" || Boolean(report?.rewardClaimed)}
+                    whileTap={giftRevealStage === "closed" ? { scale: 0.96 } : undefined}
+                    className={`mt-16 flex flex-col items-center disabled:cursor-default ${
+                      giftRevealStage === "closed" || giftRevealStage === "shaking"
+                        ? "translate-y-[48px]"
+                        : ""
+                    }`}
+                  >
+                    <motion.img
+                      key={giftRevealStage === "open" ? "open-box" : "closed-box"}
+                      src={
+                        giftRevealStage === "open"
+                          ? "/images/weekly-echo/gift-box-open.png"
+                          : "/images/weekly-echo/gift-box-closed.png"
+                      }
+                      alt={
+                        giftRevealStage === "open"
+                          ? "Opened weekly gift box"
+                          : "Closed weekly gift box"
+                      }
+                      className={`object-contain drop-shadow-[0_14px_20px_rgba(128,93,63,0.2)] ${
+                        giftRevealStage === "open" ? "w-52" : "w-44"
+                      } ${giftRevealStage === "open" ? "-translate-y-[24px]" : ""}`}
+                      animate={
+                        giftRevealStage === "shaking"
+                          ? {
+                              rotate: [0, -4, 4, -4, 4, 0],
+                              scale: [1, 1.04, 1.03, 1.04, 1],
+                            }
+                          : giftRevealStage === "closed"
+                            ? { y: [0, -4, 0] }
+                            : { opacity: [0, 1], scale: [0.96, 1] }
+                      }
+                      transition={
+                        giftRevealStage === "closed"
+                          ? { duration: 1.4, repeat: Infinity }
+                          : { duration: 0.65 }
+                      }
+                    />
 
-                <h2 className="mt-1 text-2xl font-bold text-[#3d2b22]">
-                  {weeklyKeepsake.name}
-                </h2>
+                    <p
+                      className={`mt-4 rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-[#8b6042] shadow-sm ${
+                        giftRevealStage === "open" ? "translate-y-[48px]" : ""
+                      }`}
+                    >
+                      {giftRevealStage === "closed"
+                        ? "Tap to open"
+                        : giftRevealStage === "shaking"
+                          ? "Opening..."
+                          : "Gift opened"}
+                    </p>
+                  </motion.button>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 18, scale: 0.94 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.35 }}
+                    className="w-full rounded-[28px] bg-white p-5 text-center shadow-[0_14px_28px_rgba(128,93,63,0.16)]"
+                  >
+                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#fff1d6] text-4xl">
+                      <RewardIcon reward={weeklyKeepsake} />
+                    </div>
 
-                <p className="mt-2 text-sm font-semibold text-[#8b6042]">
-                  {weeklyKeepsake.reason}
-                </p>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
+                      You unlocked
+                    </p>
 
-                <p className="mt-2 text-sm leading-6 text-[#8a6e5a]">
-                  {weeklyKeepsake.description}
-                </p>
+                    <h2 className="mt-1 text-2xl font-bold text-[#3d2b22]">
+                      {weeklyKeepsake.name}
+                    </h2>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleClaimReward();
-                  }}
-                  disabled={Boolean(report?.rewardClaimed) || isAddingReward}
-                  className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-bold shadow-sm transition ${
-                    report?.rewardClaimed
-                      ? "bg-[#ead8c8] text-[#8b6042]"
-                      : "bg-[#b98559] text-white"
-                  } disabled:cursor-default`}
-                >
-                  {report?.rewardClaimed
-                    ? "Already opened"
-                    : isAddingReward
-                      ? "Adding..."
-                      : "Add to Toy Box"}
-                </button>
-              </motion.div>
-            )}
+                    <p className="mt-2 text-sm font-semibold text-[#8b6042]">
+                      {weeklyKeepsake.reason}
+                    </p>
+
+                    <p className="mt-2 text-sm leading-6 text-[#8a6e5a]">
+                      {weeklyKeepsake.description}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleClaimReward();
+                      }}
+                      disabled={Boolean(report?.rewardClaimed) || isAddingReward}
+                      className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-bold shadow-sm transition ${
+                        report?.rewardClaimed
+                          ? "bg-[#ead8c8] text-[#8b6042]"
+                          : "bg-[#b98559] text-white"
+                      } disabled:cursor-default`}
+                    >
+                      {report?.rewardClaimed
+                        ? "Already opened"
+                        : isAddingReward
+                          ? "Adding..."
+                          : "Add to Toy Box"}
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-full overflow-hidden bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] px-5 pb-20 pt-4 text-[#4b3528]">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-        className="mb-4"
-      >
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#b8895f]">
-          Weekly Family Echo
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-[#3d2b22]">
-          {echoTitle}
-        </h1>
-        <p className="mt-1 text-sm leading-5 text-[#8a6e5a]">
-          Your pet keeps the small moments from this report and writes them on the board.
-        </p>
-      </motion.div>
+    <div className="relative h-full overflow-hidden bg-gradient-to-b from-[#fff7ed] via-[#fffaf4] to-[#f7efe5] text-[#4b3528]">
+      <div className="flex h-full min-h-0 flex-col px-5 pb-20 pt-4">
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="mb-4 shrink-0"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#b8895f]">
+            Weekly Family Echo
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-[#3d2b22]">
+            {echoTitle}
+          </h1>
+          <p className="mt-1 text-sm leading-5 text-[#8a6e5a]">
+            Your pet keeps the small moments from this report and writes them on the board.
+          </p>
+        </motion.div>
 
-      <section className="relative mt">
-        <div className="relative z-10 h-[450px] overflow-hidden rounded-[28px] border-[6px] border-[#9b6742] bg-[#28372f] p-3 shadow-[0_18px_35px_rgba(74,47,29,0.22)]">
-          <div
-            ref={boardRef}
-            onScroll={handleBoardScroll}
-            className="flex h-full snap-x snap-mandatory overflow-x-auto scroll-smooth rounded-[18px] bg-[#2f4338] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {pages.map((page) => (
-              <article
-                key={page.key}
-                className={`h-full min-w-full snap-center px-4 pt-2 text-[#fff8e8] ${
-                  page.key === "summary" ? "pb-6" : "pb-2"
-                }`}
+        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto pb-4">
+          <section className="relative">
+            <div className="relative z-10 h-[450px] overflow-hidden rounded-[28px] border-[6px] border-[#9b6742] bg-[#28372f] p-3 shadow-[0_18px_35px_rgba(74,47,29,0.22)]">
+              <div
+                ref={boardRef}
+                onScroll={handleBoardScroll}
+                className="flex h-full snap-x snap-mandatory overflow-x-auto scroll-smooth rounded-[18px] bg-[#2f4338] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
-                <p className="text-sm text-[#f9d98f]" style={chalkFontStyle}>
-                  {page.title}
-                </p>
+                {pages.map((page) => (
+                  <article
+                    key={page.key}
+                    className={`h-full min-w-full snap-center px-4 pt-2 text-[#fff8e8] ${
+                      page.key === "summary" ? "pb-6" : "pb-2"
+                    }`}
+                  >
+                    <p className="text-sm text-[#f9d98f]" style={chalkFontStyle}>
+                      {page.title}
+                    </p>
 
-                <h2
-                  className={`text-lg font-bold leading-tight text-white ${
-                    page.key === "keepsakes" ? "mt-1" : "mt-2"
-                  }`}
-                  style={chalkFontStyle}
-                >
-                  {page.subtitle}
-                </h2>
+                    <h2
+                      className={`text-lg font-bold leading-tight text-white ${
+                        page.key === "keepsakes" ? "mt-1" : "mt-2"
+                      }`}
+                      style={chalkFontStyle}
+                    >
+                      {page.subtitle}
+                    </h2>
 
-                <p
-                  className={`whitespace-pre-line text-[#f7efd9] ${
-                    page.key === "keepsakes"
-                      ? "mt-2 text-[13px] leading-4"
-                      : "mt-2 text-sm leading-5"
-                  }`}
-                  style={chalkFontStyle}
-                >
-                  {page.body}
-                </p>
+                    <p
+                      className={`whitespace-pre-line text-[#f7efd9] ${
+                        page.key === "keepsakes"
+                          ? "mt-2 text-[13px] leading-4"
+                          : "mt-2 text-sm leading-5"
+                      }`}
+                      style={chalkFontStyle}
+                    >
+                      {page.body}
+                    </p>
 
-                {page.key === "summary" && (
-                  <>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {weeklyStats.map((stat) => (
-                        <div
-                          key={stat.label}
-                          className="min-h-[58px] rounded-2xl border border-white/15 bg-white/10 px-2.5 py-2"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-base leading-none">{stat.icon}</span>
-                            <span
-                              className="text-base font-bold leading-none text-white"
-                              style={chalkFontStyle}
+                    {page.key === "summary" && (
+                      <>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {weeklyStats.map((stat) => (
+                            <div
+                              key={stat.label}
+                              className="min-h-[58px] rounded-2xl border border-white/15 bg-white/10 px-2.5 py-2"
                             >
-                              {stat.value}
-                            </span>
-                          </div>
-                          <div
-                            className="mt-2 text-[11px] leading-tight text-[#e7dcc0]"
-                            style={chalkFontStyle}
-                          >
-                            {stat.label}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {echoSummaryStatus === "loading" && (
-                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
-                        Writing this week's echo...
-                      </p>
-                    )}
-
-                    {echoSummaryStatus === "ready" && (
-                      <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
-                        Small moments made the week feel closer.
-                      </p>
-                    )}
-
-                    {(echoSummaryStatus === "error" || reportError) && (
-                      <p className="mt-2 text-xs text-[#ffd4c4]" style={chalkFontStyle}>
-                        {echoSummaryError || reportError}
-                      </p>
-                    )}
-                  </>
-                )}
-
-                {page.key === "moments" && (
-                  <div className="mt-3 space-y-2">
-                    {weeklyMoments.map((moment, index) => (
-                      <div
-                        key={moment}
-                        className="flex gap-3 text-sm text-[#fff6dc]"
-                        style={chalkFontStyle}
-                      >
-                        <span className="mt-1 h-5 w-5 rounded-full bg-[#f9d98f] text-center text-xs font-bold leading-5 text-[#2f4338]">
-                          {index + 1}
-                        </span>
-                        <span className="leading-6">{moment}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {page.key === "keepsakes" && (
-                  <div className="mt-3 space-y-2">
-                    {weeklyDropCategorySummaries.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-2">
-                        {weeklyDropCategorySummaries.map((summary) => (
-                          <div
-                            key={summary.key}
-                            className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2"
-                            style={chalkFontStyle}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-base font-bold leading-tight text-white">
-                                {summary.label} × {summary.count}
+                              <div className="flex items-center gap-2">
+                                <span className="text-base leading-none">{stat.icon}</span>
+                                <span
+                                  className="text-base font-bold leading-none text-white"
+                                  style={chalkFontStyle}
+                                >
+                                  {stat.value}
+                                </span>
                               </div>
-                              <Gift className="h-5 w-5 shrink-0 self-center translate-y-[8px] text-[#f9d98f]" />
+                              <div
+                                className="mt-2 text-[11px] leading-tight text-[#e7dcc0]"
+                                style={chalkFontStyle}
+                              >
+                                {stat.label}
+                              </div>
                             </div>
-                            <div className="mt-0.5 truncate text-[11px] leading-tight text-[#e7dcc0]">
-                              {summary.preview}
-                            </div>
+                          ))}
+                        </div>
+
+                        {echoSummaryStatus === "loading" && (
+                          <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
+                            Writing this week's echo...
+                          </p>
+                        )}
+
+                        {echoSummaryStatus === "ready" && (
+                          <p className="mt-2 text-xs text-[#f7efd9]" style={chalkFontStyle}>
+                            Small moments made the week feel closer.
+                          </p>
+                        )}
+
+                        {(echoSummaryStatus === "error" || reportError) && (
+                          <p className="mt-2 text-xs text-[#ffd4c4]" style={chalkFontStyle}>
+                            {echoSummaryError || reportError}
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    {page.key === "moments" && (
+                      <div className="mt-3 space-y-2">
+                        {weeklyMoments.map((moment, index) => (
+                          <div
+                            key={moment}
+                            className="flex gap-3 text-sm text-[#fff6dc]"
+                            style={chalkFontStyle}
+                          >
+                            <span className="mt-1 h-5 w-5 rounded-full bg-[#f9d98f] text-center text-xs font-bold leading-5 text-[#2f4338]">
+                              {index + 1}
+                            </span>
+                            <span className="leading-6">{moment}</span>
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <div
-                        className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs leading-4 text-[#e7dcc0]"
-                        style={chalkFontStyle}
-                      >
-                        No small surprises were collected this week yet.
-                      </div>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setScene("gift");
-                        setGiftRevealStage(report?.rewardClaimed ? "revealed" : "closed");
-                      }}
-                      disabled={!weeklyKeepsake}
-                      className="mt-2 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm disabled:cursor-default disabled:opacity-60"
-                    >
-                      {report?.rewardClaimed ? "View This Week's Keepsake" : "Reveal This Week's Keepsake"}
-                    </button>
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        </div>
+                    {page.key === "keepsakes" && (
+                      <div className="mt-3 space-y-2">
+                        {weeklyDropCategorySummaries.length > 0 ? (
+                          <div className="grid grid-cols-1 gap-2">
+                            {weeklyDropCategorySummaries.map((summary) => (
+                              <div
+                                key={summary.key}
+                                className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2"
+                                style={chalkFontStyle}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-base font-bold leading-tight text-white">
+                                    {summary.label} × {summary.count}
+                                  </div>
+                                  <Gift className="h-5 w-5 shrink-0 self-center translate-y-[8px] text-[#f9d98f]" />
+                                </div>
+                                <div className="mt-0.5 truncate text-[11px] leading-tight text-[#e7dcc0]">
+                                  {summary.preview}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div
+                            className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs leading-4 text-[#e7dcc0]"
+                            style={chalkFontStyle}
+                          >
+                            No small surprises were collected this week yet.
+                          </div>
+                        )}
 
-        <div className="mt-4 flex -translate-y-[3px] items-center justify-center gap-4">
-          <button
-            type="button"
-            onClick={() => scrollToPage(activePage - 1)}
-            className="rounded-full bg-white/80 p-2 text-[#8d684d] shadow-sm disabled:opacity-40"
-            disabled={activePage === 0}
-            aria-label="Previous board"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScene("gift");
+                            setGiftRevealStage(report?.rewardClaimed ? "revealed" : "closed");
+                          }}
+                          disabled={!weeklyKeepsake}
+                          className="mt-2 w-full rounded-2xl bg-[#f9d98f] px-4 py-3 text-sm font-bold text-[#2f4338] shadow-sm disabled:cursor-default disabled:opacity-60"
+                        >
+                          {report?.rewardClaimed ? "View This Week's Keepsake" : "Reveal This Week's Keepsake"}
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </div>
 
-          <div className="flex gap-2">
-            {pages.map((page, index) => (
+            <div className="mt-4 flex -translate-y-[3px] items-center justify-center gap-4">
               <button
-                key={page.key}
                 type="button"
-                onClick={() => scrollToPage(index)}
-                className={`h-2 rounded-full transition-all ${
-                  activePage === index ? "w-7 bg-[#b98559]" : "w-2 bg-[#d8c1ad]"
-                }`}
-                aria-label={`Go to board ${index + 1}`}
-              />
-            ))}
-          </div>
+                onClick={() => scrollToPage(activePage - 1)}
+                className="rounded-full bg-white/80 p-2 text-[#8d684d] shadow-sm disabled:opacity-40"
+                disabled={activePage === 0}
+                aria-label="Previous board"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
 
-          <button
-            type="button"
-            onClick={() => scrollToPage(activePage + 1)}
-            className="rounded-full bg-white/80 p-2 text-[#8d684d] shadow-sm disabled:opacity-40"
-            disabled={activePage === pages.length - 1}
-            aria-label="Next board"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
+              <div className="flex gap-2">
+                {pages.map((page, index) => (
+                  <button
+                    key={page.key}
+                    type="button"
+                    onClick={() => scrollToPage(index)}
+                    className={`h-2 rounded-full transition-all ${
+                      activePage === index ? "w-7 bg-[#b98559]" : "w-2 bg-[#d8c1ad]"
+                    }`}
+                    aria-label={`Go to board ${index + 1}`}
+                  />
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => scrollToPage(activePage + 1)}
+                className="rounded-full bg-white/80 p-2 text-[#8d684d] shadow-sm disabled:opacity-40"
+                disabled={activePage === pages.length - 1}
+                aria-label="Next board"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </div>
   );
 }

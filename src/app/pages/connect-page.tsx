@@ -15,6 +15,7 @@ import { usePet } from "../context/pet-context";
 import { DEMO_MODE } from "../config";
 import { getPetProfileImage, type PetItem } from "../data/pets";
 import { apiUrl } from "../lib/api";
+import { getAppNowDateTimeString } from "../lib/app-date";
 import {
   createDemoPost,
   deleteDemoPost,
@@ -174,14 +175,7 @@ function groupEntries(entries: AlbumEntry[]) {
 }
 
 function formatNow() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const day = `${now.getDate()}`.padStart(2, "0");
-  const hours = `${now.getHours()}`.padStart(2, "0");
-  const minutes = `${now.getMinutes()}`.padStart(2, "0");
-
-  return `${year}-${month}-${day} ${hours}:${minutes}`;
+  return getAppNowDateTimeString().slice(0, 16);
 }
 
 function readFileAsDataUrl(file: File) {
@@ -351,6 +345,7 @@ export function ConnectPage({
     useState<EntryReactionCommentMap>(readReactionComments);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const detailViewportRef = useRef<HTMLDivElement | null>(null);
 
   void onCreateEntry;
 
@@ -498,23 +493,13 @@ export function ConnectPage({
 
   useEffect(() => {
     onOverlayChange?.(
-      Boolean(
-        showUploadSheet ||
-          draft ||
-          showRangeMenu ||
-          openReactionEntryId ||
-          deleteMenu ||
-          pendingDeleteEntryId
-      )
+      Boolean(showUploadSheet || draft || pendingDeleteEntryId)
     );
     return () => onOverlayChange?.(false);
   }, [
-    deleteMenu,
     draft,
     onOverlayChange,
-    openReactionEntryId,
     pendingDeleteEntryId,
-    showRangeMenu,
     showUploadSheet,
   ]);
 
@@ -522,6 +507,33 @@ export function ConnectPage({
     setShowRangeMenu(false);
     setOpenReactionEntryId(null);
     setDeleteMenu(null);
+  };
+
+  const getDeleteMenuStyle = () => {
+    if (!deleteMenu) return undefined;
+
+    const viewport = detailViewportRef.current;
+    const menuWidth = 160;
+    const menuHeight = 80;
+    const gutter = 12;
+
+    if (!viewport) {
+      return {
+        left: deleteMenu.x,
+        top: deleteMenu.y,
+      };
+    }
+
+    return {
+      left: Math.max(
+        gutter,
+        Math.min(deleteMenu.x, viewport.clientWidth - menuWidth - gutter)
+      ),
+      top: Math.max(
+        gutter,
+        Math.min(deleteMenu.y, viewport.clientHeight - menuHeight - gutter)
+      ),
+    };
   };
 
   const getReactionCommentsForEntry = (entryId: string) =>
@@ -549,6 +561,20 @@ export function ConnectPage({
       { memberId, memberName, reaction },
     ];
 
+    if (DEMO_MODE) {
+      setDbPosts((current) =>
+        current.map((post) =>
+          String(post.id) === normalizedEntryId
+            ? {
+                ...post,
+                reaction,
+                reaction_comments: nextComments,
+              }
+            : post
+        )
+      );
+    }
+
     setReactionCommentsByEntryId((current) => {
       return {
         ...current,
@@ -562,12 +588,12 @@ export function ConnectPage({
       return;
     }
 
-    void (async () => {
-      if (DEMO_MODE) {
-        updateDemoPostReaction(normalizedEntryId, reaction);
-        return;
-      }
+    if (DEMO_MODE) {
+      updateDemoPostReaction(normalizedEntryId, reaction, nextComments);
+      return;
+    }
 
+    void (async () => {
       try {
         const response = await fetch(apiUrl(`/api/posts/${normalizedEntryId}/reaction`), {
           method: "PUT",
@@ -760,7 +786,8 @@ export function ConnectPage({
 
     return (
       <div
-        className="relative flex h-full flex-col bg-[#f5ede5]"
+        ref={detailViewportRef}
+        className="relative flex h-full flex-col overflow-hidden bg-[#f5ede5]"
         onClick={() => {
           if (deleteMenu) setDeleteMenu(null);
         }}
@@ -924,10 +951,11 @@ export function ConnectPage({
                     onContextMenu={(event) => {
                       if (!canDelete) return;
                       event.preventDefault();
+                      const rect = detailViewportRef.current?.getBoundingClientRect();
                       setDeleteMenu({
                         entryId: entry.id,
-                        x: event.clientX,
-                        y: event.clientY,
+                        x: rect ? event.clientX - rect.left : event.clientX,
+                        y: rect ? event.clientY - rect.top : event.clientY,
                       });
                       setOpenReactionEntryId(null);
                     }}
@@ -1022,15 +1050,12 @@ export function ConnectPage({
 
         {deleteMenu && (
           <div
-            className="fixed inset-0 z-40"
+            className="absolute inset-0 z-40"
             onClick={() => setDeleteMenu(null)}
           >
             <div
               className="absolute w-40 rounded-[18px] border border-[#eadbcd] bg-white p-1 shadow-[0_14px_30px_rgba(89,67,49,0.18)]"
-              style={{
-                left: Math.min(deleteMenu.x, window.innerWidth - 172),
-                top: Math.min(deleteMenu.y, window.innerHeight - 80),
-              }}
+              style={getDeleteMenuStyle()}
               onClick={(event) => event.stopPropagation()}
             >
               <button
@@ -1098,8 +1123,30 @@ export function ConnectPage({
         )}
 
         {showUploadSheet && isSelectedMemberCurrentUser && (
-          <div className="absolute inset-0 z-40 flex items-end bg-black/20 px-5 pb-6">
-            <div className="w-full rounded-[28px] bg-white p-4 shadow-2xl">
+          <div
+            className="absolute inset-0 z-50 flex items-end bg-black/20 px-5 pb-6"
+            onClick={() => setShowUploadSheet(false)}
+          >
+            <div
+              className="w-full rounded-[28px] bg-white p-4 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[#3f2f24]">Choose a photo</h2>
+                  <p className="mt-1 text-sm text-[#8b705d]">
+                    Pick a new image from your camera or library.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowUploadSheet(false)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f3e7dc] text-[#6d5645]"
+                  aria-label="Close upload options"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <label
                   htmlFor="album-camera-input"
@@ -1116,118 +1163,113 @@ export function ConnectPage({
                   <span className="text-sm font-semibold">Library</span>
                 </label>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowUploadSheet(false)}
-                className="mt-3 w-full rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm font-semibold text-[#745d4c]"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         )}
 
         {draft && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
-            <div className="max-h-full w-full max-w-md overflow-y-auto rounded-[30px] bg-[#fffaf5] p-5 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-[#3f2f24]">Confirm upload</h2>
-                  <p className="mt-1 text-sm text-[#8b705d]">
-                    Your own upload can still carry a pet note to the home page.
-                  </p>
+          <div className="absolute inset-0 z-50 overflow-y-auto bg-black/30 px-4 py-6">
+            <div className="flex min-h-full items-center justify-center">
+              <div className="max-h-full w-full max-w-md overflow-y-auto rounded-[30px] bg-[#fffaf5] p-5 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#3f2f24]">Confirm upload</h2>
+                    <p className="mt-1 text-sm text-[#8b705d]">
+                      Your own upload can still carry a pet note to the home page.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setDraft(null)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f3e7dc] text-[#6d5645]"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {draft.imageUrl ? (
+                  <div className="mb-4">
+                    <img
+                      src={draft.imageUrl}
+                      alt="Upload preview"
+                      className="max-h-[280px] w-full rounded-[24px] object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemoveDraftPhoto}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#f3e7dc] px-4 py-3 text-sm font-semibold text-[#7b604f]"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete photo
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mb-4 rounded-[24px] border border-dashed border-[#d8c3b1] bg-[#fff7f0] px-4 py-8 text-center text-sm text-[#9a7e69]">
+                    Photo removed. You can keep the note only, or choose another photo from Camera / Library.
+                  </div>
+                )}
+
+                <div className="rounded-[24px] border border-[#efdfd1] bg-white px-4 py-4">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="rounded-2xl bg-[#f7efe7] p-2">
+                      <img
+                        src={getPetProfileImage(currentPet)}
+                        alt={currentPet.name}
+                        className="h-10 w-10 object-contain"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-[#4f3c2e]">Pet note</p>
+                      <p className="text-xs text-[#9a7e69]">
+                        Example: Today felt good, so I want this note to appear on the home page.
+                      </p>
+                    </div>
+                  </div>
+
+                  <textarea
+                    value={draft.dogMessage}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, dogMessage: event.target.value } : current
+                      )
+                    }
+                    placeholder="Write the line you want the home pet to say"
+                    rows={3}
+                    className="w-full resize-none rounded-[20px] border border-[#ead8ca] bg-[#fffaf6] px-4 py-3 text-sm text-[#4f3c2e] outline-none placeholder:text-[#b59b89]"
+                  />
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {quickMessageTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() =>
+                          setDraft((current) =>
+                            current ? { ...current, dogMessage: tag } : current
+                          )
+                        }
+                        className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                          draft.dogMessage === tag
+                            ? "bg-[#6d5645] text-white"
+                            : "bg-[#f7efe7] text-[#7b604f]"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setDraft(null)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f3e7dc] text-[#6d5645]"
+                  onClick={handleSubmitDraft}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#6d5645] px-4 py-4 text-sm font-semibold text-white"
                 >
-                  <X className="h-5 w-5" />
+                  <Send className="h-4 w-4" />
+                  Save photo and note
                 </button>
               </div>
-
-              {draft.imageUrl ? (
-                <div className="mb-4">
-                  <img
-                    src={draft.imageUrl}
-                    alt="Upload preview"
-                    className="max-h-[280px] w-full rounded-[24px] object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleRemoveDraftPhoto}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#f3e7dc] px-4 py-3 text-sm font-semibold text-[#7b604f]"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete photo
-                  </button>
-                </div>
-              ) : (
-                <div className="mb-4 rounded-[24px] border border-dashed border-[#d8c3b1] bg-[#fff7f0] px-4 py-8 text-center text-sm text-[#9a7e69]">
-                  Photo removed. You can keep the note only, or choose another photo from Camera / Library.
-                </div>
-              )}
-
-              <div className="rounded-[24px] border border-[#efdfd1] bg-white px-4 py-4">
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="rounded-2xl bg-[#f7efe7] p-2">
-                    <img
-                      src={getPetProfileImage(currentPet)}
-                      alt={currentPet.name}
-                      className="h-10 w-10 object-contain"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#4f3c2e]">Pet note</p>
-                    <p className="text-xs text-[#9a7e69]">
-                      Example: Today felt good, so I want this note to appear on the home page.
-                    </p>
-                  </div>
-                </div>
-
-                <textarea
-                  value={draft.dogMessage}
-                  onChange={(event) =>
-                    setDraft((current) =>
-                      current ? { ...current, dogMessage: event.target.value } : current
-                    )
-                  }
-                  placeholder="Write the line you want the home pet to say"
-                  rows={3}
-                  className="w-full resize-none rounded-[20px] border border-[#ead8ca] bg-[#fffaf6] px-4 py-3 text-sm text-[#4f3c2e] outline-none placeholder:text-[#b59b89]"
-                />
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {quickMessageTags.map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() =>
-                        setDraft((current) =>
-                          current ? { ...current, dogMessage: tag } : current
-                        )
-                      }
-                      className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
-                        draft.dogMessage === tag
-                          ? "bg-[#6d5645] text-white"
-                          : "bg-[#f7efe7] text-[#7b604f]"
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSubmitDraft}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#6d5645] px-4 py-4 text-sm font-semibold text-white"
-              >
-                <Send className="h-4 w-4" />
-                Save photo and note
-              </button>
             </div>
           </div>
         )}
@@ -1236,7 +1278,7 @@ export function ConnectPage({
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#f5ede5] px-4 pb-24 pt-4">
+    <div className="relative flex h-full flex-col overflow-hidden bg-[#f5ede5] px-4 pb-24 pt-4">
       <div className="hide-scrollbar flex-1 overflow-y-auto">
         <div className="space-y-4">
           {familyMembers.map((member) => {

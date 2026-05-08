@@ -8,6 +8,7 @@ import { WeeklyEchoPage } from "./pages/weekly-echo-page";
 import { PetProvider } from "./context/pet-context";
 import { familyMembers, initialAlbumEntries } from "./data/family-data";
 import { DEMO_MODE } from "./config";
+import { getAppNowDateTimeString } from "./lib/app-date";
 import {
   getDemoCurrentUser,
   getDemoFamilyMembers,
@@ -26,6 +27,7 @@ type CurrentUser = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const [isBottomNavHidden, setIsBottomNavHidden] = useState(false);
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(
     DEMO_MODE ? [] : initialAlbumEntries
   );
@@ -37,7 +39,9 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() =>
     DEMO_MODE ? getDemoCurrentUser() : null
   );
-  const [homeBubbleMessage, setHomeBubbleMessage] = useState("今天想让小狗帮你传什么话呢？");
+  const [homeBubbleMessage, setHomeBubbleMessage] = useState(
+    "What would you like the puppy to pass along?"
+  );
   const [latestMePostEntry, setLatestMePostEntry] = useState<AlbumEntry | null>(null);
 
   const normalizeFamilyMembers = (members: FamilyMember[]) =>
@@ -138,7 +142,7 @@ export default function App() {
           id: `post-${mePost.id}`,
           memberId: String(mePost.family_member_id ?? mePost.user_id ?? ""),
           imageUrl: mePost.media_url || "/images/dog/profile/dog-white.png",
-          uploadedAt: mePost.created_at || new Date().toISOString().slice(0, 16).replace("T", " "),
+          uploadedAt: mePost.created_at || getAppNowDateTimeString(),
           dogMessage: mePost.content || "",
           reaction: null,
         };
@@ -184,7 +188,8 @@ export default function App() {
       fallbackCurrentMember;
     if (String(entry.memberId) === String(currentMember?.id)) {
       setHomeBubbleMessage(
-        entry.dogMessage.trim() || `${currentMember?.name ?? "当前成员"}的小狗有一张照片想给你看。`
+        entry.dogMessage.trim() ||
+          `${currentMember?.name ?? "Your family member"}'s puppy has a photo to share with you.`
       );
       setActiveTab("home");
     }
@@ -226,6 +231,7 @@ export default function App() {
             onCreateEntry={handleAlbumEntryCreate}
             onUpdateReaction={handleAlbumEntryReactionChange}
             onDeleteEntry={handleAlbumEntryDelete}
+            onOverlayChange={setIsBottomNavHidden}
           />
         );
 
@@ -312,7 +318,11 @@ export default function App() {
 
           <main className="iphone-content">{renderPage()}</main>
 
-          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          <BottomNav
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            hidden={isBottomNavHidden}
+          />
           </div>
         </div>
       </div>

@@ -1,7 +1,11 @@
 import type { AlbumReaction, FamilyMember, FamilyMemberId } from "../types";
+import {
+  buildDemoCareMessageText,
+  type DemoCareMessageType,
+} from "../lib/care-message";
 import { dailyDrops } from "./daily-drops";
 import { petItems, type PetId } from "./pets";
-import { findWeeklyRewardByItemIdentity } from "./weekly-rewards";
+import { findWeeklyRewardByItemIdentity, weeklyRewards } from "./weekly-rewards";
 
 const DEMO_FAMILY_ID = 1;
 const DEMO_WEEKLY_ECHO_WEEK_START = "2026-04-26";
@@ -91,6 +95,7 @@ export type DemoCareMessage = {
   receiver_user_id: FamilyMemberId;
   family_id: number;
   care_type: string;
+  message_type?: DemoCareMessageType;
   message: string;
   is_read: boolean;
   created_at: string;
@@ -380,7 +385,6 @@ const demoMoodSeedRows = [
   [1, "happy", "Felt happy after uploading a small moment.", "2026-05-05", "full", "2026-05-05 20:00:00"],
   [1, "thoughtful", "A reflective day with a soft feeling.", "2026-05-06", "soft", "2026-05-06 20:00:00"],
   [1, "connected", "Felt connected across distance.", "2026-05-07", "full", "2026-05-07 20:00:00"],
-  [1, "calm", "Peaceful end to the day.", "2026-05-08", "private", "2026-05-08 20:00:00"],
   [2, "calm", "A calm family day with simple routines.", "2026-04-20", "full", "2026-04-20 21:00:00"],
   [2, "grateful", "Grateful for the little updates from everyone.", "2026-04-21", "full", "2026-04-21 21:00:00"],
   [2, "busy", "Busy day, but still checked in.", "2026-04-22", "soft", "2026-04-22 21:00:00"],
@@ -399,7 +403,6 @@ const demoMoodSeedRows = [
   [2, "tired", "Tired, but in a soft way.", "2026-05-05", "soft", "2026-05-05 21:00:00"],
   [2, "happy", "Happy with today's little family rhythm.", "2026-05-06", "full", "2026-05-06 21:00:00"],
   [2, "grateful", "Grateful for gentle communication.", "2026-05-07", "full", "2026-05-07 21:00:00"],
-  [2, "calm", "Calm and quiet.", "2026-05-08", "private", "2026-05-08 21:00:00"],
   [3, "steady", "A steady day with a practical mood.", "2026-04-20", "full", "2026-04-20 22:00:00"],
   [3, "happy", "Happy after finishing something useful.", "2026-04-21", "full", "2026-04-21 22:00:00"],
   [3, "focused", "Focused on small tasks at home.", "2026-04-22", "full", "2026-04-22 22:00:00"],
@@ -418,7 +421,6 @@ const demoMoodSeedRows = [
   [3, "focused", "Focused on home details.", "2026-05-05", "full", "2026-05-05 22:00:00"],
   [3, "helpful", "Helpful and settled.", "2026-05-06", "soft", "2026-05-06 22:00:00"],
   [3, "steady", "Steady evening.", "2026-05-07", "full", "2026-05-07 22:00:00"],
-  [3, "happy", "Happy with the week ending gently.", "2026-05-08", "private", "2026-05-08 22:00:00"],
 ] as const;
 
 export const demoMoodEntries: DemoMoodEntry[] = demoMoodSeedRows.map(
@@ -489,7 +491,11 @@ export const demoCareMessages: DemoCareMessage[] = [
     receiver_user_id: 1,
     family_id: DEMO_FAMILY_ID,
     care_type: "hug",
-    message: "Mom sent you a warm hug today.",
+    message_type: "hug",
+    message: buildDemoCareMessageText({
+      senderName: "Mom",
+      messageType: "hug",
+    }),
     is_read: false,
     created_at: "2026-05-08 08:20:00",
     read_at: null,
@@ -501,7 +507,11 @@ export const demoCareMessages: DemoCareMessage[] = [
     receiver_user_id: 2,
     family_id: DEMO_FAMILY_ID,
     care_type: "tea",
-    message: "Dad sent a gentle check-in and a little tea break.",
+    message_type: "care",
+    message: buildDemoCareMessageText({
+      senderName: "Dad",
+      messageType: "care",
+    }),
     is_read: false,
     created_at: "2026-05-08 10:10:00",
     read_at: null,
@@ -513,7 +523,11 @@ export const demoCareMessages: DemoCareMessage[] = [
     receiver_user_id: 3,
     family_id: DEMO_FAMILY_ID,
     care_type: "pet",
-    message: "Grace sent some quiet company for the evening.",
+    message_type: "love",
+    message: buildDemoCareMessageText({
+      senderName: "Grace",
+      messageType: "love",
+    }),
     is_read: true,
     created_at: "2026-05-07 20:00:00",
     read_at: "2026-05-07 20:15:00",
@@ -619,6 +633,31 @@ function createEmptyInventoryState(): DemoInventoryState {
   };
 }
 
+function applyGraceDemoInventoryOverride(inventory: DemoInventoryState) {
+  const nextInventory: DemoInventoryState = {
+    dailyDropInventory: { ...inventory.dailyDropInventory },
+    weeklyRewardInventory: { ...inventory.weeklyRewardInventory },
+    activeWeeklyRewardIds: inventory.activeWeeklyRewardIds.filter((rewardId) => rewardId !== "carrot-toy"),
+  };
+
+  dailyDrops.forEach((drop) => {
+    nextInventory.dailyDropInventory[drop.id] = Math.max(nextInventory.dailyDropInventory[drop.id] ?? 0, 1);
+  });
+
+  weeklyRewards
+    .filter((reward) => reward.id !== "carrot-toy")
+    .forEach((reward) => {
+      nextInventory.weeklyRewardInventory[reward.id] = Math.max(
+        nextInventory.weeklyRewardInventory[reward.id] ?? 0,
+        1
+      );
+    });
+
+  delete nextInventory.weeklyRewardInventory["carrot-toy"];
+
+  return nextInventory;
+}
+
 function buildSeedInventories(): Record<string, DemoInventoryState> {
   const inventories = demoFamilyMembers.reduce<Record<string, DemoInventoryState>>((accumulator, member) => {
     accumulator[String(member.id)] = createEmptyInventoryState();
@@ -664,6 +703,10 @@ function buildSeedInventories(): Record<string, DemoInventoryState> {
 
     inventories[String(activeItem.family_member_id)] = inventory;
   });
+
+  inventories["1"] = applyGraceDemoInventoryOverride(
+    inventories["1"] ?? createEmptyInventoryState()
+  );
 
   return inventories;
 }
@@ -746,24 +789,24 @@ function buildWeeklyEchoKeepsakes() {
 }
 
 function buildDemoWeeklyEchoSummary(): DemoWeeklyEchoSummary {
-  const postsInRange = demoAlbumPosts.filter((post) =>
+  const photoSharesCount = demoAlbumPosts.filter((post) =>
     compareDateOnly(post.created_at, DEMO_WEEKLY_ECHO_WEEK_START, DEMO_WEEKLY_ECHO_WEEK_END)
-  );
-  const moodEntriesInRange = demoMoodEntries.filter((entry) =>
-    entry.entry_date >= DEMO_WEEKLY_ECHO_WEEK_START && entry.entry_date <= DEMO_WEEKLY_ECHO_WEEK_END
-  );
+  ).length;
   const connectedDaySet = new Set<string>();
-
-  postsInRange.forEach((post) => connectedDaySet.add(post.created_at.slice(0, 10)));
-  moodEntriesInRange.forEach((entry) => connectedDaySet.add(entry.entry_date));
+  for (let day = 26; day <= 30; day += 1) {
+    connectedDaySet.add(`2026-04-${String(day).padStart(2, "0")}`);
+  }
+  connectedDaySet.add("2026-05-01");
+  connectedDaySet.add("2026-05-02");
 
   const connectedDays = connectedDaySet.size;
-  const smallMomentsCount = postsInRange.length + moodEntriesInRange.length;
-  const petMessagesCount = 0;
-  const photoSharesCount = postsInRange.filter((post) => Boolean(post.media_url)).length;
-  const gentleReactionsCount = 0;
-  const moodCheckinsCount = moodEntriesInRange.length;
-  const featuredPetMessage = "";
+  const petMessagesCount = 2;
+  const gentleReactionsCount = 5;
+  const moodCheckinsCount = 16;
+  const smallMomentsCount =
+    petMessagesCount + photoSharesCount + gentleReactionsCount + moodCheckinsCount;
+  const featuredPetMessage =
+    "Mom asked the puppy to remind everyone to eat something warm after a long day.";
   const reward = findWeeklyRewardByItemIdentity({ id: "pet-sofa2", name: "Pet Sofa 2" });
   const keepsakes = buildWeeklyEchoKeepsakes();
 
@@ -784,6 +827,7 @@ function buildDemoWeeklyEchoSummary(): DemoWeeklyEchoSummary {
         `Your family kept ${connectedDays} connected day${connectedDays === 1 ? "" : "s"}.`,
         `This week, your family shared ${smallMomentsCount} small moment${smallMomentsCount === 1 ? "" : "s"}.`,
         `${petMessagesCount} pet messages, ${photoSharesCount} photo shares, ${gentleReactionsCount} gentle reactions, and ${moodCheckinsCount} mood check-ins left traces through the week.`,
+        `Latest note from this week: "${featuredPetMessage}".`,
         reward ? `${reward.name} was unlocked for the family pet.` : "",
       ]
         .filter(Boolean)
@@ -800,7 +844,7 @@ function buildDemoWeeklyEchoSummary(): DemoWeeklyEchoSummary {
       subtitle: `${connectedDays} connected day${connectedDays === 1 ? "" : "s"} · ${smallMomentsCount} small moment${smallMomentsCount === 1 ? "" : "s"}`,
       body: [
         `This week, your family shared ${smallMomentsCount} small moment${smallMomentsCount === 1 ? "" : "s"}.`,
-        'Latest note from this week: "No shared note this week yet.".',
+        `Latest note from this week: "${featuredPetMessage}".`,
         `${petMessagesCount} pet messages, ${photoSharesCount} photo shares, ${gentleReactionsCount} gentle reactions, and ${moodCheckinsCount} mood check-ins stayed on the board.`,
       ].join("\n"),
     },

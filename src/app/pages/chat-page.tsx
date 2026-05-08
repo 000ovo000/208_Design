@@ -19,6 +19,7 @@ import {
 } from "../data/pets";
 import { getPetReaction } from "../data/pet-reactions";
 import { apiUrl } from "../lib/api";
+import { getAppNowDateTimeString, getAppTodayKey } from "../lib/app-date";
 import {
   createDemoPetMessage,
   createDemoPost,
@@ -144,9 +145,13 @@ const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: s
   { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
 ];
 
-const DAILY_DROP_MAX_PER_DAY = 6;
+const DAILY_DROP_MAX_PER_DAY = 1;
 const DAILY_DROP_DEV_DELAY_MS = { min: 5000, max: 10000 };
 const DAILY_DROP_PROD_DELAY_MS = { min: 2 * 60 * 1000, max: 5 * 60 * 1000 };
+const PET_MESSAGE_PROMPT = "What would you like the puppy to pass along?";
+const PET_MESSAGE_EMPTY_ERROR = "Please enter a message for the puppy to deliver.";
+const PET_MESSAGE_SELF_ERROR = "You can't send a message to yourself.";
+const PET_MESSAGE_SEND_ERROR = "Couldn't send the message. Please try again.";
 
 const getStorageArea = (drop: DailyDrop): StorageArea => {
   return drop.category === "food" || drop.category === "drink" ? "food" : "toy";
@@ -165,71 +170,71 @@ const getScenePlacement = (item: DailyDrop): ScenePlacement => {
     case "pet-water":
       return {
         ...base,
-        positionClassName: "absolute -left-16 bottom-1 z-10 flex items-center justify-center text-4xl",
-        sizeClassName: "h-16 w-16",
+        positionClassName: "absolute right-[10px] bottom-[88px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[50px] w-[70px]",
         durationMs: 25000,
       };
     case "pet-milk":
       return {
         ...base,
-        positionClassName: "absolute -left-16 bottom-[34px] z-10 flex items-center justify-center text-4xl",
-        sizeClassName: "h-16 w-16",
+        positionClassName: "absolute left-[10px] bottom-[86px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[50px] w-[70px]",
         durationMs: 25000,
       };
     case "canned-tuna":
       return {
         ...base,
-        positionClassName: "absolute -right-[51px] bottom-[60px] z-20 flex items-center justify-center text-4xl",
-        sizeClassName: "h-[53px] w-[53px]",
+        positionClassName: "absolute right-[20px] bottom-[132px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[38px] w-[38px]",
         durationMs: 25000,
       };
     case "pet-food":
       return {
         ...base,
-        positionClassName: "absolute -left-16 bottom-[-26px] z-20 flex items-center justify-center text-4xl",
-        sizeClassName: "h-[70px] w-[70px]",
+        positionClassName: "absolute left-[8px] bottom-[6px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[54px] w-[72px]",
         durationMs: 25000,
       };
     case "pet-biscuit":
       return {
         ...base,
-        positionClassName: "absolute left-1/2 bottom-[-8px] z-20 flex -translate-x-1/2 items-center justify-center text-4xl",
-        sizeClassName: "h-[45px] w-[45px]",
+        positionClassName: "absolute left-[112px] bottom-[10px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[34px] w-[34px]",
         durationMs: 25000,
       };
     case "small-bone":
       return {
         ...base,
-        positionClassName: "absolute left-1/2 bottom-[-8px] z-20 flex -translate-x-[calc(50%+60px)] items-center justify-center text-4xl",
-        sizeClassName: "h-[38px] w-[38px]",
+        positionClassName: "absolute left-[174px] bottom-[14px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[24px] w-[52px]",
         durationMs: 25000,
       };
     case "small-ball":
       return {
         ...base,
-        positionClassName: "absolute -left-[18px] bottom-[83px] z-20 flex items-center justify-center text-4xl",
-        sizeClassName: "h-[39px] w-[39px]",
+        positionClassName: "absolute left-[78px] bottom-[54px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[30px] w-[30px]",
         durationMs: 50000,
       };
     case "chew-toy":
       return {
         ...base,
-        positionClassName: "absolute left-[calc(50%+55px)] bottom-[1px] z-20 flex -translate-x-1/2 items-center justify-center text-4xl scale-[1.5]",
-        sizeClassName: "h-[70px] w-[70px]",
+        positionClassName: "absolute left-[82px] bottom-[124px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[40px] w-[58px]",
         durationMs: 50000,
       };
     case "plush-bear":
       return {
         ...base,
-        positionClassName: "absolute -right-16 bottom-[72px] z-10 flex items-center justify-center text-4xl",
-        sizeClassName: "h-[82px] w-[82px]",
+        positionClassName: "absolute right-[86px] bottom-[52px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[56px] w-[44px]",
         durationMs: 50000,
       };
     case "fish-toy":
       return {
         ...base,
-        positionClassName: "absolute -right-[76px] bottom-[-23px] z-20 flex items-center justify-center text-4xl",
-        sizeClassName: "h-[51px] w-[51px]",
+        positionClassName: "absolute right-[10px] bottom-[10px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[36px] w-[56px]",
         durationMs: 50000,
       };
     default:
@@ -252,36 +257,33 @@ const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => 
     return {
       ...base,
       positionClassName:
-        "absolute left-1/2 bottom-[-10px] z-[5] flex -translate-x-1/2 items-center justify-center",
-      sizeClassName: "h-[122px] w-[230px]",
-      scaleClassName: "scale-[2] origin-center",
+        "absolute left-1/2 bottom-[0px] z-[4] flex -translate-x-1/2 items-center justify-center",
+      sizeClassName: "h-[80px] w-[158px]",
+        scaleClassName: "scale-[1.3] origin-center",
     };
   }
 
   switch (reward.id) {
-    case "cat-climber":
-      return {
-        ...base,
-        positionClassName:
-          "absolute left-[calc(50%-107px)] bottom-[88px] z-[1] flex -translate-x-1/2 items-center justify-center",
-        sizeClassName: "h-[150px] w-[112px]",
-        scaleClassName: "scale-[1.5] origin-bottom",
-      };
+  case "cat-climber":
+    return {
+      ...base,
+      positionClassName:
+        "absolute -left-[18px] bottom-[100px] z-[4] flex items-center justify-center",
+      sizeClassName: "h-[205px] w-[145px]",
+    };
     case "cat-teaser":
       return {
         ...base,
         positionClassName:
-          "absolute left-[calc(50%+85px)] bottom-[70px] z-20 flex -translate-x-1/2 items-center justify-center",
-        sizeClassName: "h-[78px] w-[78px]",
-        scaleClassName: "scale-[10] origin-center",
+          "absolute -right-[6px] bottom-[8px] z-[4] flex items-center justify-center",
+        sizeClassName: "h-[126px] w-[58px]",
       };
     case "carrot-toy":
       return {
         ...base,
         positionClassName:
-          "absolute left-[calc(50%+95px)] bottom-[70px] z-[25] flex -translate-x-1/2 items-center justify-center",
-        sizeClassName: "h-[72px] w-[72px]",
-        scaleClassName: "scale-[2] origin-center",
+          "absolute left-[calc(50%+56px)] bottom-[-2px] z-[4] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[88px] w-[118px]",
       };
     default:
       return {
@@ -291,12 +293,6 @@ const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => 
         sizeClassName: "h-[88px] w-[120px]",
       };
   }
-};
-
-const getMsUntilNextDay = () => {
-  const nextDay = new Date();
-  nextDay.setHours(24, 0, 0, 0);
-  return Math.max(nextDay.getTime() - Date.now(), 1000);
 };
 
 const readSelectedPetIdForUser = (userId: FamilyMemberId | null | undefined): PetId => {
@@ -482,82 +478,84 @@ function PetSelectionView({
   const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
 
   return (
-    <div className="h-full overflow-y-auto px-4 pt-1 pb-4">
-      <div className="mb-4 flex items-center justify-start">
-        <button
-          type="button"
-          aria-label="Back"
-          onClick={onBack}
-          className="w-8 h-8 flex items-center justify-center text-[#333333]"
-        >
-          <ArrowLeft size={22} strokeWidth={2} />
-        </button>
-      </div>
+    <div className="relative h-full w-full overflow-hidden">
+      <div className="flex h-full w-full min-h-0 flex-col overflow-hidden">
+        <div className="shrink-0 px-5 pt-5 pb-3">
+          <div className="mb-4 flex items-center justify-start">
+            <button
+              type="button"
+              aria-label="Back"
+              onClick={onBack}
+              className="flex h-8 w-8 items-center justify-center text-[#333333]"
+            >
+              <ArrowLeft size={22} strokeWidth={2} />
+            </button>
+          </div>
 
-      <div className="mb-6">
-        <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-[24px] font-medium text-[#171717]">Pet Collection</h2>
             <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
               Choose one shared companion for Home and Mood Jar.
             </p>
           </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 rounded-[22px] border border-white/70 bg-white/55 p-2">
+            <button
+              type="button"
+              onClick={() => setActiveSpecies("dog")}
+              className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+                activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+              }`}
+            >
+              Puppies
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSpecies("cat")}
+              className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+                activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+              }`}
+            >
+              Kittens
+            </button>
+          </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-2 gap-3 rounded-[22px] border border-white/70 bg-white/55 p-2">
-          <button
-            type="button"
-            onClick={() => setActiveSpecies("dog")}
-            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
-              activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
-            }`}
-          >
-            Puppies
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSpecies("cat")}
-            className={`rounded-[18px] py-2 text-[14px] font-semibold ${
-              activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
-            }`}
-          >
-            Kittens
-          </button>
-        </div>
+        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+          <div className="grid grid-cols-2 justify-items-center gap-3">
+            {visiblePets.map((pet) => {
+              const unlocked = unlockedPetIds.includes(pet.id);
+              return (
+                <PetSelectionCard
+                  key={pet.id}
+                  pet={pet}
+                  active={selectedPetId === pet.id}
+                  unlocked={unlocked}
+                  onClick={() => setSelectedPetId(pet.id)}
+                />
+              );
+            })}
+          </div>
 
-        <div className="grid grid-cols-2 justify-items-center gap-3">
-          {visiblePets.map((pet) => {
-            const unlocked = unlockedPetIds.includes(pet.id);
-            return (
-              <PetSelectionCard
-                key={pet.id}
-                pet={pet}
-                active={selectedPetId === pet.id}
-                unlocked={unlocked}
-                onClick={() => setSelectedPetId(pet.id)}
+          <div className="mt-6">
+            <h3 className="mb-4 text-[22px] font-medium text-[#171717]">
+              Your selection:
+            </h3>
+
+            <div className="flex flex-col items-center rounded-[28px] border border-white/70 bg-white/55 px-4 py-5">
+              <img
+                src={currentPet.image}
+                alt={currentPet.name}
+                className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
               />
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="mb-4 text-[22px] font-medium text-[#171717]">
-          Your selection:
-        </h3>
-
-        <div className="flex flex-col items-center rounded-[28px] bg-white/55 border border-white/70 px-4 py-5">
-          <img
-            src={currentPet.image}
-            alt={currentPet.name}
-            className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
-          />
-          <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
-            {currentPet.name}
-          </p>
-          <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
-            {currentPet.description}
-          </p>
+              <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
+                {currentPet.name}
+              </p>
+              <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
+                {currentPet.description}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -650,11 +648,7 @@ export function ChatPage({
   }, []);
 
   function getTodayKey() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = `${now.getMonth() + 1}`.padStart(2, "0");
-    const day = `${now.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    return getAppTodayKey();
   }
 
   function getDailyDropClaimKey(userId: string | number) {
@@ -1108,6 +1102,13 @@ export function ChatPage({
   }, [getBubbleMessagesForSceneMember, receivedPetMessages, selectedHomeMember?.id]);
 
   useEffect(() => {
+    clearNextDailyDropTimer();
+    setLocalDailyDropInventory({});
+    setLocalPlacedDailyDrops([]);
+    setCollectedMessage("");
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     setTodayDrop((current) =>
       availableDailyDrops.some((drop) => drop.id === current.id)
         ? current
@@ -1338,12 +1339,12 @@ export function ChatPage({
         setReceivedPetMessages((prev) =>
           prev.map((message) =>
             messages.some((target) => String(target.id) === String(message.id))
-              ? {
-                  ...message,
-                  is_read: true,
-                  read_at: new Date().toISOString(),
-                }
-              : message
+                ? {
+                    ...message,
+                    is_read: true,
+                    read_at: getAppNowDateTimeString(),
+                  }
+                : message
           )
         );
         setIsMarkingPetMessagesRead(false);
@@ -1367,10 +1368,10 @@ export function ChatPage({
               ? {
                   ...message,
                   is_read: true,
-                  read_at: new Date().toISOString(),
+                  read_at: getAppNowDateTimeString(),
                 }
               : message
-          )
+        )
         );
       } catch (error) {
         console.error("Failed to mark pet messages as read:", error);
@@ -1418,14 +1419,14 @@ export function ChatPage({
 
     if (isSendingToSelf) {
       setPetMessageComposer((current) =>
-        current ? { ...current, error: "不能给自己传话。" } : current
+        current ? { ...current, error: PET_MESSAGE_SELF_ERROR } : current
       );
       return;
     }
 
     if (!trimmed) {
       setPetMessageComposer((current) =>
-        current ? { ...current, error: "请输入想传的话。" } : current
+        current ? { ...current, error: PET_MESSAGE_EMPTY_ERROR } : current
       );
       return;
     }
@@ -1455,7 +1456,7 @@ export function ChatPage({
 
         if (!response.ok) {
           setPetMessageComposer((current) =>
-            current ? { ...current, error: result?.error || "发送失败。" } : current
+            current ? { ...current, error: result?.error || PET_MESSAGE_SEND_ERROR } : current
           );
           return;
         }
@@ -1467,7 +1468,7 @@ export function ChatPage({
     } catch (error) {
       console.error("Failed to send pet message:", error);
       setPetMessageComposer((current) =>
-        current ? { ...current, error: "发送失败。" } : current
+        current ? { ...current, error: PET_MESSAGE_SEND_ERROR } : current
       );
     } finally {
       setIsSendingPetMessage(false);
@@ -1891,7 +1892,7 @@ export function ChatPage({
 
           {showMemberSwitcher && !activeInventory && (
             <div
-              className="absolute left-[28px] top-[160px] z-50 w-[280px] max-w-[calc(100vw-56px)] rounded-[26px] border border-[#f0d8ca] bg-white/95 p-2 shadow-[0_18px_40px_rgba(92,61,38,0.18)] backdrop-blur"
+              className="absolute left-[28px] top-[160px] z-50 w-[280px] max-w-[calc(100%-56px)] rounded-[26px] border border-[#f0d8ca] bg-white/95 p-2 shadow-[0_18px_40px_rgba(92,61,38,0.18)] backdrop-blur"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a48976]">
@@ -2091,8 +2092,8 @@ export function ChatPage({
 
           <div className="absolute bottom-7 h-9 w-[240px] rounded-full bg-[radial-gradient(ellipse_at_center,_rgba(106,83,61,0.28),_rgba(106,83,61,0)_72%)]" />
 
-          <div className="relative mt-[275px] flex flex-col items-center">
-            <div className="relative flex items-center justify-center">
+          <div className="relative mt-[275px] flex w-full flex-col items-center">
+            <div className="relative flex h-[220px] w-[280px] max-w-full items-end justify-center">
               <motion.button
                 type="button"
                 onClick={() => {
@@ -2102,7 +2103,7 @@ export function ChatPage({
                 initial={{ scale: 0.98 }}
                 animate={{ scale: [0.98, 1.03, 1] }}
                 transition={{ duration: 0.28, ease: "easeOut" }}
-                className="absolute bottom-[calc(100%-40px)] left-1/2 z-10 min-h-[84px] w-[230px] max-w-[calc(100vw-112px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white/80 px-5 py-3.5 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
+                className="absolute bottom-[calc(100%-40px)] left-1/2 z-10 min-h-[84px] w-[230px] max-w-[calc(100%-48px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white/80 px-5 py-3.5 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
               >
                 <AnimatePresence mode="wait" initial={false}>
                   {showCareUnreadDot || showUnreadRelayBubbleDot ? (
@@ -2189,15 +2190,11 @@ export function ChatPage({
 
       {activeInventory && (
         <div
-          className={`absolute inset-0 z-50 flex items-end bg-[#3d2d22]/28 px-3 backdrop-blur-sm ${
-            activeInventory === "petSelection" ? "pb-3" : "pb-5"
-          }`}
+          className="absolute inset-0 z-50 bg-[#3d2d22]/28 px-3 py-3 backdrop-blur-sm"
           onClick={() => setShowMemberSwitcher(false)}
         >
           <div
-            className={`w-full overflow-y-auto rounded-[30px] border border-white/80 bg-[#fffaf5] p-4 shadow-[0_22px_50px_rgba(67,48,34,0.22)] ${
-              activeInventory === "petSelection" ? "max-h-[88vh]" : "max-h-[76vh]"
-            }`}
+            className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[30px] border border-white/80 bg-[#fffaf5] shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
             onClick={(event) => event.stopPropagation()}
           >
             {activeInventory === "petSelection" ? (
@@ -2213,141 +2210,145 @@ export function ChatPage({
                 }}
               />
             ) : (
-              <>
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#b08a6d]">
-                  Pet Warehouse
-                </p>
-                <h2 className="mt-1 text-lg font-semibold text-[#3d2d22]">
-                  {activeInventoryTitle}
-                </h2>
-              </div>
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                <div className="shrink-0 px-4 pb-3 pt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#b08a6d]">
+                        Pet Warehouse
+                      </p>
+                      <h2 className="mt-1 text-lg font-semibold text-[#3d2d22]">
+                        {activeInventoryTitle}
+                      </h2>
+                    </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMemberSwitcher(false);
-                  setActiveInventory(null);
-                }}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3e5d8] text-sm font-bold text-[#7d6554]"
-              >
-                X
-              </button>
-            </div>
-
-            {activeInventory === "food" && (
-              <div className="space-y-2">
-                {foodInventory.length === 0 && (
-                  <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
-                    No food or drink items yet. Collect a Daily Drop first.
-                  </p>
-                )}
-
-                {foodInventory.map((drop) => {
-                  const count = getDisplayedDailyDropCount(drop.id);
-
-                  return (
                     <button
-                      key={drop.id}
                       type="button"
-                      disabled={count <= 0}
-                      onClick={() => useDrop(drop)}
-                      className={`flex w-full items-center gap-3 rounded-3xl border border-[#f2dfcf] bg-white p-3 text-left transition ${
-                        count <= 0 ? "opacity-50" : "active:scale-[0.98]"
-                      }`}
+                      onClick={() => {
+                        setShowMemberSwitcher(false);
+                        setActiveInventory(null);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3e5d8] text-sm font-bold text-[#7d6554]"
                     >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff1df]">
-                        {renderDropIcon(drop)}
-                      </span>
-                      <span className="flex-1">
-                        <span className="block text-sm font-semibold text-[#49372a]">
-                          {drop.name}
-                        </span>
-                        <span className="block text-[11px] leading-4 text-[#8b705d]">
-                          {drop.description}
-                        </span>
-                      </span>
-                      <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        x {count}
-                      </span>
+                      X
                     </button>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
+                </div>
 
-            {activeInventory === "toy" && (
-              <div className="space-y-2">
-                {toyInventory.length === 0 && ownedWeeklyRewards.length === 0 && (
-                  <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
-                    No toys or care items yet. Collect a Daily Drop first.
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                  {activeInventory === "food" && (
+                    <div className="space-y-2">
+                      {foodInventory.length === 0 && (
+                        <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
+                          No food or drink items yet. Collect a Daily Drop first.
+                        </p>
+                      )}
+
+                      {foodInventory.map((drop) => {
+                        const count = getDisplayedDailyDropCount(drop.id);
+
+                        return (
+                          <button
+                            key={drop.id}
+                            type="button"
+                            disabled={count <= 0}
+                            onClick={() => useDrop(drop)}
+                            className={`flex w-full items-center gap-3 rounded-3xl border border-[#f2dfcf] bg-white p-3 text-left transition ${
+                              count <= 0 ? "opacity-50" : "active:scale-[0.98]"
+                            }`}
+                          >
+                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff1df]">
+                              {renderDropIcon(drop)}
+                            </span>
+                            <span className="flex-1">
+                              <span className="block text-sm font-semibold text-[#49372a]">
+                                {drop.name}
+                              </span>
+                              <span className="block text-[11px] leading-4 text-[#8b705d]">
+                                {drop.description}
+                              </span>
+                            </span>
+                            <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                              x {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {activeInventory === "toy" && (
+                    <div className="space-y-2">
+                      {toyInventory.length === 0 && ownedWeeklyRewards.length === 0 && (
+                        <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
+                          No toys or care items yet. Collect a Daily Drop first.
+                        </p>
+                      )}
+
+                      {toyInventory.map((drop) => {
+                        const count = getDisplayedDailyDropCount(drop.id);
+
+                        return (
+                          <button
+                            key={drop.id}
+                            type="button"
+                            disabled={count <= 0}
+                            onClick={() => useDrop(drop)}
+                            className={`flex w-full items-center gap-3 rounded-3xl border border-[#f2dfcf] bg-white p-3 text-left transition ${
+                              count <= 0 ? "opacity-50" : "active:scale-[0.98]"
+                            }`}
+                          >
+                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf]">
+                              {renderDropIcon(drop)}
+                            </span>
+                            <span className="flex-1">
+                              <span className="block text-sm font-semibold text-[#49372a]">
+                                {drop.name}
+                              </span>
+                              <span className="block text-[11px] leading-4 text-[#8b705d]">
+                                {drop.description}
+                              </span>
+                            </span>
+                            <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                              Use x {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      {ownedWeeklyRewards.map((keepsake) => (
+                        <button
+                          key={keepsake.id}
+                          type="button"
+                          onClick={() => {
+                            void useWeeklyReward(keepsake);
+                          }}
+                          className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
+                        >
+                          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf] text-xl">
+                            <ItemIcon item={keepsake} sizeClass="h-10 w-10" />
+                          </span>
+                          <span className="flex-1">
+                            <span className="block text-sm font-semibold text-[#49372a]">
+                              {keepsake.name}
+                            </span>
+                            <span className="block text-[11px] leading-4 text-[#8b705d]">
+                              {keepsake.description}
+                            </span>
+                          </span>
+                          <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                            {isWeeklyRewardActive(keepsake.id) ? "In room" : "Use"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <p className="mt-3 text-center text-[11px] leading-4 text-[#9a7a61]">
+                    Food and drink are consumable. Toys, care items, and weekly keepsakes can stay as shared pet memories.
                   </p>
-                )}
-
-                {toyInventory.map((drop) => {
-                  const count = getDisplayedDailyDropCount(drop.id);
-
-                  return (
-                    <button
-                      key={drop.id}
-                      type="button"
-                      disabled={count <= 0}
-                      onClick={() => useDrop(drop)}
-                      className={`flex w-full items-center gap-3 rounded-3xl border border-[#f2dfcf] bg-white p-3 text-left transition ${
-                        count <= 0 ? "opacity-50" : "active:scale-[0.98]"
-                      }`}
-                    >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf]">
-                        {renderDropIcon(drop)}
-                      </span>
-                      <span className="flex-1">
-                        <span className="block text-sm font-semibold text-[#49372a]">
-                          {drop.name}
-                        </span>
-                        <span className="block text-[11px] leading-4 text-[#8b705d]">
-                          {drop.description}
-                        </span>
-                      </span>
-                      <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                        Use x {count}
-                      </span>
-                    </button>
-                  );
-                })}
-
-                {ownedWeeklyRewards.map((keepsake) => (
-                  <button
-                    key={keepsake.id}
-                    type="button"
-                    onClick={() => {
-                      void useWeeklyReward(keepsake);
-                    }}
-                    className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
-                  >
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf] text-xl">
-                      <ItemIcon item={keepsake} sizeClass="h-10 w-10" />
-                    </span>
-                    <span className="flex-1">
-                      <span className="block text-sm font-semibold text-[#49372a]">
-                        {keepsake.name}
-                      </span>
-                      <span className="block text-[11px] leading-4 text-[#8b705d]">
-                        {keepsake.description}
-                      </span>
-                    </span>
-                    <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
-                      {isWeeklyRewardActive(keepsake.id) ? "In room" : "Use"}
-                    </span>
-                  </button>
-                ))}
+                </div>
               </div>
-            )}
-
-            <p className="mt-3 text-center text-[11px] leading-4 text-[#9a7a61]">
-              Food and drink are consumable. Toys, care items, and weekly keepsakes can stay as shared pet memories.
-            </p>
-              </>
             )}
           </div>
         </div>
@@ -2362,7 +2363,7 @@ export function ChatPage({
                   Send a message to {petMessageComposer.member.name}
                 </p>
                 <p className="mt-1 text-sm text-[#8b705d]">
-                  想让小狗帮你传什么话？
+                  {PET_MESSAGE_PROMPT}
                 </p>
               </div>
               <button
@@ -2383,7 +2384,7 @@ export function ChatPage({
                     : current
                 )
               }
-              placeholder="想让小狗帮你传什么话？"
+              placeholder={PET_MESSAGE_PROMPT}
               rows={4}
               className="w-full resize-none rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
             />

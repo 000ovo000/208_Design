@@ -401,121 +401,125 @@ export function ProfilePage({ familyMembers, onFamilyMembersChange }: ProfilePag
       </div>
 
       {isAddMemberOpen && (
-        <div className="absolute inset-0 z-[999] flex items-center justify-center bg-black/10 px-5">
-          <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-lg font-semibold text-[#463326]">
-                  Add Family Member
-                </p>
-                <p className="mt-1 text-sm text-[#8b705d]">
-                  New members will be saved to MySQL.
-                </p>
+        <div className="absolute inset-0 z-[999] overflow-y-auto bg-black/10 px-5 py-6">
+          <div className="flex min-h-full items-center justify-center">
+            <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-[#463326]">
+                    Add Family Member
+                  </p>
+                  <p className="mt-1 text-sm text-[#8b705d]">
+                    New members will be saved to MySQL.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddMemberOpen(false)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsAddMemberOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+              <div className="space-y-3">
+                <input
+                  value={newMemberName}
+                  onChange={(e) => setNewMemberName(e.target.value)}
+                  placeholder="Name"
+                  className="w-full rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
+                />
 
-            <div className="space-y-3">
-              <input
-                value={newMemberName}
-                onChange={(e) => setNewMemberName(e.target.value)}
-                placeholder="Name"
-                className="w-full rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
-              />
+                <input
+                  value={newMemberEmail}
+                  onChange={(e) => setNewMemberEmail(e.target.value)}
+                  placeholder="Email"
+                  className="w-full rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
+                />
 
-              <input
-                value={newMemberEmail}
-                onChange={(e) => setNewMemberEmail(e.target.value)}
-                placeholder="Email"
-                className="w-full rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
-              />
+                <select
+                  value={newMemberRole}
+                  onChange={(e) => setNewMemberRole(e.target.value)}
+                  className="w-full rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none"
+                >
+                  <option value="member">member</option>
+                  <option value="child">child</option>
+                  <option value="parent">parent</option>
+                  <option value="grandparent">grandparent</option>
+                </select>
+              </div>
 
-              <select
-                value={newMemberRole}
-                onChange={(e) => setNewMemberRole(e.target.value)}
-                className="w-full rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none"
-              >
-                <option value="member">member</option>
-                <option value="child">child</option>
-                <option value="parent">parent</option>
-                <option value="grandparent">grandparent</option>
-              </select>
-            </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddMemberOpen(false)}
+                  className="rounded-full bg-[#f3eee9] px-4 py-2 text-sm font-medium text-[#6d5645]"
+                >
+                  Cancel
+                </button>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsAddMemberOpen(false)}
-                className="rounded-full bg-[#f3eee9] px-4 py-2 text-sm font-medium text-[#6d5645]"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAddFamilyMember}
-                disabled={!newMemberName.trim() || isAddingMember}
-                className={`rounded-full px-4 py-2 text-sm font-medium ${
-                  newMemberName.trim() && !isAddingMember
-                    ? "bg-[#6d5645] text-white"
-                    : "bg-[#ddd2c8] text-[#9a8573]"
-                }`}
-              >
-                {isAddingMember ? "Saving..." : "Save"}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleAddFamilyMember}
+                  disabled={!newMemberName.trim() || isAddingMember}
+                  className={`rounded-full px-4 py-2 text-sm font-medium ${
+                    newMemberName.trim() && !isAddingMember
+                      ? "bg-[#6d5645] text-white"
+                      : "bg-[#ddd2c8] text-[#9a8573]"
+                  }`}
+                >
+                  {isAddingMember ? "Saving..." : "Save"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {isSwitchAccountOpen && (
-        <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/10 px-5">
-          <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-lg font-semibold text-[#463326]">Switch Account</p>
-                <p className="mt-1 text-sm text-[#8b705d]">Choose the account to use right now.</p>
+        <div className="absolute inset-0 z-[1000] overflow-y-auto bg-black/10 px-5 py-6">
+          <div className="flex min-h-full items-center justify-center">
+            <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-[#463326]">Switch Account</p>
+                  <p className="mt-1 text-sm text-[#8b705d]">Choose the account to use right now.</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSwitchAccountOpen(false)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsSwitchAccountOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="max-h-[280px] space-y-2 overflow-y-auto">
-              {dbFamilyMembers.map((member) => {
-                const isCurrent = String(member.id) === String(currentUser?.id);
-                return (
-                  <button
-                    key={member.id}
-                    type="button"
-                    disabled={isSwitchingAccount || isCurrent}
-                    onClick={() => void handleSwitchAccount(member.id)}
-                    className={`flex w-full items-center justify-between rounded-[16px] px-4 py-3 text-left ${
-                      isCurrent ? "bg-[#efe5db]" : "bg-[#f7efe7]"
-                    }`}
-                  >
-                    <span>
-                      <span className="block text-sm font-semibold text-[#463326]">{member.name}</span>
-                      <span className="block text-xs text-[#8b705d]">{member.email ?? "No email"}</span>
-                    </span>
-                    <span className="text-xs font-medium text-[#6d5645]">
-                      {isCurrent ? "Current" : isSwitchingAccount ? "Switching..." : "Switch"}
-                    </span>
-                  </button>
-                );
-              })}
+              <div className="max-h-[280px] space-y-2 overflow-y-auto">
+                {dbFamilyMembers.map((member) => {
+                  const isCurrent = String(member.id) === String(currentUser?.id);
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      disabled={isSwitchingAccount || isCurrent}
+                      onClick={() => void handleSwitchAccount(member.id)}
+                      className={`flex w-full items-center justify-between rounded-[16px] px-4 py-3 text-left ${
+                        isCurrent ? "bg-[#efe5db]" : "bg-[#f7efe7]"
+                      }`}
+                    >
+                      <span>
+                        <span className="block text-sm font-semibold text-[#463326]">{member.name}</span>
+                        <span className="block text-xs text-[#8b705d]">{member.email ?? "No email"}</span>
+                      </span>
+                      <span className="text-xs font-medium text-[#6d5645]">
+                        {isCurrent ? "Current" : isSwitchingAccount ? "Switching..." : "Switch"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
