@@ -39,6 +39,7 @@ export default function App() {
   );
   const [homeBubbleMessage, setHomeBubbleMessage] = useState("今天想让小狗帮你传什么话呢？");
   const [latestMePostEntry, setLatestMePostEntry] = useState<AlbumEntry | null>(null);
+  const [hideBottomNav, setHideBottomNav] = useState(false);
 
   const normalizeFamilyMembers = (members: FamilyMember[]) =>
     members.map((member) => normalizeFamilyMemberAvatar(member));
@@ -226,6 +227,7 @@ export default function App() {
             onCreateEntry={handleAlbumEntryCreate}
             onUpdateReaction={handleAlbumEntryReactionChange}
             onDeleteEntry={handleAlbumEntryDelete}
+            onOverlayChange={setHideBottomNav}
           />
         );
 
@@ -312,7 +314,7 @@ export default function App() {
 
           <main className="iphone-content">{renderPage()}</main>
 
-          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} hidden={hideBottomNav} />
           </div>
         </div>
       </div>

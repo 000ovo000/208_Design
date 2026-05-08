@@ -290,10 +290,40 @@ export function deleteDemoPost(postId: string) {
 
 export function updateDemoPostReaction(postId: string, reaction: AlbumReaction) {
   ensureDemoDataInitialized();
-  const nextPosts = getDemoPosts().map((post) =>
-    String(post.id) === String(postId) ? { ...post, reaction } : post
-  );
+  const currentUser = getDemoCurrentUser();
+  const currentMember = findDemoFamilyMember(currentUser.id);
+  const memberId = String(currentMember.id);
+  const memberName = currentMember.name || currentUser.name || "Me";
+  let updatedReactionComments: DemoAlbumPost["reaction_comments"] = [];
+
+  const nextPosts = getDemoPosts().map((post) => {
+    if (String(post.id) !== String(postId)) return post;
+
+    const previousComments = Array.isArray(post.reaction_comments)
+      ? post.reaction_comments
+      : [];
+    const nextComments =
+      reaction === null
+        ? previousComments.filter((comment) => comment.memberId !== memberId)
+        : [
+            ...previousComments.filter((comment) => comment.memberId !== memberId),
+            {
+              memberId,
+              memberName,
+              reaction,
+            },
+          ];
+
+    updatedReactionComments = nextComments;
+    return {
+      ...post,
+      reaction,
+      reaction_comments: nextComments,
+    };
+  });
+
   writeJson(DEMO_POSTS_KEY, nextPosts);
+  return updatedReactionComments ?? [];
 }
 
 export function getDemoMoodEntries(scope: "self" | "family", currentUserId?: FamilyMemberId | null) {

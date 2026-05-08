@@ -564,7 +564,11 @@ export function ConnectPage({
 
     void (async () => {
       if (DEMO_MODE) {
-        updateDemoPostReaction(normalizedEntryId, reaction);
+        const reactionComments = updateDemoPostReaction(normalizedEntryId, reaction);
+        setReactionCommentsByEntryId((current) => ({
+          ...current,
+          [normalizedEntryId]: reactionComments,
+        }));
         return;
       }
 
@@ -1099,7 +1103,16 @@ export function ConnectPage({
 
         {showUploadSheet && isSelectedMemberCurrentUser && (
           <div className="absolute inset-0 z-40 flex items-end bg-black/20 px-5 pb-6">
-            <div className="w-full rounded-[28px] bg-white p-4 shadow-2xl">
+            <div className="relative w-full rounded-[28px] bg-white p-4 pt-14 shadow-2xl">
+              <button
+                type="button"
+                aria-label="Close upload menu"
+                onClick={() => setShowUploadSheet(false)}
+                className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#f6f1ec] text-[#745d4c]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
               <div className="grid grid-cols-2 gap-3">
                 <label
                   htmlFor="album-camera-input"
@@ -1116,13 +1129,6 @@ export function ConnectPage({
                   <span className="text-sm font-semibold">Library</span>
                 </label>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowUploadSheet(false)}
-                className="mt-3 w-full rounded-[18px] bg-[#f6f1ec] px-4 py-3 text-sm font-semibold text-[#745d4c]"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         )}

@@ -254,8 +254,8 @@ const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => 
       positionClassName:
         "absolute left-1/2 bottom-[-10px] z-[5] flex -translate-x-1/2 items-center justify-center",
       sizeClassName: "h-[122px] w-[230px]",
-      scaleClassName: "scale-[2] origin-center",
-    };
+        scaleClassName: "scale-[2] origin-center",
+      };
   }
 
   switch (reward.id) {
@@ -279,9 +279,9 @@ const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => 
       return {
         ...base,
         positionClassName:
-          "absolute left-[calc(50%+95px)] bottom-[70px] z-[25] flex -translate-x-1/2 items-center justify-center",
-        sizeClassName: "h-[72px] w-[72px]",
-        scaleClassName: "scale-[2] origin-center",
+          "absolute left-[calc(50%+80px)] bottom-[-42px] z-[6] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[138px] w-[188px]",
+        scaleClassName: "scale-[5] origin-center",
       };
     default:
       return {
