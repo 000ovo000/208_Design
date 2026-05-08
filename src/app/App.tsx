@@ -1,23 +1,215 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BottomNav } from "./components/bottom-nav";
 import { JarPage } from "./pages/jar-page";
 import { ChatPage } from "./pages/chat-page";
 import { ConnectPage } from "./pages/connect-page";
 import { ProfilePage } from "./pages/profile-page";
+import { WeeklyEchoPage } from "./pages/weekly-echo-page";
+import { PetProvider } from "./context/pet-context";
+import { familyMembers, initialAlbumEntries } from "./data/family-data";
+import { DEMO_MODE } from "./config";
+import { getAppNowDateTimeString } from "./lib/app-date";
+import {
+  getDemoCurrentUser,
+  getDemoFamilyMembers,
+  getDemoPosts,
+} from "./lib/demo-store";
+import { normalizeFamilyMemberAvatar } from "./lib/member-avatar";
+import { apiUrl } from "./lib/api";
+import { AlbumEntry, FamilyMember, FamilyMemberId, TabKey } from "./types";
 
-type TabKey = "home" | "connect" | "jar" | "profile";
+type CurrentUser = {
+  id: string | number;
+  name?: string;
+  email?: string;
+  family_id?: string | number;
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
-  const [pendingTopicTitle, setPendingTopicTitle] = useState("");
+  const [isBottomNavHidden, setIsBottomNavHidden] = useState(false);
+  const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>(
+    DEMO_MODE ? [] : initialAlbumEntries
+  );
+  const [dbFamilyMembers, setDbFamilyMembers] = useState<FamilyMember[]>(() =>
+    (DEMO_MODE ? getDemoFamilyMembers() : familyMembers).map((member) =>
+      normalizeFamilyMemberAvatar(member)
+    )
+  );
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() =>
+    DEMO_MODE ? getDemoCurrentUser() : null
+  );
+  const [homeBubbleMessage, setHomeBubbleMessage] = useState(
+    "What would you like the puppy to pass along?"
+  );
+  const [latestMePostEntry, setLatestMePostEntry] = useState<AlbumEntry | null>(null);
 
-  const handleSendTopic = (topic: string) => {
-    setPendingTopicTitle(topic);
-    setActiveTab("home");
+  const normalizeFamilyMembers = (members: FamilyMember[]) =>
+    members.map((member) => normalizeFamilyMemberAvatar(member));
+
+  const isCurrentUserMember = (member: FamilyMember, user: CurrentUser | null) => {
+    if (!member || !user) return false;
+    return (
+      String(member.id) === String(user.id) ||
+      Boolean(member.email && user.email && member.email === user.email)
+    );
   };
 
-  const handleUploadOpened = () => {
-    setPendingTopicTitle("");
+  useEffect(() => {
+    const loadFamilyMembers = async () => {
+      if (DEMO_MODE) {
+        setDbFamilyMembers(normalizeFamilyMembers(getDemoFamilyMembers()));
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl("/api/family-members"));
+        if (!response.ok) return;
+        const data = await response.json().catch(() => []);
+        if (Array.isArray(data) && data.length) {
+          setDbFamilyMembers(normalizeFamilyMembers(data));
+        }
+      } catch (error) {
+        // fallback to local demo members
+      }
+    };
+    void loadFamilyMembers();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl("/api/me"));
+        if (!response.ok) throw new Error("Failed to fetch current user");
+        const user = await response.json();
+        setCurrentUser(user);
+      } catch (error) {
+        setCurrentUser(null);
+      }
+    };
+    void fetchCurrentUser();
+    const refreshOnFocus = () => {
+      void fetchCurrentUser();
+    };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void fetchCurrentUser();
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLatestMePost = async () => {
+      try {
+        const posts = DEMO_MODE
+          ? getDemoPosts()
+          : await (async () => {
+              const response = await fetch(apiUrl("/api/posts"));
+              if (!response.ok) return [];
+              const data = await response.json().catch(() => []);
+              return Array.isArray(data) ? data : [];
+            })();
+        const fallbackCurrentMember = dbFamilyMembers[0] ?? null;
+        const currentMember =
+          dbFamilyMembers.find((member) => isCurrentUserMember(member, currentUser)) ??
+          fallbackCurrentMember;
+        const mePost = posts.find(
+          (post) =>
+            String(post?.family_member_id ?? post?.user_id) === String(currentMember?.id)
+        );
+
+        if (!isMounted || !mePost) return;
+
+        const mappedEntry: AlbumEntry = {
+          id: `post-${mePost.id}`,
+          memberId: String(mePost.family_member_id ?? mePost.user_id ?? ""),
+          imageUrl: mePost.media_url || "/images/dog/profile/dog-white.png",
+          uploadedAt: mePost.created_at || getAppNowDateTimeString(),
+          dogMessage: mePost.content || "",
+          reaction: null,
+        };
+
+        setLatestMePostEntry(mappedEntry);
+        if ((mePost.content || "").trim()) {
+          setHomeBubbleMessage(mePost.content.trim());
+        }
+      } catch (error) {
+        // Keep existing local fallback when backend is unavailable.
+      }
+    };
+
+    void loadLatestMePost();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser, dbFamilyMembers]);
+
+  const latestEntries = useMemo(() => {
+    const localLatestEntries = dbFamilyMembers.reduce<Record<FamilyMemberId, AlbumEntry | null>>(
+      (accumulator, member) => {
+        accumulator[member.id] =
+          albumEntries.find((entry) => entry.memberId === member.id) ?? null;
+        return accumulator;
+      },
+      {}
+    );
+
+    if (latestMePostEntry && latestMePostEntry.memberId != null) {
+      localLatestEntries[latestMePostEntry.memberId] = latestMePostEntry;
+    }
+
+    return localLatestEntries;
+  }, [albumEntries, latestMePostEntry, dbFamilyMembers]);
+
+  const handleAlbumEntryCreate = (entry: AlbumEntry) => {
+    setAlbumEntries((prev) => [entry, ...prev]);
+    const fallbackCurrentMember = dbFamilyMembers[0] ?? null;
+    const currentMember =
+      dbFamilyMembers.find((member) => isCurrentUserMember(member, currentUser)) ??
+      fallbackCurrentMember;
+    if (String(entry.memberId) === String(currentMember?.id)) {
+      setHomeBubbleMessage(
+        entry.dogMessage.trim() ||
+          `${currentMember?.name ?? "Your family member"}'s puppy has a photo to share with you.`
+      );
+      setActiveTab("home");
+    }
+  };
+
+  const handleAlbumEntryReactionChange = (
+    entryId: string,
+    reaction: AlbumEntry["reaction"]
+  ) => {
+    setAlbumEntries((prev) =>
+      prev.map((entry) => (entry.id === entryId ? { ...entry, reaction } : entry))
+    );
+  };
+
+  const handleAlbumEntryDelete = (entryId: string) => {
+    setAlbumEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+  };
+
+  const handleFamilyMembersChange = (members: FamilyMember[]) => {
+    setDbFamilyMembers(normalizeFamilyMembers(members));
   };
 
   const renderPage = () => {
@@ -25,38 +217,61 @@ export default function App() {
       case "home":
         return (
           <ChatPage
-            pendingTopicTitle={pendingTopicTitle}
-            onUploadOpened={handleUploadOpened}
+            familyMembers={dbFamilyMembers}
+            latestEntries={latestEntries}
+            bubbleMessage={homeBubbleMessage}
+          />
+        );
+
+      case "album":
+        return (
+          <ConnectPage
+            familyMembers={dbFamilyMembers}
+            albumEntries={albumEntries}
+            onCreateEntry={handleAlbumEntryCreate}
+            onUpdateReaction={handleAlbumEntryReactionChange}
+            onDeleteEntry={handleAlbumEntryDelete}
+            onOverlayChange={setIsBottomNavHidden}
           />
         );
 
       case "jar":
-        return <JarPage />;
+        return <JarPage familyMembers={dbFamilyMembers} />;
 
-      case "connect":
-        return <ConnectPage onSendTopic={handleSendTopic} />;
+      case "echo":
+        return <WeeklyEchoPage />;
 
       case "profile":
-        return <ProfilePage />;
+        return (
+          <ProfilePage
+            familyMembers={dbFamilyMembers}
+            onFamilyMembersChange={handleFamilyMembersChange}
+          />
+        );
 
       default:
         return (
           <ChatPage
-            pendingTopicTitle={pendingTopicTitle}
-            onUploadOpened={handleUploadOpened}
+            familyMembers={dbFamilyMembers}
+            latestEntries={latestEntries}
+            bubbleMessage={homeBubbleMessage}
           />
         );
     }
   };
 
   return (
-    <div className="app-stage">
-      <div className="app-bg-pattern app-bg-pattern-1" />
-      <div className="app-bg-pattern app-bg-pattern-2" />
-      <div className="app-bg-dots" />
+    <PetProvider
+      key={currentUser?.id != null ? String(currentUser.id) : "guest"}
+      currentUserId={currentUser?.id ?? null}
+    >
+      <div className="app-stage">
+        <div className="app-bg-pattern app-bg-pattern-1" />
+        <div className="app-bg-pattern app-bg-pattern-2" />
+        <div className="app-bg-dots" />
 
-      <div className="iphone-frame-shell">
-        <div className="iphone-screen">
+        <div className="iphone-frame-shell">
+          <div className="iphone-screen">
           <header className="iphone-status-bar">
             <span className="iphone-time">9:41</span>
 
@@ -103,9 +318,14 @@ export default function App() {
 
           <main className="iphone-content">{renderPage()}</main>
 
-          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          <BottomNav
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            hidden={isBottomNavHidden}
+          />
+          </div>
         </div>
       </div>
-    </div>
+    </PetProvider>
   );
 }

@@ -1,712 +1,2418 @@
-import { useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, X, Plus, Heart, Smile, ThumbsUp } from "lucide-react";
-
-
-type QuickReplyOption = {
-  id: string;
-  text: string;
-  icon: React.ReactNode;
-};
-
-type SelectedReply = {
-  id: number;
-  optionId: string;
-  text: string;
-  isCustom?: boolean;
-};
-
-type StatusPost = {
-  id: number;
-  user: string;
-  time: string;
-  mediaType: "image" | "video";
-  mediaUrl: string;
-  caption?: string;
-  replies: SelectedReply[];
-};
-
-const baseQuickReplyOptions: QuickReplyOption[] = [
-  {
-    id: "thinking",
-    text: "Thinking of you",
-    icon: <Heart className="h-6 w-6 text-pink-300" strokeWidth={2.2} />,
-  },
-  {
-    id: "miss",
-    text: "Miss you",
-    icon: <Smile className="h-6 w-6 text-orange-300" strokeWidth={2.2} />,
-  },
-  {
-    id: "custom",
-    text: "Add reply",
-    icon: <span className="text-[22px] font-semibold text-[#8B8BA3]">+</span>,
-  },
-];
-
-  function getSuggestedReplies(caption?: string): QuickReplyOption[] {
-    const text = (caption || "").toLowerCase();
-
-    if (
-      text.includes("sunset") ||
-      text.includes("sea") ||
-      text.includes("beach")
-    ) {
-      return [
-        {
-          id: "peaceful",
-          text: "So peaceful",
-          icon: <Heart className="h-6 w-6 text-pink-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "beautiful",
-          text: "Such a beautiful view",
-          icon: <Smile className="h-6 w-6 text-orange-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "custom",
-          text: "Add reply",
-          icon: <span className="text-[22px] font-semibold text-[#8B8BA3]">+</span>,
-        },
-      ];
-    }
-
-    if (
-      text.includes("walk") ||
-      text.includes("park") ||
-      text.includes("drive")
-    ) {
-      return [
-        {
-          id: "nice_outing",
-          text: "Looks like a lovely outing",
-          icon: <Heart className="h-6 w-6 text-pink-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "enjoy_time",
-          text: "Hope you had a nice time",
-          icon: <Smile className="h-6 w-6 text-orange-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "custom",
-          text: "Add reply",
-          icon: <span className="text-[22px] font-semibold text-[#8B8BA3]">+</span>,
-        },
-      ];
-    }
-
-    if (
-      text.includes("flower") ||
-      text.includes("bloom") ||
-      text.includes("garden")
-    ) {
-      return [
-        {
-          id: "pretty_flowers",
-          text: "The flowers are lovely",
-          icon: <Heart className="h-6 w-6 text-pink-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "bright_day",
-          text: "That brightened my day",
-          icon: <Smile className="h-6 w-6 text-orange-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "custom",
-          text: "Add reply",
-          icon: <span className="text-[22px] font-semibold text-[#8B8BA3]">+</span>,
-        },
-      ];
-    }
-
-    if (
-      text.includes("tea") ||
-      text.includes("coffee") ||
-      text.includes("morning")
-    ) {
-      return [
-        {
-          id: "cozy",
-          text: "Looks so cozy",
-          icon: <Heart className="h-6 w-6 text-pink-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "nice_moment",
-          text: "What a nice little moment",
-          icon: <Smile className="h-6 w-6 text-orange-300" strokeWidth={2.2} />,
-        },
-        {
-          id: "custom",
-          text: "Add reply",
-          icon: <span className="text-[22px] font-semibold text-[#8B8BA3]">+</span>,
-        },
-      ];
-    }
-
-    return [
-      {
-        id: "thinking",
-        text: "Thinking of you",
-        icon: <Heart className="h-6 w-6 text-pink-300" strokeWidth={2.2} />,
-      },
-      {
-        id: "sweet",
-        text: "Thanks for sharing",
-        icon: <Smile className="h-6 w-6 text-orange-300" strokeWidth={2.2} />,
-      },
-      {
-        id: "custom",
-        text: "Add reply",
-        icon: <span className="text-[22px] font-semibold text-[#8B8BA3]">+</span>,
-      },
-    ];
-  }
-const initialPosts: StatusPost[] = [
-  {
-    id: 1,
-    user: "Mom",
-    time: "8:42 pm",
-    mediaType: "image",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop",
-    caption: "sunset by the sea",
-    replies: [],
-  },
-  {
-    id: 2,
-    user: "Dad",
-    time: "7:18 pm",
-    mediaType: "image",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop",
-    caption: "evening walk in the park",
-    replies: [],
-  },
-  {
-    id: 3,
-    user: "Grandma",
-    time: "5:36 pm",
-    mediaType: "image",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?q=80&w=1200&auto=format&fit=crop",
-    caption: "flowers in bloom",
-    replies: [],
-  },
-  {
-    id: 4,
-    user: "Grandpa",
-    time: "3:12 pm",
-    mediaType: "image",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?q=80&w=1200&auto=format&fit=crop",
-    caption: "afternoon tea break",
-    replies: [],
-  },
-  {
-    id: 5,
-    user: "Mom",
-    time: "11:05 am",
-    mediaType: "image",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=1200&auto=format&fit=crop",
-    caption: "coffee and quiet morning",
-    replies: [],
-  },
-  {
-    id: 6,
-    user: "Dad",
-    time: "9:24 am",
-    mediaType: "image",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1200&auto=format&fit=crop",
-    caption: "morning drive",
-    replies: [],
-  },
-];
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Bell, ChevronDown, Home, Send, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { usePet } from "../context/pet-context";
+import { DEMO_MODE } from "../config";
+import {
+  dailyDrops,
+  getDailyDropsForPet,
+  type DailyDrop,
+} from "../data/daily-drops";
+import { getFamilySelectedPetId } from "../data/family-data";
+import {
+  defaultPetId,
+  getPetById,
+  getPetProfileImage,
+  type PetId,
+  type PetItem,
+  type PetSpecies,
+} from "../data/pets";
+import { getPetReaction } from "../data/pet-reactions";
+import { apiUrl } from "../lib/api";
+import { getAppNowDateTimeString, getAppTodayKey } from "../lib/app-date";
+import {
+  createDemoPetMessage,
+  createDemoPost,
+  deleteDemoPost,
+  getDemoCareMessages,
+  getDemoCurrentUser,
+  getDemoDailyDropClaimsStorageKey,
+  getDemoPetMessages,
+  getDemoPosts,
+  getScopedSelectedPetStorageKey,
+  markDemoCareMessageRead,
+  markDemoPetMessagesRead,
+} from "../lib/demo-store";
+import {
+  type WeeklyReward,
+} from "../data/weekly-rewards";
+import { AlbumEntry, FamilyMember, FamilyMemberId } from "../types";
 
 interface ChatPageProps {
-  pendingTopicTitle?: string;
-  onUploadOpened?: () => void;
+  familyMembers: FamilyMember[];
+  latestEntries: Record<FamilyMemberId, AlbumEntry | null>;
+  bubbleMessage: string;
 }
 
-export function ChatPage({
-  pendingTopicTitle = "",
-  onUploadOpened,
-}: ChatPageProps) {
-  const [posts, setPosts] = useState<StatusPost[]>(initialPosts);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showMediaOptions, setShowMediaOptions] = useState(false);
-  const [newCaption, setNewCaption] = useState("");
-  const [selectedMediaUrl, setSelectedMediaUrl] = useState("");
-  const [selectedMediaType, setSelectedMediaType] = useState<"image" | "video" | null>(null);
-  const [showReplyModal, setShowReplyModal] = useState(false);
-  const [customReplyText, setCustomReplyText] = useState("");
-    useEffect(() => {
-    if (pendingTopicTitle) {
-      setNewCaption(pendingTopicTitle);
-      setShowUploadModal(true);
-      setShowMediaOptions(true);
-      onUploadOpened?.();
-    }
-  }, [pendingTopicTitle, onUploadOpened]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
-  const postsContainerRef = useRef<HTMLDivElement | null>(null);
+type InventoryTab = "petSelection" | "food" | "toy";
+type DailyDropState = "available" | "claiming" | "claimed";
+type StorageArea = "food" | "toy";
+type DailyDropClaimRecord = {
+  date: string;
+  count: number;
+  claimedIds: string[];
+};
+type DbPost = {
+  id: number | string;
+  user_id: number | string;
+  family_member_id?: number | string | null;
+  user_name?: string;
+  family_id: number | string;
+  title: string | null;
+  content: string | null;
+  media_url: string | null;
+  media_type: string | null;
+  created_at: string;
+};
+type Post = {
+  id: number | string;
+  user_id: number | string;
+  family_member_id?: number | string | null;
+  family_id: number | string;
+  title: string;
+  content: string;
+  media_url: string | null;
+  media_type: string;
+  created_at?: string;
+};
+type CurrentUser = {
+  id: number | string;
+  name: string;
+  email?: string;
+  family_id?: number | string;
+};
 
-  const activePost = posts[activeIndex] ?? posts[0];
-  const suggestedReplies = getSuggestedReplies(activePost?.caption);
+type CareMessage = {
+  id: number | string;
+  sender_user_id: number | string;
+  receiver_user_id: number | string;
+  family_id: number | string;
+  care_type: string;
+  message: string;
+  is_read: number | boolean;
+  created_at: string;
+  read_at?: string | null;
+  sender_name?: string;
+};
 
+type PetMessage = {
+  id: number | string;
+  sender_user_id: number | string;
+  receiver_user_id: number | string;
+  family_id: number | string;
+  message: string;
+  is_read: number | boolean;
+  created_at: string;
+  read_at?: string | null;
+  sender_name?: string;
+};
 
-  const handleAddCustomReply = () => {
-    const text = customReplyText.trim();
-    if (!text) return;
+type PetMessageComposerState = {
+  member: FamilyMember;
+  text: string;
+  error: string;
+} | null;
 
-    setPosts((prev) =>
-      prev.map((post, index) => {
-        if (index !== activeIndex) return post;
+type SceneBubbleMessage = {
+  key: string;
+  text: string;
+  kind: "relay" | "moment";
+  messageId?: number | string;
+  senderUserId?: number | string;
+  createdAt?: string;
+  isUnread: boolean;
+};
 
-        return {
-          ...post,
-          replies: [
-            {
-              id: Date.now(),
-              optionId: "custom",
-              text,
-              isCustom: true,
-            },
-          ],
-        };
-      })
-    );
+type VisualItem = {
+  name: string;
+  emoji?: string;
+  image?: string;
+  sceneImage?: string;
+};
 
-    setShowReplyModal(false);
-    setCustomReplyText("");
+type ScenePlacement = {
+  positionClassName: string;
+  sizeClassName: string;
+  imageClassName: string;
+  durationMs: number | null;
+  style?: CSSProperties;
+  scaleClassName?: string;
+};
+
+const inventoryTabs: { key: InventoryTab; label: string; title: string; emoji: string }[] = [
+  { key: "petSelection", label: "Change your pet", title: "Pet Collection", emoji: "🐾" },
+  { key: "food", label: "Food", title: "Food Storage", emoji: "🍖" },
+  { key: "toy", label: "Toys", title: "Toy Box", emoji: "🧸" },
+];
+
+const DAILY_DROP_MAX_PER_DAY = 1;
+const DAILY_DROP_DEV_DELAY_MS = { min: 5000, max: 10000 };
+const DAILY_DROP_PROD_DELAY_MS = { min: 2 * 60 * 1000, max: 5 * 60 * 1000 };
+const PET_MESSAGE_PROMPT = "What would you like the puppy to pass along?";
+const PET_MESSAGE_EMPTY_ERROR = "Please enter a message for the puppy to deliver.";
+const PET_MESSAGE_SELF_ERROR = "You can't send a message to yourself.";
+const PET_MESSAGE_SEND_ERROR = "Couldn't send the message. Please try again.";
+
+const getStorageArea = (drop: DailyDrop): StorageArea => {
+  return drop.category === "food" || drop.category === "drink" ? "food" : "toy";
+};
+
+const pickRandomDrop = (drops: DailyDrop[]) => {
+  return drops[Math.floor(Math.random() * drops.length)] ?? dailyDrops[0];
+};
+
+const getScenePlacement = (item: DailyDrop): ScenePlacement => {
+  const base = {
+    imageClassName: "drop-shadow-[0_10px_16px_rgba(73,56,42,0.18)]",
   };
 
-  const handleCloseReplyModal = () => {
-    setShowReplyModal(false);
-    setCustomReplyText("");
+  switch (item.id) {
+    case "pet-water":
+      return {
+        ...base,
+        positionClassName: "absolute right-[10px] bottom-[88px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[50px] w-[70px]",
+        durationMs: 25000,
+      };
+    case "pet-milk":
+      return {
+        ...base,
+        positionClassName: "absolute left-[10px] bottom-[86px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[50px] w-[70px]",
+        durationMs: 25000,
+      };
+    case "canned-tuna":
+      return {
+        ...base,
+        positionClassName: "absolute right-[20px] bottom-[132px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[38px] w-[38px]",
+        durationMs: 25000,
+      };
+    case "pet-food":
+      return {
+        ...base,
+        positionClassName: "absolute left-[8px] bottom-[6px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[54px] w-[72px]",
+        durationMs: 25000,
+      };
+    case "pet-biscuit":
+      return {
+        ...base,
+        positionClassName: "absolute left-[112px] bottom-[10px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[34px] w-[34px]",
+        durationMs: 25000,
+      };
+    case "small-bone":
+      return {
+        ...base,
+        positionClassName: "absolute left-[174px] bottom-[14px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[24px] w-[52px]",
+        durationMs: 25000,
+      };
+    case "small-ball":
+      return {
+        ...base,
+        positionClassName: "absolute left-[78px] bottom-[54px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[30px] w-[30px]",
+        durationMs: 50000,
+      };
+    case "chew-toy":
+      return {
+        ...base,
+        positionClassName: "absolute left-[82px] bottom-[124px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[40px] w-[58px]",
+        durationMs: 50000,
+      };
+    case "plush-bear":
+      return {
+        ...base,
+        positionClassName: "absolute right-[86px] bottom-[52px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[56px] w-[44px]",
+        durationMs: 50000,
+      };
+    case "fish-toy":
+      return {
+        ...base,
+        positionClassName: "absolute right-[10px] bottom-[10px] z-[12] flex items-center justify-center text-4xl",
+        sizeClassName: "h-[36px] w-[56px]",
+        durationMs: 50000,
+      };
+    default:
+      return {
+        ...base,
+        positionClassName: "absolute -right-12 bottom-14 z-10 flex items-center justify-center text-4xl",
+        sizeClassName: "h-20 w-20",
+        durationMs: item.category === "food" || item.category === "drink" ? 25000 : 50000,
+      };
+  }
+};
+
+const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => {
+  const base = {
+    imageClassName: "drop-shadow-[0_12px_18px_rgba(73,56,42,0.18)]",
+    durationMs: null,
   };
 
-  const handleQuickReply = (option: QuickReplyOption) => {
-    if (option.id === "custom") {
-      setShowReplyModal(true);
-      return;
-    }
-
-    setPosts((prev) =>
-      prev.map((post, index) => {
-        if (index !== activeIndex) return post;
-
-        return {
-          ...post,
-          replies: [
-            {
-              id: Date.now(),
-              optionId: option.id,
-              text: option.text,
-            },
-          ],
-        };
-      })
-    );
-  };
-
-  const handleMediaUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const isImage = file.type.startsWith("image/");
-    const isVideo = file.type.startsWith("video/");
-
-    if (!isImage && !isVideo) {
-      alert("Only image or video can be uploaded.");
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-
-    setSelectedMediaUrl(objectUrl);
-    setSelectedMediaType(isImage ? "image" : "video");
-
-    event.target.value = "";
-  };
-
-  const handleSubmitPost = () => {
-    if (!selectedMediaUrl || !selectedMediaType) {
-      alert("Please select a photo first.");
-      return;
-    }
-
-    const newPost: StatusPost = {
-      id: Date.now(),
-      user: "testUser",
-      time: "Just now",
-      mediaType: selectedMediaType,
-      mediaUrl: selectedMediaUrl,
-      caption: newCaption.trim() || "new status",
-      replies: [],
+  if (reward.id.startsWith("pet-sofa")) {
+    return {
+      ...base,
+      positionClassName:
+        "absolute left-1/2 bottom-[0px] z-[4] flex -translate-x-1/2 items-center justify-center",
+      sizeClassName: "h-[80px] w-[158px]",
+        scaleClassName: "scale-[1.3] origin-center",
     };
+  }
 
-    setPosts((prev) => [newPost, ...prev]);
-    setActiveIndex(0);
+  switch (reward.id) {
+  case "cat-climber":
+    return {
+      ...base,
+      positionClassName:
+        "absolute -left-[18px] bottom-[100px] z-[4] flex items-center justify-center",
+      sizeClassName: "h-[205px] w-[145px]",
+    };
+    case "cat-teaser":
+      return {
+        ...base,
+        positionClassName:
+          "absolute -right-[6px] bottom-[8px] z-[4] flex items-center justify-center",
+        sizeClassName: "h-[126px] w-[58px]",
+      };
+    case "carrot-toy":
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-[calc(50%+56px)] bottom-[-2px] z-[4] flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[88px] w-[118px]",
+      };
+    default:
+      return {
+        ...base,
+        positionClassName:
+          "absolute left-1/2 bottom-[-8px] z-10 flex -translate-x-1/2 items-center justify-center",
+        sizeClassName: "h-[88px] w-[120px]",
+      };
+  }
+};
 
-    requestAnimationFrame(() => {
-      postsContainerRef.current?.scrollTo({
-        left: 0,
-        behavior: "smooth",
-      });
-    });
+const readSelectedPetIdForUser = (userId: FamilyMemberId | null | undefined): PetId => {
+  if (userId == null || typeof window === "undefined") return defaultPetId;
+  const savedId = window.localStorage.getItem(getScopedSelectedPetStorageKey(userId));
+  if (savedId && savedId === getPetById(savedId as PetId).id) {
+    return savedId as PetId;
+  }
+  return getFamilySelectedPetId(userId) ?? defaultPetId;
+};
 
-    setShowUploadModal(false);
-    setShowMediaOptions(false);
-    setNewCaption("");
-    setSelectedMediaUrl("");
-    setSelectedMediaType(null);
-  };
+function PawIcon() {
+  return (
+    <div className="relative w-9 h-9">
+      <span className="absolute left-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute left-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute right-[6px] top-[0px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute right-[-5px] top-[11px] w-[11px] h-[11px] rounded-full bg-[#341056]" />
+      <span className="absolute left-1/2 bottom-0 -translate-x-1/2 w-[26px] h-[21px] bg-[#341056] rounded-[18px_18px_14px_14px]" />
+    </div>
+  );
+}
 
+function ItemIcon({
+  item,
+  source = "image",
+  sizeClass = "h-11 w-11",
+  imageClassName = "",
+  emojiClassName = "text-xl leading-none",
+  alt = "",
+}: {
+  item: VisualItem;
+  source?: "image" | "sceneImage";
+  sizeClass?: string;
+  imageClassName?: string;
+  emojiClassName?: string;
+  alt?: string;
+}) {
+  const src = item[source];
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
-  const handleDeletePost = (id: number) => {
-    setPosts((prev) => {
-      const updated = prev.filter((post) => post.id !== id);
-      setActiveIndex((current) =>
-        updated.length === 0 ? 0 : Math.min(current, updated.length - 1)
-      );
-      return updated;
-    });
-  };
+  if (src && failedSrc !== src) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className={`${sizeClass} object-contain ${imageClassName}`}
+        onError={() => setFailedSrc(src)}
+      />
+    );
+  }
+
+  if (item.emoji) {
+    return (
+      <span className={emojiClassName} aria-hidden="true">
+        {item.emoji}
+      </span>
+    );
+  }
 
   return (
-    <div className="flex h-full flex-col bg-[#F8F4EF]">
-      <div className="flex items-center justify-between border-b border-[#E8DED2] bg-[#F8F4EF]/95 px-5 pt-6 pb-4 backdrop-blur-sm">
-        <div>
-          <h1 className="text-xl font-semibold text-[#4A4A6A]">Home</h1>
-          <p className="text-sm text-[#8B8BA3]">Share a moment, reply simply</p>
-        </div>
+    <span className={`${sizeClass} inline-block`} aria-hidden="true" />
+  );
+}
 
-        <button
-          onClick={() => setShowUploadModal(true)}
-          className="rounded-full bg-[#6B5B73] px-4 py-2 text-sm font-medium text-white"
-        >
-          Upload
-        </button>
+function PlacedDailyDropSceneItem({
+  drop,
+  onExpire,
+  disableExpire = false,
+}: {
+  drop: DailyDrop;
+  onExpire: (dropId: string) => void;
+  disableExpire?: boolean;
+}) {
+  const placement = getScenePlacement(drop);
+
+  useEffect(() => {
+    if (disableExpire || placement.durationMs === null) return;
+
+    const timeoutId = window.setTimeout(() => {
+      onExpire(drop.id);
+    }, placement.durationMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [disableExpire, drop.id, onExpire, placement.durationMs]);
+
+  return (
+    <div
+      className={`${placement.positionClassName} ${placement.scaleClassName ?? ""}`}
+      style={placement.style}
+    >
+      <ItemIcon
+        item={drop}
+        source="sceneImage"
+        sizeClass={placement.sizeClassName}
+        imageClassName={placement.imageClassName}
+        alt={drop.name}
+      />
+    </div>
+  );
+}
+
+function PlacedWeeklyRewardSceneItem({
+  reward,
+}: {
+  reward: WeeklyReward;
+}) {
+  const placement = getWeeklyRewardScenePlacement(reward);
+
+  return (
+    <div
+      className={`${placement.positionClassName} ${placement.scaleClassName ?? ""}`}
+      style={placement.style}
+    >
+      <ItemIcon
+        item={reward}
+        source="sceneImage"
+        sizeClass={placement.sizeClassName}
+        imageClassName={placement.imageClassName}
+        alt={reward.name}
+      />
+    </div>
+  );
+}
+
+function PetSelectionCard({
+  pet,
+  active = false,
+  unlocked = false,
+  onClick,
+}: {
+  pet: PetItem;
+  active?: boolean;
+  unlocked?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!unlocked}
+      className={`flex flex-col items-center justify-end rounded-[22px] transition-all ${
+        active ? "bg-[#B98A54] shadow-md" : "bg-white/55 border border-white/70"
+      } ${!unlocked ? "opacity-50" : "active:scale-[0.98]"}`}
+      style={{ width: 112, height: 126, paddingBottom: 10 }}
+    >
+      <div className="relative mb-2 flex h-[76px] w-[92px] items-end justify-center">
+        <div className="absolute inset-x-0 bottom-0 mx-auto h-[40px] w-[78px] rounded-full bg-[#E8B85E]/80" />
+        <img
+          src={pet.image}
+          alt={pet.name}
+          className="relative z-[2] max-h-[74px] max-w-[88px] object-contain drop-shadow-[0_8px_10px_rgba(73,56,42,0.16)]"
+        />
       </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleMediaUpload}
-        />
+      <span
+        className={`px-2 text-center text-[13px] font-semibold leading-[1.15] ${
+          active ? "text-white" : "text-[#7A5A43]"
+        }`}
+      >
+        {pet.name}
+      </span>
+    </button>
+  );
+}
 
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={handleMediaUpload}
-        />
+function PetSelectionView({
+  selectedPetId,
+  setSelectedPetId,
+  currentPet,
+  petItems,
+  unlockedPetIds,
+  onBack,
+}: {
+  selectedPetId: PetId;
+  setSelectedPetId: (value: PetId) => void;
+  currentPet: PetItem;
+  petItems: PetItem[];
+  unlockedPetIds: PetId[];
+  onBack: () => void;
+}) {
+  const [activeSpecies, setActiveSpecies] = useState<PetSpecies>(currentPet.species);
+  const visiblePets = petItems.filter((pet) => pet.species === activeSpecies);
 
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-24">
-        <div
-          ref={postsContainerRef}
-          className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [-ms-overflow-style:none]"
-          onScroll={(e) => {
-            const container = e.currentTarget;
-            const cardWidth = container.clientWidth - 32 + 16;
-            const index = Math.round(container.scrollLeft / cardWidth);
-            if (index >= 0 && index < posts.length) {
-              setActiveIndex(index);
-            }
-          }}
-          style={{ scrollbarWidth: "none" }}
-        >
-          {posts.map((post, index) => (
-            <div
-              key={post.id}
-              className="min-w-full snap-center overflow-hidden rounded-[28px] border border-[#E8DED2] bg-white shadow-sm"
-            >
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-[#4A4A6A]">{post.user}</p>
-                  <p className="text-xs text-[#8B8BA3]">{post.time}</p>
-                </div>
-
-                {post.user === "testUser" ? (
-                  <button
-                    onClick={() => handleDeletePost(post.id)}
-                    className="rounded-full px-3 py-1 text-xs font-medium text-[#B06A6A] hover:bg-[#F8ECEC]"
-                  >
-                    Delete
-                  </button>
-                ) : (
-                  <button className="text-lg leading-none text-[#8B8BA3]">•••</button>
-                )}
-              </div>
-
-              <div className="aspect-[3/4] w-full bg-[#EFE7DD]">
-                {post.mediaType === "image" ? (
-                  <img
-                    src={post.mediaUrl}
-                    alt={post.caption || "status"}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <video
-                    src={post.mediaUrl}
-                    controls
-                    className="h-full w-full object-cover"
-                  />
-                )}
-              </div>
-
-              <div className="px-4 py-3">
-                <p className="text-sm font-medium text-[#4A4A6A]">
-                  {post.caption || "Untitled"}
-                </p>
-                <p className="mt-1 text-xs text-[#8B8BA3]">
-                    {post.replies.length === 0
-                      ? "Tap below to send a quick reply"
-                      : `${post.replies.length} reply${post.replies.length > 1 ? "ies" : ""}`}
-                </p>
-              </div>
-
-              {index === activeIndex && (
-                <div className="border-t border-[#F0E7DC] px-4 pt-3 pb-4">
-                  {post.replies.length === 0 && (
-                    <>
-                      <p className="mb-3 text-base font-semibold text-[#5F6280]">
-                        Quick reply
-                      </p>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        {suggestedReplies.map((option) => (
-                          <button
-                            key={option.id}
-                            onClick={() => handleQuickReply(option)}
-                            className="flex min-h-[96px] flex-col items-center justify-center rounded-[20px] border border-[#E8DED2] bg-[#FCFCFB] px-2 py-3 text-center shadow-sm transition hover:-translate-y-[1px]"
-                          >
-                            <div className="mb-2">{option.icon}</div>
-                            <span className="text-[13px] font-semibold leading-5 text-[#5F6280]">
-                              {option.text}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                    {post.replies.length > 0 && (
-                      <div className="mt-2 space-y-2">
-                        {post.replies.map((reply) => {
-                          const matchedOption = suggestedReplies.find(
-                            (item) => item.id === reply.optionId
-                          );
-
-                          return (
-                            <div
-                              key={reply.id}
-                              className="rounded-2xl border border-[#E8DED2] bg-[#F7F3EE] px-3 py-3"
-                            >
-                              <div className="flex items-start gap-2">
-                                <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white">
-                                  {reply.isCustom ? (
-                                    <span className="text-sm text-[#8B8BA3]">✎</span>
-                                  ) : (
-                                    matchedOption?.icon
-                                  )}
-                                </div>
-
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-medium text-[#8B8BA3]">
-                                    testUser
-                                  </p>
-                                  <p className="mt-1 text-sm leading-relaxed text-[#4A4A6A]">
-                                    {reply.text}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-3 flex justify-center gap-2">
-          {posts.map((_, index) => (
-            <div
-              key={index}
-              className={`h-2 rounded-full transition-all ${
-                index === activeIndex ? "w-6 bg-[#6B5B73]" : "w-2 bg-[#D8CEC2]"
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-
-  {showUploadModal && (
-    <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/30 px-4 pb-6">
-      <div className="w-full max-w-md rounded-[28px] bg-[#FFFDF9] p-5 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#4A4A6A]">New status</h2>
-
-          <div className="flex items-center gap-2">
+  return (
+    <div className="relative h-full w-full overflow-hidden">
+      <div className="flex h-full w-full min-h-0 flex-col overflow-hidden">
+        <div className="shrink-0 px-5 pt-5 pb-3">
+          <div className="mb-4 flex items-center justify-start">
             <button
-              onClick={handleSubmitPost}
-              disabled={!selectedMediaUrl}
-              className="rounded-full bg-[#6B5B73] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              type="button"
+              aria-label="Back"
+              onClick={onBack}
+              className="flex h-8 w-8 items-center justify-center text-[#333333]"
             >
-              Send
+              <ArrowLeft size={22} strokeWidth={2} />
             </button>
+          </div>
 
+          <div>
+            <h2 className="text-[24px] font-medium text-[#171717]">Pet Collection</h2>
+            <p className="mt-1 text-[13px] leading-[1.4] text-[#7A7287]">
+              Choose one shared companion for Home and Mood Jar.
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 rounded-[22px] border border-white/70 bg-white/55 p-2">
             <button
-              onClick={() => {
-                setShowUploadModal(false);
-                setShowMediaOptions(false);
-                setNewCaption("");
-                setSelectedMediaUrl("");
-                setSelectedMediaType(null);
-              }}
-              className="rounded-full p-2 text-[#8B8BA3] hover:bg-[#F3EEE7]"
+              type="button"
+              onClick={() => setActiveSpecies("dog")}
+              className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+                activeSpecies === "dog" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+              }`}
             >
-              <X className="h-5 w-5" />
+              Puppies
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSpecies("cat")}
+              className={`rounded-[18px] py-2 text-[14px] font-semibold ${
+                activeSpecies === "cat" ? "bg-[#B98A54] text-white" : "text-[#7A5A43]"
+              }`}
+            >
+              Kittens
             </button>
           </div>
         </div>
 
-        <div className="mb-4">
-          <input
-            type="text"
-            value={newCaption}
-            onChange={(e) => setNewCaption(e.target.value)}
-            placeholder="Enter a title"
-            className="w-full rounded-2xl border border-[#E8DED2] bg-white px-4 py-3 text-sm text-[#4A4A6A] outline-none placeholder:text-[#AAA6B2]"
-          />
+        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+          <div className="grid grid-cols-2 justify-items-center gap-3">
+            {visiblePets.map((pet) => {
+              const unlocked = unlockedPetIds.includes(pet.id);
+              return (
+                <PetSelectionCard
+                  key={pet.id}
+                  pet={pet}
+                  active={selectedPetId === pet.id}
+                  unlocked={unlocked}
+                  onClick={() => setSelectedPetId(pet.id)}
+                />
+              );
+            })}
+          </div>
+
+          <div className="mt-6">
+            <h3 className="mb-4 text-[22px] font-medium text-[#171717]">
+              Your selection:
+            </h3>
+
+            <div className="flex flex-col items-center rounded-[28px] border border-white/70 bg-white/55 px-4 py-5">
+              <img
+                src={currentPet.image}
+                alt={currentPet.name}
+                className="max-h-[150px] max-w-[230px] object-contain drop-shadow-[0_10px_14px_rgba(73,56,42,0.18)]"
+              />
+              <p className="mt-3 text-[15px] font-semibold text-[#5A2A86]">
+                {currentPet.name}
+              </p>
+              <p className="mt-1 text-center text-[12px] leading-[1.4] text-[#7A7287]">
+                {currentPet.description}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChatPage({
+  familyMembers,
+  latestEntries,
+  bubbleMessage,
+}: ChatPageProps) {
+  const {
+    selectedPetId,
+    setSelectedPetId,
+    unlockedPetIds,
+    currentPet,
+    petItems,
+    addDailyDropToInventory,
+    useDailyDropItem,
+    getDailyDropCount,
+    lastPlacedDailyDrop,
+    placedDailyDrops,
+    clearPlacedDailyDrop,
+    ownedWeeklyRewards,
+    activeWeeklyRewards,
+    useWeeklyRewardItem,
+    clearWeeklyRewardItem,
+    isWeeklyRewardActive,
+  } = usePet();
+
+  const [selectedFamilyDog, setSelectedFamilyDog] = useState<FamilyMemberId | null>(null);
+  const [selectedHomeMemberId, setSelectedHomeMemberId] = useState<FamilyMemberId | null>(null);
+  const [activeInventory, setActiveInventory] = useState<InventoryTab | null>(null);
+  const [dailyDropState, setDailyDropState] = useState<DailyDropState>("available");
+  const [collectedMessage, setCollectedMessage] = useState("");
+  const [storageDot, setStorageDot] = useState<Record<StorageArea, boolean>>({
+    food: false,
+    toy: false,
+  });
+  const [storagePulse, setStoragePulse] = useState<StorageArea | null>(null);
+  const [localDailyDropInventory, setLocalDailyDropInventory] = useState<Record<string, number>>({});
+  const [localPlacedDailyDrops, setLocalPlacedDailyDrops] = useState<DailyDrop[]>([]);
+  const [petFeedback, setPetFeedback] = useState("Your companion is waiting for a small family moment.");
+  const [posts, setPosts] = useState<DbPost[]>([]);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [postTitle, setPostTitle] = useState("");
+  const [postContent, setPostContent] = useState("");
+  const [isPublishingPost, setIsPublishingPost] = useState(false);
+  const [latestAlbumPost, setLatestAlbumPost] = useState<Post | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [unreadCareMessages, setUnreadCareMessages] = useState<CareMessage[]>([]);
+  const [receivedPetMessages, setReceivedPetMessages] = useState<PetMessage[]>([]);
+  const [bubbleAnimationTick, setBubbleAnimationTick] = useState(0);
+  const [showMemberSwitcher, setShowMemberSwitcher] = useState(false);
+  const [petMessageComposer, setPetMessageComposer] = useState<PetMessageComposerState>(null);
+  const [isSendingPetMessage, setIsSendingPetMessage] = useState(false);
+  const [isMarkingPetMessagesRead, setIsMarkingPetMessagesRead] = useState(false);
+  const [dailyDropClaimsToday, setDailyDropClaimsToday] = useState<DailyDropClaimRecord>(() => ({
+    date: getTodayKey(),
+    count: 0,
+    claimedIds: [],
+  }));
+  const [homeOwnerUserId, setHomeOwnerUserId] = useState<string | null>(null);
+  const nextDailyDropTimerRef = useRef<number | null>(null);
+  const [sceneBubbleMessages, setSceneBubbleMessages] = useState<SceneBubbleMessage[]>([]);
+  const [activeSceneBubbleKey, setActiveSceneBubbleKey] = useState<string | null>(null);
+
+  const loadPosts = useCallback(async () => {
+    if (DEMO_MODE) {
+      setPosts(getDemoPosts());
+      setIsLoadingPosts(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl("/api/posts"));
+      const data = await response.json().catch(() => []);
+
+      if (!response.ok) {
+        console.error("Failed to load posts:", data);
+        return;
+      }
+
+      setPosts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    } finally {
+      setIsLoadingPosts(false);
+    }
+  }, []);
+
+  function getTodayKey() {
+    return getAppTodayKey();
+  }
+
+  function getDailyDropClaimKey(userId: string | number) {
+    return `daily-drop-claimed-${userId}-${getTodayKey()}`;
+  }
+
+  function getDailyDropClaimsKey(userId: string | number, date = getTodayKey()) {
+    if (DEMO_MODE) {
+      return getDemoDailyDropClaimsStorageKey(userId, date);
+    }
+    return `kinlight:daily-drop-claims:${userId}:${date}`;
+  }
+
+  function createEmptyDailyDropClaims(date = getTodayKey()): DailyDropClaimRecord {
+    return { date, count: 0, claimedIds: [] };
+  }
+
+  function readDailyDropClaims(userId: string | number): DailyDropClaimRecord {
+    const date = getTodayKey();
+    if (typeof window === "undefined") return createEmptyDailyDropClaims(date);
+
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(getDailyDropClaimsKey(userId, date)) || "null"
+      );
+      if (saved?.date === date) {
+        return {
+          date,
+          count: Math.min(Math.max(Number(saved.count) || 0, 0), DAILY_DROP_MAX_PER_DAY),
+          claimedIds: Array.isArray(saved.claimedIds)
+            ? saved.claimedIds.filter((id): id is string => typeof id === "string")
+            : [],
+        };
+      }
+    } catch {
+      // Fall back to the legacy single-claim key for compatibility.
+    }
+
+    if (DEMO_MODE) {
+      return createEmptyDailyDropClaims(date);
+    }
+
+    const legacyClaimed = window.localStorage.getItem(getDailyDropClaimKey(userId)) === "true";
+    return legacyClaimed
+      ? { date, count: 1, claimedIds: ["legacy-daily-drop"] }
+      : createEmptyDailyDropClaims(date);
+  }
+
+  function writeDailyDropClaims(userId: string | number, record: DailyDropClaimRecord) {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      getDailyDropClaimsKey(userId, record.date),
+      JSON.stringify(record)
+    );
+  }
+
+  function clearNextDailyDropTimer() {
+    if (nextDailyDropTimerRef.current == null) return;
+    window.clearTimeout(nextDailyDropTimerRef.current);
+    nextDailyDropTimerRef.current = null;
+  }
+
+  function getNextDailyDropDelay() {
+    const range = import.meta.env.DEV ? DAILY_DROP_DEV_DELAY_MS : DAILY_DROP_PROD_DELAY_MS;
+    return Math.floor(range.min + Math.random() * (range.max - range.min));
+  }
+
+  const isCurrentUserMember = (member: FamilyMember) => {
+    if (!currentUser) return false;
+    return (
+      String(member.id) === String(currentUser.id) ||
+      Boolean(member.email && currentUser.email && member.email === currentUser.email)
+    );
+  };
+
+  const orderedHomeMembers = useMemo(() => {
+    const currentMember = familyMembers.find(isCurrentUserMember) ?? familyMembers[0];
+    const others = familyMembers.filter(
+      (member) => String(member.id) !== String(currentMember?.id)
+    );
+    return currentMember ? [currentMember, ...others] : familyMembers;
+  }, [familyMembers, currentUser]);
+
+  const me = orderedHomeMembers[0] ?? familyMembers[0];
+  const currentMember = me;
+
+  const selectedMember =
+    familyMembers.find(
+      (member) => String(member.id) === String(selectedHomeMemberId)
+    ) ?? me;
+  const selectedHomeMember = selectedMember ?? orderedHomeMembers[0] ?? null;
+  const selectedHomePetId = useMemo(() => {
+    if (selectedHomeMember?.id != null && String(selectedHomeMember.id) === String(me?.id)) {
+      // For current user, use in-memory state directly to avoid one-render lag.
+      return selectedPetId;
+    }
+    return readSelectedPetIdForUser(selectedHomeMember?.id);
+  }, [selectedHomeMember?.id, me?.id, selectedPetId]);
+  const selectedHomePet = useMemo(() => getPetById(selectedHomePetId), [selectedHomePetId]);
+  const isViewingOwnHome =
+    selectedHomeMember && currentMember
+      ? String(selectedHomeMember.id) === String(currentMember.id)
+      : false;
+  const getMemberPetProfileImage = (memberId: FamilyMemberId | null | undefined) => {
+    if (memberId == null) return getPetProfileImage(getPetById(defaultPetId));
+    if (String(memberId) === String(me?.id)) return getPetProfileImage(getPetById(selectedPetId));
+    return getPetProfileImage(getPetById(readSelectedPetIdForUser(memberId)));
+  };
+  const isPostForMember = (post: DbPost, member: FamilyMember) => {
+    if (post.family_member_id != null) {
+      return String(post.family_member_id) === String(member.id);
+    }
+    return String(post.user_id) === String(member.id);
+  };
+  const selectedMemberLatestAlbumEntry = useMemo(() => {
+    return [...Object.values(latestEntries).filter(Boolean) as AlbumEntry[], ...[]]
+      .filter(
+        (entry) =>
+          String(entry.memberId) === String(selectedHomeMemberId) && Boolean(entry.imageUrl)
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.uploadedAt.replace(" ", "T")).getTime() -
+          new Date(a.uploadedAt.replace(" ", "T")).getTime()
+      )[0] ?? null;
+  }, [latestEntries, selectedHomeMemberId]);
+  const selectedMemberLatestPost = useMemo(
+    () =>
+      posts
+        .filter((post) => (selectedMember ? isPostForMember(post, selectedMember) : false))
+        .filter((post) => Boolean(post.media_url))
+        .sort(
+          (a, b) =>
+            new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime()
+        )[0] ?? null,
+    [posts, selectedHomeMemberId, selectedMember]
+  );
+  const selectedHomePhotoUrl =
+    selectedMemberLatestAlbumEntry?.imageUrl ||
+    selectedMemberLatestPost?.media_url ||
+    "";
+  const activeCareMessage =
+    isViewingOwnHome && unreadCareMessages.length > 0 ? unreadCareMessages[0] : null;
+  const showCareUnreadDot =
+    Boolean(activeCareMessage) && unreadCareMessages.length > 1;
+
+  const getMemberLatestAlbumEntry = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      if (memberId == null) return null;
+      const entries = Object.values(latestEntries).filter(Boolean) as AlbumEntry[];
+      return (
+        entries
+          .filter(
+            (entry) => String(entry.memberId) === String(memberId) && Boolean(entry.imageUrl)
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.uploadedAt.replace(" ", "T")).getTime() -
+              new Date(a.uploadedAt.replace(" ", "T")).getTime()
+          )[0] ?? null
+      );
+    },
+    [latestEntries]
+  );
+
+  const getMemberLatestTextPost = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      if (memberId == null) return null;
+      const member = familyMembers.find((item) => String(item.id) === String(memberId));
+      return (
+        posts
+          .filter((post) => (member ? isPostForMember(post, member) : false))
+          .sort(
+            (a, b) =>
+              new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime()
+          )[0] ?? null
+      );
+    },
+    [familyMembers, posts]
+  );
+
+  const getDefaultMomentMessagesForSceneMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      const latestTextPost = getMemberLatestTextPost(memberId);
+      const latestAlbumEntry = getMemberLatestAlbumEntry(memberId);
+      const fallbackMoment =
+        String(memberId) === String(me?.id)
+          ? bubbleMessage
+          : "Do you want me to help deliver a message?";
+      const seen = new Set<string>();
+
+      return [
+        latestTextPost?.content?.trim() || "",
+        latestAlbumEntry?.dogMessage?.trim() || "",
+        fallbackMoment,
+      ]
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .filter((text) => {
+          if (seen.has(text)) return false;
+          seen.add(text);
+          return true;
+        })
+        .map<SceneBubbleMessage>((text, index) => ({
+          key: `moment-${String(memberId ?? "unknown")}-${index}-${text}`,
+          text,
+          kind: "moment",
+          isUnread: false,
+        }));
+    },
+    [bubbleMessage, getMemberLatestAlbumEntry, getMemberLatestTextPost, me?.id]
+  );
+
+  const getUnreadMessagesForCurrentUser = useCallback(
+    () => receivedPetMessages.filter((message) => !Boolean(message.is_read)),
+    [receivedPetMessages]
+  );
+
+  const unreadPetMessages = useMemo(
+    () => getUnreadMessagesForCurrentUser(),
+    [getUnreadMessagesForCurrentUser]
+  );
+
+  const hasUnreadMessagesForCurrentUser = unreadPetMessages.length > 0;
+
+  const getUnreadMessagesFromMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) =>
+      unreadPetMessages.filter(
+        (message) => String(message.sender_user_id) === String(memberId)
+      ),
+    [unreadPetMessages]
+  );
+
+  const hasUnreadFromMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) =>
+      getUnreadMessagesFromMember(memberId).length > 0,
+    [getUnreadMessagesFromMember]
+  );
+
+  const getBubbleMessagesForSceneMember = useCallback(
+    (memberId: FamilyMemberId | null | undefined) => {
+      const unreadMessages = getUnreadMessagesFromMember(memberId).map<SceneBubbleMessage>(
+        (message) => ({
+          key: `relay-${message.id}`,
+          text: message.message,
+          kind: "relay",
+          messageId: message.id,
+          senderUserId: message.sender_user_id,
+          createdAt: message.created_at,
+          isUnread: true,
+        })
+      );
+      const readMessages = receivedPetMessages
+        .filter(
+          (message) =>
+            Boolean(message.is_read) &&
+            String(message.sender_user_id) === String(memberId)
+        )
+        .map<SceneBubbleMessage>((message) => ({
+          key: `relay-${message.id}`,
+          text: message.message,
+          kind: "relay",
+          messageId: message.id,
+          senderUserId: message.sender_user_id,
+          createdAt: message.created_at,
+          isUnread: false,
+        }));
+
+      return [
+        ...unreadMessages,
+        ...readMessages.filter(
+          (message) => !unreadMessages.some((unread) => unread.key === message.key)
+        ),
+        ...getDefaultMomentMessagesForSceneMember(memberId),
+      ];
+    },
+    [getDefaultMomentMessagesForSceneMember, getUnreadMessagesFromMember, receivedPetMessages]
+  );
+
+  const displayedBubbleMessage = useMemo(() => {
+    if (activeCareMessage) {
+      return {
+        key: `care-${activeCareMessage.id}`,
+        text: activeCareMessage.message,
+        kind: "moment" as const,
+        isUnread: false,
+      };
+    }
+
+    const activeMessage =
+      sceneBubbleMessages.find((message) => message.key === activeSceneBubbleKey) ??
+      sceneBubbleMessages[0] ??
+      null;
+
+    return activeMessage;
+  }, [activeCareMessage, activeSceneBubbleKey, sceneBubbleMessages]);
+
+  const displayedBubble =
+    displayedBubbleMessage?.text || "Do you want me to help deliver a message?";
+  const showUnreadRelayBubbleDot =
+    !activeCareMessage && Boolean(displayedBubbleMessage?.isUnread);
+
+  const availableDailyDrops = useMemo(() => {
+    return getDailyDropsForPet(currentPet.species);
+  }, [currentPet.species]);
+
+  const [todayDrop, setTodayDrop] = useState<DailyDrop>(() =>
+    pickRandomDrop(getDailyDropsForPet(currentPet.species))
+  );
+
+  const isDevDailyDropTools = import.meta.env.DEV;
+  const dailyDropClaimsRemaining = Math.max(
+    DAILY_DROP_MAX_PER_DAY - dailyDropClaimsToday.count,
+    0
+  );
+  const hasDailyDropClaimsRemaining = dailyDropClaimsRemaining > 0;
+  const canShowDailyDrop =
+    Boolean(todayDrop) &&
+    (dailyDropState === "available" || dailyDropState === "claiming") &&
+    hasDailyDropClaimsRemaining;
+  const showDailyDropButton = Boolean(currentMember) && canShowDailyDrop;
+  const getDisplayedDailyDropCount = (dropId: string) =>
+    getDailyDropCount(dropId) + (localDailyDropInventory[dropId] ?? 0);
+
+  const showNextDailyDrop = useCallback(
+    (drop = pickRandomDrop(availableDailyDrops)) => {
+      if (!hasDailyDropClaimsRemaining) return;
+      clearNextDailyDropTimer();
+      setTodayDrop(drop);
+      setDailyDropState("available");
+      setCollectedMessage("");
+    },
+    [availableDailyDrops, hasDailyDropClaimsRemaining]
+  );
+
+  const scheduleNextDailyDrop = useCallback(
+    (claimRecord: DailyDropClaimRecord) => {
+      clearNextDailyDropTimer();
+      if (claimRecord.count >= DAILY_DROP_MAX_PER_DAY) return;
+
+      nextDailyDropTimerRef.current = window.setTimeout(() => {
+        nextDailyDropTimerRef.current = null;
+        setTodayDrop(pickRandomDrop(availableDailyDrops));
+        setDailyDropState("available");
+        setCollectedMessage("");
+        setPetFeedback("Your pet found something small.");
+      }, getNextDailyDropDelay());
+    },
+    [availableDailyDrops]
+  );
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      if (DEMO_MODE) {
+        setCurrentUser(getDemoCurrentUser());
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl("/api/me"));
+        if (!response.ok) throw new Error("Failed to fetch current user");
+        const user = await response.json();
+        setCurrentUser(user);
+      } catch (error) {
+        console.warn("Failed to load current user, using first family member as fallback.");
+        setCurrentUser(null);
+      }
+    };
+    void fetchCurrentUser();
+    const refreshOnFocus = () => {
+      void fetchCurrentUser();
+    };
+    const refreshOnDemoUserChanged = () => {
+      void fetchCurrentUser();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void fetchCurrentUser();
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("demo-user-changed", refreshOnDemoUserChanged);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("demo-user-changed", refreshOnDemoUserChanged);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!familyMembers.length) return;
+    const currentMember = familyMembers.find(isCurrentUserMember) ?? familyMembers[0];
+    const currentUserId = currentUser?.id != null ? String(currentUser.id) : null;
+    setSelectedHomeMemberId((current) => {
+      if (!current) return currentMember.id;
+      if (homeOwnerUserId !== currentUserId) {
+        // Logged-in user changed; reset Home default to the new current user.
+        return currentMember.id;
+      }
+      return current;
+    });
+    setHomeOwnerUserId(currentUserId);
+  }, [familyMembers, currentUser, homeOwnerUserId]);
+
+  useEffect(() => {
+    if (activeInventory) {
+      setShowMemberSwitcher(false);
+    }
+  }, [activeInventory]);
+  useEffect(() => {
+    if (!orderedHomeMembers.length) {
+      return;
+    }
+    const stillExists = orderedHomeMembers.some(
+      (member) => String(member.id) === String(selectedHomeMemberId)
+    );
+    if (!selectedHomeMemberId || !stillExists) {
+      setSelectedHomeMemberId(currentMember?.id ?? orderedHomeMembers[0].id);
+    }
+  }, [orderedHomeMembers, currentMember, selectedHomeMemberId]);
+
+  useEffect(() => {
+    const nextQueue = getBubbleMessagesForSceneMember(selectedHomeMember?.id);
+    setSceneBubbleMessages(nextQueue);
+    setActiveSceneBubbleKey(nextQueue[0]?.key ?? null);
+  }, [selectedHomeMember?.id]);
+
+  useEffect(() => {
+    if (!selectedHomeMember?.id) return;
+
+    const nextQueue = getBubbleMessagesForSceneMember(selectedHomeMember.id);
+    setSceneBubbleMessages((prev) => {
+      if (!prev.length) return nextQueue;
+
+      const nextByKey = new Map(nextQueue.map((message) => [message.key, message]));
+      const preserved = prev
+        .map((message) => nextByKey.get(message.key))
+        .filter((message): message is SceneBubbleMessage => Boolean(message));
+      const appended = nextQueue.filter(
+        (message) => !preserved.some((item) => item.key === message.key)
+      );
+      return [...preserved, ...appended];
+    });
+    setActiveSceneBubbleKey((current) => {
+      if (current && nextQueue.some((message) => message.key === current)) {
+        return current;
+      }
+      return nextQueue[0]?.key ?? null;
+    });
+  }, [getBubbleMessagesForSceneMember, receivedPetMessages, selectedHomeMember?.id]);
+
+  useEffect(() => {
+    clearNextDailyDropTimer();
+    setLocalDailyDropInventory({});
+    setLocalPlacedDailyDrops([]);
+    setCollectedMessage("");
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    setTodayDrop((current) =>
+      availableDailyDrops.some((drop) => drop.id === current.id)
+        ? current
+        : pickRandomDrop(availableDailyDrops)
+    );
+    setDailyDropState(hasDailyDropClaimsRemaining ? "available" : "claimed");
+    if (hasDailyDropClaimsRemaining) {
+      setCollectedMessage("");
+    }
+  }, [availableDailyDrops, hasDailyDropClaimsRemaining]);
+
+  useEffect(() => {
+    const checkDailyDropStatus = async () => {
+      if (!currentUser?.id) {
+        setDailyDropClaimsToday(createEmptyDailyDropClaims());
+        return;
+      }
+
+      const localClaims = readDailyDropClaims(currentUser.id);
+      setDailyDropClaimsToday(localClaims);
+
+      if (DEMO_MODE) {
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl("/api/daily-drop/status"));
+        if (!response.ok) throw new Error("Failed to fetch daily drop status");
+        const result = await response.json();
+        const backendCount = Number(result?.count);
+        if (Number.isFinite(backendCount)) {
+          const nextClaims = {
+            ...localClaims,
+            count: Math.max(localClaims.count, Math.min(backendCount, DAILY_DROP_MAX_PER_DAY)),
+          };
+          setDailyDropClaimsToday(nextClaims);
+          writeDailyDropClaims(currentUser.id, nextClaims);
+        } else if (result?.claimed && localClaims.count === 0) {
+          const nextClaims = { ...localClaims, count: 1, claimedIds: ["backend-daily-drop"] };
+          setDailyDropClaimsToday(nextClaims);
+          writeDailyDropClaims(currentUser.id, nextClaims);
+        }
+      } catch {
+        setDailyDropClaimsToday(readDailyDropClaims(currentUser.id));
+      }
+    };
+
+    void checkDailyDropStatus();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    return () => {
+      clearNextDailyDropTimer();
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchLatestPost = async () => {
+      if (!currentUser?.id) {
+        setLatestAlbumPost(null);
+        return;
+      }
+      try {
+        const posts: Post[] = DEMO_MODE
+          ? getDemoPosts()
+          : await (async () => {
+              const response = await fetch(apiUrl("/api/posts"));
+
+              if (!response.ok) {
+                throw new Error("Failed to fetch posts");
+              }
+
+              return response.json();
+            })();
+        const latestPost =
+          posts.find((post) => String(post.user_id) === String(currentUser.id)) ?? null;
+
+        setLatestAlbumPost(latestPost);
+      } catch (error) {
+        console.error("Failed to load latest album post:", error);
+        setLatestAlbumPost(null);
+      }
+    };
+
+    void fetchLatestPost();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    void loadPosts();
+  }, [loadPosts]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadPosts();
+      }
+    };
+    const refreshOnFocus = () => {
+      void loadPosts();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    const onHomeDataUpdated = () => {
+      void loadPosts();
+    };
+    window.addEventListener("home-data-updated", onHomeDataUpdated);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+      window.removeEventListener("home-data-updated", onHomeDataUpdated);
+    };
+  }, [loadPosts]);
+
+  const loadUnreadCareMessages = useCallback(async () => {
+    if (!currentUser?.id) {
+      setUnreadCareMessages([]);
+      return;
+    }
+
+    if (DEMO_MODE) {
+      setUnreadCareMessages(getDemoCareMessages(currentUser.id, true));
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl("/api/care-messages/unread"));
+      const data = await response.json().catch(() => []);
+
+      if (!response.ok) {
+        console.error("Failed to load care messages:", data);
+        return;
+      }
+
+      setUnreadCareMessages(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    }
+  }, [currentUser?.id]);
+
+  const loadPetMessages = useCallback(async () => {
+    if (!currentUser?.id) {
+      setReceivedPetMessages([]);
+      return;
+    }
+
+    if (DEMO_MODE) {
+      setReceivedPetMessages(getDemoPetMessages(currentUser.id));
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl("/api/pet-messages"));
+      const data = await response.json().catch(() => []);
+
+      if (!response.ok) {
+        console.error("Failed to load pet messages:", data);
+        return;
+      }
+
+      setReceivedPetMessages(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    void loadUnreadCareMessages();
+  }, [loadUnreadCareMessages]);
+
+  useEffect(() => {
+    void loadPetMessages();
+  }, [loadPetMessages]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadUnreadCareMessages();
+      }
+    };
+    const refreshOnFocus = () => {
+      void loadUnreadCareMessages();
+    };
+    const onHomeDataUpdated = () => {
+      void loadUnreadCareMessages();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    window.addEventListener("home-data-updated", onHomeDataUpdated);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+      window.removeEventListener("home-data-updated", onHomeDataUpdated);
+    };
+  }, [loadUnreadCareMessages]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadPetMessages();
+      }
+    };
+    const refreshOnFocus = () => {
+      void loadPetMessages();
+    };
+    const onHomeDataUpdated = () => {
+      void loadPetMessages();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    window.addEventListener("home-data-updated", onHomeDataUpdated);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+      window.removeEventListener("home-data-updated", onHomeDataUpdated);
+    };
+  }, [loadPetMessages]);
+
+  const markPetMessagesAsRead = useCallback(
+    async (messages: PetMessage[]) => {
+      if (!messages.length || isMarkingPetMessagesRead) return;
+
+      if (DEMO_MODE) {
+        setIsMarkingPetMessagesRead(true);
+        markDemoPetMessagesRead(messages.map((message) => message.id));
+        setReceivedPetMessages((prev) =>
+          prev.map((message) =>
+            messages.some((target) => String(target.id) === String(message.id))
+                ? {
+                    ...message,
+                    is_read: true,
+                    read_at: getAppNowDateTimeString(),
+                  }
+                : message
+          )
+        );
+        setIsMarkingPetMessagesRead(false);
+        return;
+      }
+
+      try {
+        setIsMarkingPetMessagesRead(true);
+
+        await Promise.all(
+          messages.map((message) =>
+            fetch(apiUrl(`/api/pet-messages/${message.id}/read`), {
+              method: "PATCH",
+            })
+          )
+        );
+
+        setReceivedPetMessages((prev) =>
+          prev.map((message) =>
+            messages.some((target) => String(target.id) === String(message.id))
+              ? {
+                  ...message,
+                  is_read: true,
+                  read_at: getAppNowDateTimeString(),
+                }
+              : message
+        )
+        );
+      } catch (error) {
+        console.error("Failed to mark pet messages as read:", error);
+      } finally {
+        setIsMarkingPetMessagesRead(false);
+      }
+    },
+    [isMarkingPetMessagesRead]
+  );
+
+  const markMessageAsRead = useCallback(
+    async (messageId: number | string) => {
+      const targetMessage = receivedPetMessages.find(
+        (message) => String(message.id) === String(messageId) && !Boolean(message.is_read)
+      );
+      if (!targetMessage) return;
+
+      await markPetMessagesAsRead([targetMessage]);
+    },
+    [markPetMessagesAsRead, receivedPetMessages]
+  );
+
+  const handleOpenMemberScene = (member: FamilyMember) => {
+    setSelectedHomeMemberId(member.id);
+    setShowMemberSwitcher(false);
+  };
+
+  const handleOpenPetMessageAction = (member: FamilyMember) => {
+    if (String(member.id) === String(currentUser?.id ?? currentMember?.id ?? "")) {
+      return;
+    }
+
+    setPetMessageComposer({
+      member,
+      text: "",
+      error: "",
+    });
+  };
+
+  const handleSendPetMessage = async () => {
+    if (!petMessageComposer || !currentUser?.id || isSendingPetMessage) return;
+
+    const trimmed = petMessageComposer.text.trim();
+    const isSendingToSelf = String(petMessageComposer.member.id) === String(currentUser.id);
+
+    if (isSendingToSelf) {
+      setPetMessageComposer((current) =>
+        current ? { ...current, error: PET_MESSAGE_SELF_ERROR } : current
+      );
+      return;
+    }
+
+    if (!trimmed) {
+      setPetMessageComposer((current) =>
+        current ? { ...current, error: PET_MESSAGE_EMPTY_ERROR } : current
+      );
+      return;
+    }
+
+    try {
+      setIsSendingPetMessage(true);
+      if (DEMO_MODE) {
+        createDemoPetMessage({
+          senderUserId: currentUser.id,
+          receiverUserId: petMessageComposer.member.id,
+          familyId: Number(currentUser.family_id ?? me?.family_id ?? 1),
+          message: trimmed,
+        });
+      } else {
+        const response = await fetch(apiUrl("/api/pet-messages"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sender_user_id: currentUser.id,
+            receiver_user_id: petMessageComposer.member.id,
+            message: trimmed,
+          }),
+        });
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          setPetMessageComposer((current) =>
+            current ? { ...current, error: result?.error || PET_MESSAGE_SEND_ERROR } : current
+          );
+          return;
+        }
+      }
+
+      setPetMessageComposer(null);
+      setPetFeedback(`Your message to ${petMessageComposer.member.name} is on the way.`);
+      window.dispatchEvent(new Event("home-data-updated"));
+    } catch (error) {
+      console.error("Failed to send pet message:", error);
+      setPetMessageComposer((current) =>
+        current ? { ...current, error: PET_MESSAGE_SEND_ERROR } : current
+      );
+    } finally {
+      setIsSendingPetMessage(false);
+    }
+  };
+
+  const handleBubbleClick = async () => {
+    setShowMemberSwitcher(false);
+
+    if (!activeCareMessage) {
+      if (
+        displayedBubbleMessage?.kind === "relay" &&
+        displayedBubbleMessage.isUnread &&
+        displayedBubbleMessage.messageId != null
+      ) {
+        await markMessageAsRead(displayedBubbleMessage.messageId);
+        setBubbleAnimationTick((current) => current + 1);
+        return;
+      }
+
+      if (sceneBubbleMessages.length > 1) {
+        const currentIndex = Math.max(
+          0,
+          sceneBubbleMessages.findIndex((message) => message.key === activeSceneBubbleKey)
+        );
+        const nextIndex = (currentIndex + 1) % sceneBubbleMessages.length;
+        setActiveSceneBubbleKey(sceneBubbleMessages[nextIndex]?.key ?? null);
+      }
+      setBubbleAnimationTick((current) => current + 1);
+      return;
+    }
+
+    try {
+      if (DEMO_MODE) {
+        markDemoCareMessageRead(activeCareMessage.id);
+      } else {
+        const response = await fetch(
+          apiUrl(`/api/care-messages/${activeCareMessage.id}/read`),
+          {
+            method: "PATCH",
+          }
+        );
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          console.error("Failed to mark care message as read:", result);
+          return;
+        }
+      }
+
+      setUnreadCareMessages((prev) =>
+        prev.filter((message) => String(message.id) !== String(activeCareMessage.id))
+      );
+      setBubbleAnimationTick((current) => current + 1);
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+    }
+  };
+
+  const handlePublishPost = async () => {
+    if (isPublishingPost) return;
+    if (!currentUser?.id) return;
+
+    const title = postTitle.trim() || "Family Update";
+    const content = postContent.trim();
+    if (!title && !content) return;
+
+    try {
+      setIsPublishingPost(true);
+
+      const result = DEMO_MODE
+        ? createDemoPost({
+            userId: currentUser.id,
+            familyId: Number(currentUser.family_id ?? me?.family_id ?? 1),
+            title,
+            content,
+            mediaUrl: null,
+            mediaType: "text",
+          })
+        : await (async () => {
+            const response = await fetch(apiUrl("/api/posts"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                user_id: currentUser.id,
+                family_member_id: currentUser.id,
+                family_id: currentUser.family_id ?? me?.family_id ?? 1,
+                title,
+                content,
+                media_url: null,
+                media_type: "text",
+              }),
+            });
+
+            const postResult = await response.json().catch(() => null);
+
+            if (!response.ok) {
+              console.error("Failed to publish post:", postResult);
+              alert(postResult?.error || "Failed to publish post.");
+              return null;
+            }
+
+            return postResult;
+          })();
+
+      if (!result) return;
+
+      setPosts((prev) => [result, ...prev]);
+      setPostTitle("");
+      setPostContent("");
+      window.dispatchEvent(new Event("home-data-updated"));
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+      alert("Failed to connect backend.");
+    } finally {
+      setIsPublishingPost(false);
+    }
+  };
+
+  const handleDeletePost = async (postId: number) => {
+    const confirmed = window.confirm("Delete this post?");
+    if (!confirmed) return;
+
+    if (DEMO_MODE) {
+      deleteDemoPost(String(postId));
+      setPosts((prev) => prev.filter((post) => String(post.id) !== String(postId)));
+      window.dispatchEvent(new Event("home-data-updated"));
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl(`/api/posts/${postId}`), {
+        method: "DELETE",
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        console.error("Failed to delete post:", result);
+        alert(result?.error || "Failed to delete post.");
+        return;
+      }
+
+      setPosts((prev) => prev.filter((post) => post.id !== postId));
+    } catch (error) {
+      console.error("Failed to connect backend:", error);
+      alert("Failed to connect backend.");
+    }
+  };
+
+  const foodInventory = useMemo(
+    () =>
+      dailyDrops.filter(
+        (drop) =>
+          (drop.category === "food" || drop.category === "drink") &&
+          getDisplayedDailyDropCount(drop.id) > 0
+      ),
+    [getDailyDropCount, localDailyDropInventory]
+  );
+
+  const toyInventory = useMemo(
+    () =>
+      dailyDrops.filter(
+        (drop) =>
+          (drop.category === "basic-toy" || drop.category === "care") &&
+          getDisplayedDailyDropCount(drop.id) > 0
+      ),
+    [getDailyDropCount, localDailyDropInventory]
+  );
+  const activeRoomDecor = useMemo(
+    () => (isViewingOwnHome ? activeWeeklyRewards : []),
+    [activeWeeklyRewards, isViewingOwnHome]
+  );
+
+  const activeInventoryTitle = inventoryTabs.find(
+    (item) => item.key === activeInventory
+  )?.title;
+
+  const openInventory = (tab: InventoryTab) => {
+    setShowMemberSwitcher(false);
+    setActiveInventory(tab);
+
+    if (tab === "food" || tab === "toy") {
+      setStorageDot((prev) => ({ ...prev, [tab]: false }));
+    }
+  };
+
+  const claimDailyDrop = async () => {
+    console.log("[DailyDrop] claim clicked", { todayDrop, dailyDropState });
+    setShowMemberSwitcher(false);
+    if (dailyDropState !== "available" || !hasDailyDropClaimsRemaining) {
+      console.warn("[DailyDrop] claim blocked", {
+        dailyDropState,
+        claimsToday: dailyDropClaimsToday.count,
+        maxClaims: DAILY_DROP_MAX_PER_DAY,
+      });
+      return;
+    }
+
+    setDailyDropState("claiming");
+    console.log("[DailyDrop] set claiming");
+    const claimedDrop = todayDrop;
+
+    window.setTimeout(async () => {
+      try {
+        console.log("[DailyDrop] finish claim timeout start", { todayDrop: claimedDrop });
+        if (!claimedDrop) {
+          console.warn("[DailyDrop] no todayDrop when finishing claim");
+          setDailyDropState("available");
+          return;
+        }
+
+        const storageArea = getStorageArea(claimedDrop);
+        console.log("[DailyDrop] storageArea", storageArea);
+        console.log("[DailyDrop] add inventory start", claimedDrop.id);
+        const addResult = await addDailyDropToInventory(claimedDrop.id, 1);
+        console.log("[DailyDrop] add inventory done", claimedDrop.id, addResult);
+
+        if (!addResult.ok) {
+          if (addResult.reason === "already-claimed") {
+            const claimedRecord: DailyDropClaimRecord = {
+              date: getTodayKey(),
+              count: Math.max(dailyDropClaimsToday.count, 1),
+              claimedIds:
+                dailyDropClaimsToday.claimedIds.length > 0
+                  ? dailyDropClaimsToday.claimedIds
+                  : ["backend-daily-drop"],
+            };
+            setDailyDropClaimsToday(claimedRecord);
+            if (currentUser?.id) {
+              writeDailyDropClaims(currentUser.id, claimedRecord);
+              if (!DEMO_MODE) {
+                window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+              }
+            }
+            setDailyDropState("claimed");
+            setCollectedMessage("");
+            setPetFeedback("Daily Drop has already been collected today. Come back tomorrow.");
+            return;
+          }
+
+          if (!isDevDailyDropTools) {
+            console.warn("[DailyDrop] backend inventory add failed", claimedDrop.id);
+            setDailyDropState("available");
+            setPetFeedback("Daily Drop could not be collected. Please try again.");
+            return;
+          }
+
+          console.warn("[DailyDrop] using DEV local inventory fallback", claimedDrop.id);
+          setLocalDailyDropInventory((prev) => ({
+            ...prev,
+            [claimedDrop.id]: (prev[claimedDrop.id] ?? 0) + 1,
+          }));
+        }
+
+        const nextClaims: DailyDropClaimRecord = {
+          date: getTodayKey(),
+          count: Math.min(dailyDropClaimsToday.count + 1, DAILY_DROP_MAX_PER_DAY),
+          claimedIds: [...dailyDropClaimsToday.claimedIds, claimedDrop.id],
+        };
+        setDailyDropClaimsToday(nextClaims);
+        if (currentUser?.id) {
+          writeDailyDropClaims(currentUser.id, nextClaims);
+          if (!DEMO_MODE) {
+            window.localStorage.setItem(getDailyDropClaimKey(currentUser.id), "true");
+          }
+        }
+        setDailyDropState("claimed");
+        const message = `${claimedDrop.name} +1`;
+        setCollectedMessage(message);
+        console.log("[DailyDrop] collected message set", message);
+        window.setTimeout(() => {
+          setCollectedMessage("");
+        }, 2000);
+        setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
+        setStoragePulse(storageArea);
+        setPetFeedback(`Collected ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
+        // TODO: connect Home Daily Drop claim flow to POST /api/daily-drop/claim or sync
+        // successful inventory claim into daily_drops for Weekly Echo keepsakes statistics.
+        scheduleNextDailyDrop(nextClaims);
+        console.log("[DailyDrop] count after add", claimedDrop.id, getDisplayedDailyDropCount(claimedDrop.id));
+
+        window.setTimeout(() => {
+          setStoragePulse(null);
+        }, 1200);
+      } catch (error) {
+        console.error("[DailyDrop] claim failed", error);
+        setDailyDropState("available");
+        setPetFeedback("Daily Drop could not be collected. Please try again.");
+      }
+    }, 520);
+  };
+
+  const useDrop = async (drop: DailyDrop) => {
+    setShowMemberSwitcher(false);
+    const usedDrop = await useDailyDropItem(drop.id);
+    const localCount = localDailyDropInventory[drop.id] ?? 0;
+    if (!usedDrop && localCount <= 0) return;
+
+    if (!usedDrop) {
+      setLocalDailyDropInventory((prev) => ({
+        ...prev,
+        [drop.id]: Math.max((prev[drop.id] ?? 0) - 1, 0),
+      }));
+      setLocalPlacedDailyDrops((prev) =>
+        prev.some((item) => item.id === drop.id) ? prev : [...prev, drop]
+      );
+    }
+
+    setPetFeedback(getPetReaction((usedDrop ?? drop).category));
+    setActiveInventory(null);
+  };
+
+  const useWeeklyReward = async (reward: WeeklyReward) => {
+    setShowMemberSwitcher(false);
+
+    if (isWeeklyRewardActive(reward.id)) {
+      const cleared = await clearWeeklyRewardItem(reward.id);
+      if (cleared) {
+        setPetFeedback(`${reward.name} was removed from the room scene.`);
+        setActiveInventory(null);
+      }
+      return;
+    }
+
+    const usedReward = await useWeeklyRewardItem(reward.id);
+    if (!usedReward) return;
+
+    setPetFeedback(`${usedReward.name} is now visible in Home.`);
+    setActiveInventory(null);
+  };
+
+  const renderDropIcon = (drop: DailyDrop, sizeClass = "h-11 w-11") => {
+    return <ItemIcon item={drop} sizeClass={sizeClass} />;
+  };
+
+  const clearLocalPlacedDailyDrop = useCallback((dropId: string) => {
+    setLocalPlacedDailyDrops((prev) => prev.filter((item) => item.id !== dropId));
+  }, []);
+
+  const displayedPlacedDailyDrops = useMemo(() => {
+    const byId = new Map<string, DailyDrop>();
+    placedDailyDrops.forEach((drop) => byId.set(drop.id, drop));
+    localPlacedDailyDrops.forEach((drop) => byId.set(drop.id, drop));
+    return Array.from(byId.values());
+  }, [placedDailyDrops, localPlacedDailyDrops]);
+  const latestDisplayedPlacedDailyDrop =
+    displayedPlacedDailyDrops[displayedPlacedDailyDrops.length - 1] ?? lastPlacedDailyDrop;
+
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden bg-[#f4ede4]">
+      <div
+        className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: "url('/images/home/home-bg.png')",
+        }}
+      />
+
+      <div
+        className="relative flex flex-1 flex-col px-3 pt-4 pb-24"
+        onClick={() => setShowMemberSwitcher(false)}
+      >
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9f8067]">
+              Home
+            </p>
+            <h1 className="mt-2 text-[17px] font-semibold text-[#3d2d22]">
+              Let your pet carry small family moments.
+            </h1>
+          </div>
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setShowMemberSwitcher(false);
+            }}
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/70 text-[#7d6554] shadow-[0_8px_18px_rgba(97,74,56,0.08)] backdrop-blur"
+          >
+            <Bell className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="rounded-[24px] border border-dashed border-[#D8CEC2] bg-[#F8F4EF] p-6">
-          <div className="flex min-h-[180px] flex-col items-center justify-center">
-            {selectedMediaUrl ? (
-              <div className="w-full">
-                {selectedMediaType === "image" ? (
-                  <img
-                    src={selectedMediaUrl}
-                    alt="preview"
-                    className="h-48 w-full rounded-[20px] object-cover"
-                  />
-                ) : (
-                  <video
-                    src={selectedMediaUrl}
-                    controls
-                    className="h-48 w-full rounded-[20px] object-cover"
-                  />
-                )}
-
-                <div className="mt-3 grid w-full grid-cols-2 gap-3">
-                  <button
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center rounded-[20px] border border-[#E8DED2] bg-white px-4 py-4 text-center shadow-sm"
-                  >
-                    <Camera className="mb-2 h-6 w-6 text-[#6B5B73]" />
-                    <span className="text-sm font-medium text-[#4A4A6A]">
-                      Retake
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center rounded-[20px] border border-[#E8DED2] bg-white px-4 py-4 text-center shadow-sm"
-                  >
-                    <ImagePlus className="mb-2 h-6 w-6 text-[#6B5B73]" />
-                    <span className="text-sm font-medium text-[#4A4A6A]">
-                      Change photo
-                    </span>
-                  </button>
-                </div>
+        <div className="mb-4 flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setActiveInventory(null);
+                setShowMemberSwitcher((current) => !current);
+              }}
+              className="absolute left-[28px] top-[100px] z-40 flex items-center gap-3 rounded-full border border-[#f0d8ca] bg-white/90 px-3 py-2 shadow-[0_10px_24px_rgba(92,61,38,0.12)] backdrop-blur"
+            >
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f8efe7]">
+              <img
+                src={getMemberPetProfileImage(selectedHomeMember?.id)}
+                alt={`${selectedHomeMember?.name ?? "Member"}'s pet`}
+                className="h-8 w-8 object-contain"
+              />
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-[#4f3c2e]">
+                {selectedHomeMember?.name ?? "Member"}
               </div>
-            ) : !showMediaOptions ? (
-              <button
-                onClick={() => setShowMediaOptions(true)}
-                className="flex h-16 w-16 items-center justify-center rounded-full border border-[#E8DED2] bg-white shadow-sm"
-              >
-                <Plus className="h-8 w-8 text-[#6B5B73]" />
-              </button>
-            ) : (
-              <div className="grid w-full grid-cols-2 gap-3">
-                <button
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center rounded-[20px] border border-[#E8DED2] bg-white px-4 py-5 text-center shadow-sm"
-                >
-                  <Camera className="mb-2 h-7 w-7 text-[#6B5B73]" />
-                  <span className="text-sm font-medium text-[#4A4A6A]">
-                    Take photo
-                  </span>
-                </button>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-[#a48976]">
+                Home scene
+              </div>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 text-[#8b705d] transition ${
+                showMemberSwitcher ? "rotate-180" : ""
+              }`}
+            />
+            {hasUnreadMessagesForCurrentUser && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#e76f51]" />
+            )}
+          </button>
 
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center rounded-[20px] border border-[#E8DED2] bg-white px-4 py-5 text-center shadow-sm"
-                >
-                  <ImagePlus className="mb-2 h-7 w-7 text-[#6B5B73]" />
-                  <span className="text-sm font-medium text-[#4A4A6A]">
-                    Upload photo
-                  </span>
-                </button>
+          {showMemberSwitcher && !activeInventory && (
+            <div
+              className="absolute left-[28px] top-[160px] z-50 w-[280px] max-w-[calc(100%-56px)] rounded-[26px] border border-[#f0d8ca] bg-white/95 p-2 shadow-[0_18px_40px_rgba(92,61,38,0.18)] backdrop-blur"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a48976]">
+                Switch home
+              </div>
+              <div className="space-y-1">
+                {orderedHomeMembers.map((member) => {
+                  const isSelected = String(member.id) === String(selectedHomeMemberId);
+                  const isCurrentUserRow =
+                    String(member.id) === String(currentUser?.id ?? currentMember?.id ?? "");
+                  const showUnreadDot = hasUnreadFromMember(member.id);
+                  return (
+                    <div
+                      key={member.id}
+                      className={`flex w-full items-center gap-3 rounded-[20px] px-3 py-2 text-left transition ${
+                        isSelected ? "bg-[#fff1ea] ring-1 ring-[#f6b8a0]" : "hover:bg-[#f8efe7]"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMemberScene(member)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f8efe7]">
+                          <img
+                            src={getMemberPetProfileImage(member.id)}
+                            alt={`${member.name}'s pet`}
+                            className="h-8 w-8 object-contain"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate whitespace-nowrap text-sm font-semibold text-[#4f3c2e]">
+                            {member.name}
+                          </div>
+                        </div>
+                      </button>
+                      <div className="relative flex shrink-0 items-center gap-2">
+                        {showUnreadDot && (
+                          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#e76f51]" />
+                        )}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenMemberScene(member);
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f7efe7] text-[#8b705d]"
+                        >
+                          <Home className="h-4 w-4" />
+                        </button>
+                        {!isCurrentUserRow ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleOpenPetMessageAction(member);
+                            }}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#fff1ea] text-[#c27c57]"
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {isViewingOwnHome && (
+            <div className="absolute right-[15px] top-[65px] z-30 flex flex-col items-center gap-[6px]">
+              {inventoryTabs.map((item) => {
+                const hasDot = item.key === "food" || item.key === "toy" ? storageDot[item.key] : false;
+                const isPulsing = item.key === storagePulse;
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => openInventory(item.key)}
+                    className="relative text-center transition active:scale-95"
+                  >
+                    <div
+                      className={`mx-auto mb-0.5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-[#fbf6f1] shadow-[0_8px_18px_rgba(97,74,56,0.1)] transition ${
+                        isPulsing ? "scale-110 ring-2 ring-[#f0a35f]/50" : ""
+                      }`}
+                    >
+                      <span className="text-[26px] leading-none" aria-hidden="true">
+                        {item.emoji}
+                      </span>
+                    </div>
+
+                    {(hasDot || isPulsing) && item.key !== "petSelection" && (
+                      <span
+                        className={`absolute right-1 top-0 rounded-full bg-[#e76f51] shadow-sm ${
+                          isPulsing
+                            ? "flex h-5 min-w-5 items-center justify-center px-1 text-[10px] font-bold leading-none text-white"
+                            : "h-2.5 w-2.5"
+                        }`}
+                      >
+                        {isPulsing ? "+1" : ""}
+                      </span>
+                    )}
+
+                    <p className="text-[11px] font-semibold text-[#7d6554]">
+                      {item.label}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+        </div>
+
+        <div className="relative flex flex-1 items-center justify-center">
+          <div className="absolute left-1/2 top-[50px] z-20 h-[150px] w-[230px] -translate-x-1/2">
+            {/* Frame base layer */}
+            <img
+              src="/images/home/hanging-frame.png"
+              alt="Hanging photo frame"
+              className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
+            />
+
+            {/* Photo layer with the same clipped inner frame as Connect. */}
+            <div
+              className="absolute z-20 overflow-hidden rounded-[3px] bg-[#f3e1cf]"
+              style={{
+                left: 59,
+                top: 52,
+                width: 109,
+                height: 75,
+              }}
+            >
+              {selectedHomePhotoUrl ? (
+                <img
+                  src={selectedHomePhotoUrl}
+                  alt="Latest album"
+                  className="block h-full w-full object-cover object-center"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] text-[#9a7e69]">
+                  No photo yet
+                </div>
+              )}
+            </div>
+          </div>
+
+          {showDailyDropButton && (
+            <motion.button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setShowMemberSwitcher(false);
+                void claimDailyDrop();
+              }}
+              disabled={dailyDropState !== "available"}
+              whileTap={dailyDropState === "available" ? { scale: 0.95 } : undefined}
+              className="absolute right-[22px] bottom-[66px] z-40 flex flex-col items-center disabled:cursor-default"
+            >
+              <motion.div
+                animate={
+                  dailyDropState === "claiming"
+                    ? { rotate: [0, -7, 7, -7, 7, 0], scale: [1, 1.08, 1.02, 1.08, 0.92] }
+                    : { y: [0, -6, 0] }
+                }
+                transition={
+                  dailyDropState === "claiming"
+                    ? { duration: 0.52 }
+                    : { duration: 1.8, repeat: Infinity }
+                }
+                className="flex h-[72px] w-[72px] items-center justify-center rounded-full border border-white/80 bg-white/60 text-3xl shadow-[0_14px_26px_rgba(97,74,56,0.14)] backdrop-blur-md"
+              >
+                <ItemIcon
+                  item={todayDrop}
+                  sizeClass="h-11 w-11"
+                  emojiClassName="leading-none"
+                  alt={todayDrop.name}
+                />
+              </motion.div>
+              <span className="mt-1 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[#8d684d] shadow-sm">
+                Daily Drop
+              </span>
+            </motion.button>
+          )}
+
+          {collectedMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              className="absolute right-[22px] bottom-[38px] z-40 rounded-full bg-white/88 px-3 py-2 text-xs font-bold text-[#8d684d] shadow-sm"
+            >
+              {collectedMessage}
+            </motion.div>
+          )}
+
+          <div className="absolute bottom-7 h-9 w-[240px] rounded-full bg-[radial-gradient(ellipse_at_center,_rgba(106,83,61,0.28),_rgba(106,83,61,0)_72%)]" />
+
+          <div className="relative mt-[275px] flex w-full flex-col items-center">
+            <div className="relative flex h-[220px] w-[280px] max-w-full items-end justify-center">
+              <motion.button
+                type="button"
+                onClick={() => {
+                  void handleBubbleClick();
+                }}
+                key={`${activeCareMessage?.id ?? "default"}-${displayedBubble}-${bubbleAnimationTick}`}
+                initial={{ scale: 0.98 }}
+                animate={{ scale: [0.98, 1.03, 1] }}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+                className="absolute bottom-[calc(100%-40px)] left-1/2 z-10 min-h-[84px] w-[230px] max-w-[calc(100%-48px)] -translate-x-1/2 rounded-[28px] border border-[#f4dccf] bg-white/80 px-5 py-3.5 text-left shadow-[0_16px_30px_rgba(94,69,47,0.12)]"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  {showCareUnreadDot || showUnreadRelayBubbleDot ? (
+                    <motion.span
+                      key={showUnreadRelayBubbleDot ? "relay-dot" : "care-dot"}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[#e76f51]"
+                    />
+                  ) : null}
+                </AnimatePresence>
+                <div className="relative flex min-h-[56px] items-center">
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.p
+                      key={`${activeCareMessage?.id ?? "default"}-${displayedBubble}-${bubbleAnimationTick}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.22, ease: "easeOut" }}
+                      className="relative block w-full whitespace-normal break-words text-center text-[15px] leading-6 text-[#5d4838]"
+                    >
+                      {displayedBubble}
+                    </motion.p>
+                  </AnimatePresence>
+                </div>
+
+                <span className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[#f4dccf] bg-white/80" />
+              </motion.button>
+
+              {activeRoomDecor.map((reward) => (
+                <PlacedWeeklyRewardSceneItem
+                  key={reward.id}
+                  reward={reward}
+                />
+              ))}
+
+              {displayedPlacedDailyDrops.map((drop) => {
+                const isLocalPlacedDrop = localPlacedDailyDrops.some(
+                  (item) => item.id === drop.id
+                );
+
+                return (
+                  <PlacedDailyDropSceneItem
+                    key={drop.id}
+                    drop={drop}
+                    onExpire={
+                      isLocalPlacedDrop ? clearLocalPlacedDailyDrop : clearPlacedDailyDrop
+                    }
+                    disableExpire={isDevDailyDropTools && isLocalPlacedDrop}
+                  />
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMemberSwitcher(false);
+                }}
+                className="relative z-20 rounded-2xl"
+              >
+                <img
+                  key={`${String(selectedHomeMember?.id ?? "unknown")}-${selectedHomePet.id}`}
+                  src={
+                    selectedHomePet.image
+                  }
+                  alt={`${selectedMember.name}'s companion pet`}
+                  className="h-[190px] w-auto object-contain drop-shadow-[0_14px_18px_rgba(73,56,42,0.18)]"
+                />
+              </button>
+            </div>
+
+            {String(selectedHomeMemberId) !== String(me?.id) && (
+              <p className="mt-1 text-xs text-[#8b705d]">
+                Viewing {selectedMember.name}'s companion status
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="pb-2" />
+      </div>
+
+      {activeInventory && (
+        <div
+          className="absolute inset-0 z-50 bg-[#3d2d22]/28 px-3 py-3 backdrop-blur-sm"
+          onClick={() => setShowMemberSwitcher(false)}
+        >
+          <div
+            className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[30px] border border-white/80 bg-[#fffaf5] shadow-[0_22px_50px_rgba(67,48,34,0.22)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {activeInventory === "petSelection" ? (
+              <PetSelectionView
+                selectedPetId={selectedPetId}
+                setSelectedPetId={setSelectedPetId}
+                currentPet={currentPet}
+                petItems={petItems}
+                unlockedPetIds={unlockedPetIds}
+                onBack={() => {
+                  setShowMemberSwitcher(false);
+                  setActiveInventory(null);
+                }}
+              />
+            ) : (
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                <div className="shrink-0 px-4 pb-3 pt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#b08a6d]">
+                        Pet Warehouse
+                      </p>
+                      <h2 className="mt-1 text-lg font-semibold text-[#3d2d22]">
+                        {activeInventoryTitle}
+                      </h2>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMemberSwitcher(false);
+                        setActiveInventory(null);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3e5d8] text-sm font-bold text-[#7d6554]"
+                    >
+                      X
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                  {activeInventory === "food" && (
+                    <div className="space-y-2">
+                      {foodInventory.length === 0 && (
+                        <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
+                          No food or drink items yet. Collect a Daily Drop first.
+                        </p>
+                      )}
+
+                      {foodInventory.map((drop) => {
+                        const count = getDisplayedDailyDropCount(drop.id);
+
+                        return (
+                          <button
+                            key={drop.id}
+                            type="button"
+                            disabled={count <= 0}
+                            onClick={() => useDrop(drop)}
+                            className={`flex w-full items-center gap-3 rounded-3xl border border-[#f2dfcf] bg-white p-3 text-left transition ${
+                              count <= 0 ? "opacity-50" : "active:scale-[0.98]"
+                            }`}
+                          >
+                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff1df]">
+                              {renderDropIcon(drop)}
+                            </span>
+                            <span className="flex-1">
+                              <span className="block text-sm font-semibold text-[#49372a]">
+                                {drop.name}
+                              </span>
+                              <span className="block text-[11px] leading-4 text-[#8b705d]">
+                                {drop.description}
+                              </span>
+                            </span>
+                            <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                              x {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {activeInventory === "toy" && (
+                    <div className="space-y-2">
+                      {toyInventory.length === 0 && ownedWeeklyRewards.length === 0 && (
+                        <p className="rounded-3xl border border-[#f2dfcf] bg-white p-4 text-center text-xs leading-5 text-[#8b705d]">
+                          No toys or care items yet. Collect a Daily Drop first.
+                        </p>
+                      )}
+
+                      {toyInventory.map((drop) => {
+                        const count = getDisplayedDailyDropCount(drop.id);
+
+                        return (
+                          <button
+                            key={drop.id}
+                            type="button"
+                            disabled={count <= 0}
+                            onClick={() => useDrop(drop)}
+                            className={`flex w-full items-center gap-3 rounded-3xl border border-[#f2dfcf] bg-white p-3 text-left transition ${
+                              count <= 0 ? "opacity-50" : "active:scale-[0.98]"
+                            }`}
+                          >
+                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf]">
+                              {renderDropIcon(drop)}
+                            </span>
+                            <span className="flex-1">
+                              <span className="block text-sm font-semibold text-[#49372a]">
+                                {drop.name}
+                              </span>
+                              <span className="block text-[11px] leading-4 text-[#8b705d]">
+                                {drop.description}
+                              </span>
+                            </span>
+                            <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                              Use x {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      {ownedWeeklyRewards.map((keepsake) => (
+                        <button
+                          key={keepsake.id}
+                          type="button"
+                          onClick={() => {
+                            void useWeeklyReward(keepsake);
+                          }}
+                          className="flex w-full items-center gap-3 rounded-3xl border border-[#d18b63] bg-[#fff1df] p-3 text-left transition active:scale-[0.98]"
+                        >
+                          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7eadf] text-xl">
+                            <ItemIcon item={keepsake} sizeClass="h-10 w-10" />
+                          </span>
+                          <span className="flex-1">
+                            <span className="block text-sm font-semibold text-[#49372a]">
+                              {keepsake.name}
+                            </span>
+                            <span className="block text-[11px] leading-4 text-[#8b705d]">
+                              {keepsake.description}
+                            </span>
+                          </span>
+                          <span className="rounded-full bg-[#f7eadf] px-2 py-1 text-xs font-semibold text-[#8e6f54]">
+                            {isWeeklyRewardActive(keepsake.id) ? "In room" : "Use"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <p className="mt-3 text-center text-[11px] leading-4 text-[#9a7a61]">
+                    Food and drink are consumable. Toys, care items, and weekly keepsakes can stay as shared pet memories.
+                  </p>
+                </div>
               </div>
             )}
           </div>
         </div>
-      </div>
-    </div>
-  )}
+      )}
 
-  {showReplyModal && (
-    <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/30 px-4 pb-6">
-      <div className="w-full max-w-md rounded-[28px] bg-[#FFFDF9] p-5 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#4A4A6A]">Add reply</h2>
+      {petMessageComposer && (
+        <div className="absolute inset-0 z-[999] flex items-center justify-center bg-black/20 px-5">
+          <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_20px_50px_rgba(84,62,44,0.18)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold text-[#463326]">
+                  Send a message to {petMessageComposer.member.name}
+                </p>
+                <p className="mt-1 text-sm text-[#8b705d]">
+                  {PET_MESSAGE_PROMPT}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPetMessageComposer(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3eee9] text-[#6d5645]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleAddCustomReply}
-              disabled={!customReplyText.trim()}
-              className="rounded-full bg-[#6B5B73] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
-              Send
-            </button>
+            <textarea
+              value={petMessageComposer.text}
+              onChange={(event) =>
+                setPetMessageComposer((current) =>
+                  current
+                    ? { ...current, text: event.target.value, error: "" }
+                    : current
+                )
+              }
+              placeholder={PET_MESSAGE_PROMPT}
+              rows={4}
+              className="w-full resize-none rounded-[18px] border border-[#eadfd6] bg-[#f7efe7] px-4 py-3 text-sm text-[#463326] outline-none placeholder:text-[#a7907d]"
+            />
 
-            <button
-              onClick={handleCloseReplyModal}
-              className="rounded-full p-2 text-[#8B8BA3] hover:bg-[#F3EEE7]"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            {petMessageComposer.error && (
+              <p className="mt-2 text-xs text-[#c25a46]">{petMessageComposer.error}</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPetMessageComposer(null)}
+                className="rounded-full bg-[#f3eee9] px-4 py-2 text-sm font-medium text-[#6d5645]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendPetMessage()}
+                disabled={isSendingPetMessage}
+                className="rounded-full bg-[#6d5645] px-4 py-2 text-sm font-medium text-white disabled:bg-[#c7b7aa]"
+              >
+                {isSendingPetMessage ? "Sending..." : "Send"}
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="rounded-[24px] border border-[#E8DED2] bg-[#F8F4EF] p-4">
-          <p className="mb-3 text-sm font-medium text-[#5F6280]">
-            Share a gentle reply
-          </p>
-
-          <textarea
-            value={customReplyText}
-            onChange={(e) => setCustomReplyText(e.target.value)}
-            placeholder="Write your reply..."
-            rows={4}
-            className="w-full resize-none rounded-2xl border border-[#E8DED2] bg-white px-4 py-3 text-sm leading-relaxed text-[#4A4A6A] outline-none placeholder:text-[#AAA6B2]"
-          />
-        </div>
-      </div>
-    </div>
-  )}
+      )}
 
     </div>
   );
