@@ -184,7 +184,7 @@ const getScenePlacement = (item: DailyDrop): ScenePlacement => {
     case "canned-tuna":
       return {
         ...base,
-        positionClassName: "absolute right-[20px] bottom-[132px] z-[12] flex items-center justify-center text-4xl",
+        positionClassName: "absolute right-[20px] bottom-[110px] z-[12] flex items-center justify-center text-4xl",
         sizeClassName: "h-[38px] w-[38px]",
         durationMs: 25000,
       };
@@ -275,8 +275,9 @@ const getWeeklyRewardScenePlacement = (reward: WeeklyReward): ScenePlacement => 
       return {
         ...base,
         positionClassName:
-          "absolute -right-[6px] bottom-[8px] z-[4] flex items-center justify-center",
+          "absolute -right-[6px] bottom-[8px] z-[30] flex items-center justify-center",
         sizeClassName: "h-[126px] w-[58px]",
+          scaleClassName: "scale-[10] origin-center",
       };
     case "carrot-toy":
       return {
@@ -1748,8 +1749,6 @@ export function ChatPage({
         setStorageDot((prev) => ({ ...prev, [storageArea]: true }));
         setStoragePulse(storageArea);
         setPetFeedback(`Collected ${claimedDrop.name} +1. Check your ${storageArea === "food" ? "Food Storage" : "Toy Box"}.`);
-        // TODO: connect Home Daily Drop claim flow to POST /api/daily-drop/claim or sync
-        // successful inventory claim into daily_drops for Weekly Echo keepsakes statistics.
         scheduleNextDailyDrop(nextClaims);
         console.log("[DailyDrop] count after add", claimedDrop.id, getDisplayedDailyDropCount(claimedDrop.id));
 
