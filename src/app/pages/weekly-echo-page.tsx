@@ -204,6 +204,7 @@ export function WeeklyEchoPage() {
   const [echoSummaryError, setEchoSummaryError] = useState("");
   const [isAddingReward, setIsAddingReward] = useState(false);
   const [demoRefreshToken, setDemoRefreshToken] = useState(0);
+  const [activityRefreshToken, setActivityRefreshToken] = useState(0);
 
   const weeklyKeepsake = useMemo(
     () =>
@@ -319,7 +320,21 @@ export function WeeklyEchoPage() {
   }, []);
 
   useEffect(() => {
+    const handleActivityUpdated = () => {
+      setActivityRefreshToken((current) => current + 1);
+    };
+
+    window.addEventListener("home-data-updated", handleActivityUpdated);
+    window.addEventListener("moods-updated", handleActivityUpdated);
+    return () => {
+      window.removeEventListener("home-data-updated", handleActivityUpdated);
+      window.removeEventListener("moods-updated", handleActivityUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
     let ignore = false;
+    const shouldForceRefresh = activityRefreshToken > 0;
 
     async function loadReport(refresh = false) {
       setReportError("");
@@ -360,18 +375,12 @@ export function WeeklyEchoPage() {
       }
     }
 
-    void loadReport();
-
-    const handleMoodUpdated = () => {
-      void loadReport(true);
-    };
-    window.addEventListener("moods-updated", handleMoodUpdated);
+    void loadReport(shouldForceRefresh);
 
     return () => {
       ignore = true;
-      window.removeEventListener("moods-updated", handleMoodUpdated);
     };
-  }, [demoRefreshToken]);
+  }, [activityRefreshToken, demoRefreshToken]);
 
   useEffect(() => {
     let ignore = false;
@@ -438,7 +447,7 @@ export function WeeklyEchoPage() {
     return () => {
       ignore = true;
     };
-  }, [demoRefreshToken, fallbackStats]);
+  }, [activityRefreshToken, demoRefreshToken, fallbackStats]);
 
   useEffect(() => {
     if (report?.rewardClaimed) {

@@ -298,6 +298,9 @@ export function PetProvider({
       };
       setDemoInventory(userScope, nextInventory);
       setDailyDropInventory(nextInventory.dailyDropInventory);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("home-data-updated"));
+      }
       return { ok: true };
     }
 
@@ -328,6 +331,9 @@ export function PetProvider({
       ...prev,
       [dropId]: (prev[dropId] ?? 0) + amount,
     }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("home-data-updated"));
+    }
     return { ok: true };
   };
 

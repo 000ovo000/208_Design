@@ -2,7 +2,7 @@ USE `kinlight_db`;
 
 -- =========================================================
 -- Kinlight demo seed data
--- Run this after kinlight_db_schema.sql on an empty kinlight_db database.
+-- Run this after kinlight_db.sql on an empty kinlight_db database.
 -- This file only inserts seed data. It does not change table structure.
 --
 -- Note:
